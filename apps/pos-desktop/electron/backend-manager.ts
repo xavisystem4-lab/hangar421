@@ -14,6 +14,12 @@ import * as crypto from "crypto";
  *
  * Solo se usa en producción empaquetada (ver electron/main.ts) — en desarrollo se sigue
  * usando un backend corrido aparte (`npm run dev:backend`), igual que siempre.
+ *
+ * Todo paso que puede quedarse esperando indefinidamente (antivirus bloqueando un binario,
+ * firewall pidiendo permiso en una ventana oculta, etc.) tiene un timeout explícito — nunca
+ * debe dejar al usuario mirando la pantalla de arranque sin avisar. Cada paso además queda
+ * en un log en disco (`local-data/arranque.log`) para poder diagnosticar sin depender de
+ * capturas de pantalla si algo vuelve a fallar.
  */
 
 interface Secretos {
@@ -27,7 +33,26 @@ export interface BackendEmbebido {
   detener: () => Promise<void>;
 }
 
-export async function iniciarBackendEmbebido(log: (msg: string) => void): Promise<BackendEmbebido> {
+export async function iniciarBackendEmbebido(logIn: (msg: string) => void): Promise<BackendEmbebido> {
+  const dataDir = path.join(app.getPath("userData"), "local-data");
+  fs.mkdirSync(dataDir, { recursive: true });
+  const logPath = path.join(dataDir, "arranque.log");
+
+  const log = (msg: string) => {
+    try {
+      fs.appendFileSync(logPath, `[${new Date().toISOString()}] ${msg}\n`);
+    } catch {
+      /* nunca bloquear el arranque por no poder escribir el log */
+    }
+    logIn(msg);
+  };
+
+  log(`=== Arrancando backend embebido — userData: ${app.getPath("userData")} ===`);
+
+  const resourcesDir = obtenerDirectorioBackend();
+  const nodeBin = obtenerBinarioNode(resourcesDir);
+  verificarArchivosNecesarios(resourcesDir, nodeBin, log);
+
   // embedded-postgres se distribuye como ESM puro. tsc, al compilar a CommonJS, reescribe
   // cualquier `import()` dinámico de vuelta a un `require()` (que sí falla contra ESM puro) —
   // por eso se construye el import() en runtime con `new Function`, invisible para tsc, para
@@ -37,10 +62,7 @@ export async function iniciarBackendEmbebido(log: (msg: string) => void): Promis
   ) => Promise<{ default: new (opciones: Record<string, unknown>) => any }>;
   const { default: EmbeddedPostgres } = await importDinamico("embedded-postgres");
 
-  const dataDir = path.join(app.getPath("userData"), "local-data");
   const pgDataDir = path.join(dataDir, "pgdata");
-  fs.mkdirSync(dataDir, { recursive: true });
-
   const secretos = obtenerOCrearSecretos(path.join(dataDir, "secrets.json"));
   const pgPort = await puertoLibre();
 
@@ -57,17 +79,24 @@ export async function iniciarBackendEmbebido(log: (msg: string) => void): Promis
     onError: (msg: string) => log(`[postgres] ${msg}`),
   });
 
+  const mensajeTimeoutPg =
+    "PostgreSQL local no respondió a tiempo. Esto casi siempre es el antivirus bloqueando o " +
+    "escaneando los binarios (initdb.exe / postgres.exe) — revisa Windows Defender > Protección " +
+    "contra virus y amenazas > Historial de protección, y agrega una exclusión para la carpeta " +
+    "de instalación de HANGAR 421 POS si aparece algo puesto en cuarentena.";
+
   if (!yaInicializado) {
-    await pg.initialise();
+    log("Inicializando PostgreSQL (initdb)…");
+    await conTimeout(pg.initialise(), 90_000, mensajeTimeoutPg);
   }
-  await pg.start();
+  log("Arrancando PostgreSQL…");
+  await conTimeout(pg.start(), 45_000, mensajeTimeoutPg);
   if (!yaInicializado) {
-    await pg.createDatabase("hangar421");
+    log("Creando base de datos hangar421…");
+    await conTimeout(pg.createDatabase("hangar421"), 30_000, mensajeTimeoutPg);
   }
 
   const backendPort = await puertoLibre();
-  const resourcesDir = obtenerDirectorioBackend();
-  const nodeBin = obtenerBinarioNode(resourcesDir);
 
   const env: NodeJS.ProcessEnv = {
     ...process.env,
@@ -84,7 +113,7 @@ export async function iniciarBackendEmbebido(log: (msg: string) => void): Promis
     BACKEND_PRISMA_DIR: path.join(resourcesDir, "prisma"),
   };
 
-  log("Iniciando backend local…");
+  log(`Iniciando backend local (${nodeBin})…`);
   const proceso = spawn(nodeBin, [path.join(resourcesDir, "dist", "main.js")], {
     env,
     stdio: ["ignore", "pipe", "pipe"],
@@ -93,6 +122,7 @@ export async function iniciarBackendEmbebido(log: (msg: string) => void): Promis
   proceso.stdout?.on("data", (d) => log(`[backend] ${String(d).trim()}`));
   proceso.stderr?.on("data", (d) => log(`[backend] ${String(d).trim()}`));
   proceso.on("exit", (code) => log(`[backend] proceso terminado (código ${code})`));
+  proceso.on("error", (e) => log(`[backend] error al lanzar el proceso: ${e.message}`));
 
   const url = `http://127.0.0.1:${backendPort}`;
   await esperarSalud(url, proceso, log);
@@ -123,10 +153,36 @@ function obtenerDirectorioBackend(): string {
 
 function obtenerBinarioNode(resourcesDir: string): string {
   const nombre = process.platform === "win32" ? "node.exe" : "node";
-  const bundled = path.join(resourcesDir, "node", nombre);
-  if (fs.existsSync(bundled)) return bundled;
-  // Fallback (no debería usarse en el instalador real, solo por si falta el empaquetado):
-  return nombre;
+  return path.join(resourcesDir, "node", nombre);
+}
+
+/** Falla rápido y claro si falta algún archivo necesario, en vez de dejar que el intento de
+ *  arrancar Postgres/el backend se quede esperando en silencio (lo que pasaba antes: si el
+ *  antivirus borraba/ponía en cuarentena los binarios, la app se quedaba congelada sin avisar
+ *  y no aparecía ningún proceso en el Administrador de tareas). */
+function verificarArchivosNecesarios(resourcesDir: string, nodeBin: string, log: (msg: string) => void) {
+  const faltantes: string[] = [];
+
+  if (!fs.existsSync(nodeBin)) faltantes.push(`binario de Node (${nodeBin})`);
+  if (!fs.existsSync(path.join(resourcesDir, "dist", "main.js"))) {
+    faltantes.push(`backend compilado (${path.join(resourcesDir, "dist", "main.js")})`);
+  }
+
+  const appNodeModules = path.join(__dirname, "..", "node_modules");
+  const embeddedPgScope = path.join(appNodeModules, "@embedded-postgres");
+  const tieneBinariosPg = fs.existsSync(embeddedPgScope) && fs.readdirSync(embeddedPgScope).length > 0;
+  if (!tieneBinariosPg) faltantes.push(`binarios de PostgreSQL (${embeddedPgScope})`);
+
+  log(`Verificación de archivos: node=${fs.existsSync(nodeBin)} backend=${fs.existsSync(path.join(resourcesDir, "dist", "main.js"))} postgres=${tieneBinariosPg}`);
+
+  if (faltantes.length > 0) {
+    throw new Error(
+      `Faltan archivos necesarios para el backend local — probablemente el antivirus los ` +
+        `bloqueó o eliminó. Revisa Windows Defender > Protección contra virus y amenazas > ` +
+        `Historial de protección, restaura lo puesto en cuarentena y agrega una exclusión para ` +
+        `la carpeta de instalación. Archivos faltantes: ${faltantes.join("; ")}`,
+    );
+  }
 }
 
 async function puertoLibre(): Promise<number> {
@@ -140,6 +196,13 @@ async function puertoLibre(): Promise<number> {
       srv.close(() => resolve(port));
     });
   });
+}
+
+function conTimeout<T>(promesa: Promise<T>, ms: number, mensaje: string): Promise<T> {
+  return Promise.race([
+    promesa,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(mensaje)), ms)),
+  ]);
 }
 
 function esperarSalud(url: string, proceso: ChildProcess, log: (msg: string) => void, intentos = 60): Promise<void> {
@@ -160,7 +223,7 @@ function esperarSalud(url: string, proceso: ChildProcess, log: (msg: string) => 
     const reintentar = () => {
       restantes -= 1;
       if (restantes <= 0) {
-        reject(new Error("El backend local no respondió a tiempo"));
+        reject(new Error("El backend local no respondió a tiempo (30s) — revisa el log en local-data/arranque.log"));
         return;
       }
       setTimeout(intentar, 500);

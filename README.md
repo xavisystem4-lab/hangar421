@@ -44,6 +44,15 @@ exclusivo del **POS Windows**; la pantalla de cocina, la app de meseros y el CRM
 ese backend (local en la sucursal, o a uno cloud si más adelante se despliega uno — ver
 `docs/deployment.md`) y sí necesitan que el POS (u otro backend) esté corriendo.
 
+> ⚠️ **Antivirus**: la app trae binarios reales de PostgreSQL sin firma de código (Windows
+> Defender u otro antivirus a veces los pone en cuarentena por ser ejecutables poco comunes
+> dentro de una carpeta de instalación). Si al abrir la app por primera vez se queda mucho
+> tiempo en "Creando base de datos local…", revisa el historial de protección del antivirus y
+> agrega una exclusión para la carpeta de instalación (`%LOCALAPPDATA%\Programs\HANGAR 421 POS`).
+> Desde v0.2.2 la app detecta esto y muestra un error claro con botón de reintentar en vez de
+> quedarse cargando indefinidamente; el detalle completo queda en
+> `%APPDATA%\HANGAR 421 POS\local-data\arranque.log`.
+
 > 📖 Antes de tocar código, lee **[`docs/architecture.md`](docs/architecture.md)** (arquitectura),
 > **[`docs/data-model.md`](docs/data-model.md)** (modelo de datos y ERD), **[`docs/sync-flows.md`](docs/sync-flows.md)**
 > (sincronización offline/multisucursal/cloud), **[`docs/wireframes.md`](docs/wireframes.md)** y

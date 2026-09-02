@@ -25,11 +25,16 @@ export default function App() {
   const [sucursalNombre, setSucursalNombre] = useState("");
   const [backendListo, setBackendListo] = useState(false);
   const [mensajeArranque, setMensajeArranque] = useState("Iniciando…");
+  const [errorArranque, setErrorArranque] = useState<string | null>(null);
+  const [intentoArranque, setIntentoArranque] = useState(0);
 
   // Primero se resuelve dónde vive el backend (embebido, cloud, o dev) — recién entonces
-  // se configuran los clientes HTTP/WebSocket y se puede intentar cualquier login.
+  // se configuran los clientes HTTP/WebSocket y se puede intentar cualquier login. Si falla
+  // (antivirus bloqueando un binario, timeout, etc.) se muestra el error con un botón para
+  // reintentar, en vez de quedarse la pantalla de carga congelada sin explicación.
   useEffect(() => {
     const quitarListener = window.hangar.backend.onEstado(setMensajeArranque);
+    setErrorArranque(null);
     window.hangar.backend
       .obtenerUrl()
       .then((url) => {
@@ -39,9 +44,9 @@ export default function App() {
         }
         setBackendListo(true);
       })
-      .catch((e) => setMensajeArranque(`No se pudo iniciar el backend local: ${e.message}`));
+      .catch((e) => setErrorArranque(e.message ?? "Error desconocido al iniciar el backend local"));
     return quitarListener;
-  }, []);
+  }, [intentoArranque]);
 
   useEffect(() => {
     if (backendListo) auth.inicializar();
@@ -65,7 +70,15 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth.usuario, auth.sucursalId]);
 
-  if (!backendListo) return <PantallaArranque mensaje={mensajeArranque} />;
+  if (!backendListo) {
+    return (
+      <PantallaArranque
+        mensaje={mensajeArranque}
+        error={errorArranque}
+        onReintentar={() => setIntentoArranque((n) => n + 1)}
+      />
+    );
+  }
   if (auth.cargando) return null;
   if (!auth.usuario) {
     return (
