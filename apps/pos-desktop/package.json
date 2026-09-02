@@ -14,7 +14,6 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p electron/tsconfig.json"
   },
   "dependencies": {
-    "@hangar421/shared": "*",
     "better-sqlite3": "^11.3.0",
     "electron-updater": "^6.3.4",
     "embedded-postgres": "^16.14.0-beta.17",
@@ -24,6 +23,7 @@
     "zustand": "^4.5.5"
   },
   "devDependencies": {
+    "@hangar421/shared": "*",
     "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^20.16.5",
     "@types/react": "^18.3.5",
@@ -43,8 +43,7 @@
     "electronVersion": "32.1.2",
     "files": [
       "dist/**/*",
-      "dist-electron/**/*",
-      "!node_modules/@hangar421/**"
+      "dist-electron/**/*"
     ],
     "extraResources": [
       {
