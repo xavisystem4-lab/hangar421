@@ -101,8 +101,14 @@ computadora, cambia `EXPO_PUBLIC_API_URL`/`extra.apiUrl` en `apps/waiter-mobile/
 
 ## 8. Generar el instalador Windows (`.exe`)
 
-Desde Windows (o con cross-compilación configurada), coloca un ícono en
-`apps/pos-desktop/build/icon.ico` (ver `apps/pos-desktop/build/README.md`) y corre:
+**Ya automatizado**: el workflow [`release-pos.yml`](../.github/workflows/release-pos.yml)
+compila el instalador en un runner `windows-latest` y lo publica como
+[GitHub Release](https://github.com/xavisystem4-lab/hangar421/releases/latest) — se dispara
+manualmente (`gh workflow run release-pos.yml` o desde la pestaña Actions) o al empujar un tag
+`pos-v*`. El ícono ya está incluido (`apps/pos-desktop/build/icon.ico`, generado a partir del
+logotipo — ver `assets/logo/README.md`).
+
+Para compilar localmente en su lugar (Windows, o cross-compilación configurada):
 
 ```bash
 npm run build:pos:win --workspace=apps/pos-desktop
