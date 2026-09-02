@@ -39,7 +39,10 @@ export default function App() {
       .obtenerUrl()
       .then((url) => {
         if (url) {
-          configurarApiUrl(url);
+          // `url` es el origen pelado (http://127.0.0.1:<puerto>) — el backend expone la
+          // API bajo /api/v1 (API_PREFIX) pero el WebSocket va sobre el origen sin prefijo
+          // (path "/realtime" aparte, ver api/socket.ts), igual que VITE_API_URL/VITE_WS_URL.
+          configurarApiUrl(`${url}/api/v1`);
           configurarWsUrl(url);
         }
         setBackendListo(true);
