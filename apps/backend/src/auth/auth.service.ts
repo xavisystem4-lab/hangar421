@@ -160,8 +160,12 @@ export class AuthService {
     rol: RolUsuario,
     dispositivoId?: string,
   ): Promise<LoginResponse> {
-    const accessPayload: JwtPayload = { sub: usuarioId, empresaId, sucursalId, rol, dispositivoId, type: "access" };
-    const refreshPayload: JwtPayload = { sub: usuarioId, empresaId, sucursalId, rol, dispositivoId, type: "refresh" };
+    // jti único por sesión: sin esto, dos logins con el mismo payload dentro del mismo
+    // segundo (mismo `iat`) producen un JWT idéntico y chocan con el índice único de
+    // `tokenHash` en refresh_tokens al insertar el segundo.
+    const jti = crypto.randomUUID();
+    const accessPayload: JwtPayload = { sub: usuarioId, empresaId, sucursalId, rol, dispositivoId, type: "access", jti };
+    const refreshPayload: JwtPayload = { sub: usuarioId, empresaId, sucursalId, rol, dispositivoId, type: "refresh", jti };
 
     const accessExpiresIn = this.config.get<string>("JWT_ACCESS_EXPIRES_IN", "15m");
     const refreshExpiresIn = this.config.get<string>("JWT_REFRESH_EXPIRES_IN", "30d");

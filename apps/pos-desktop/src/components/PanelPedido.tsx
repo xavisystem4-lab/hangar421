@@ -1,7 +1,7 @@
 import { useOrderStore } from "../store/orderStore";
 
-export function PanelPedido({ mesaNombre }: { mesaNombre: string | null }) {
-  const { items, cambiarCantidad, quitarItem, numComensales, totales } = useOrderStore();
+export function PanelPedido({ mesaNombre, onCobrar }: { mesaNombre: string | null; onCobrar: () => void }) {
+  const { items, cambiarCantidad, quitarItem, numComensales, totales, enviado } = useOrderStore();
   const t = totales();
 
   return (
@@ -11,22 +11,30 @@ export function PanelPedido({ mesaNombre }: { mesaNombre: string | null }) {
         {mesaNombre && <div style={{ fontSize: 13, color: "var(--h421-gray-400)" }}>{numComensales} comensal(es)</div>}
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", padding: "8px 16px" }}>
+      <div style={{ flex: 1, overflowY: "auto", padding: "10px 16px" }}>
         {items.length === 0 && <p style={{ color: "var(--h421-gray-400)", fontSize: 14, marginTop: 20 }}>Agrega productos del catálogo…</p>}
         {items.map((item) => (
-          <div key={item.id} style={{ padding: "10px 0", borderBottom: "1px solid var(--h421-gray-200)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ fontWeight: 600 }}>{item.cantidad}x {item.nombreProducto}</span>
-              <span>${((item.precioUnitario + item.modificadores.reduce((s, m) => s + m.precioExtra, 0)) * item.cantidad).toFixed(2)}</span>
-            </div>
-            {item.modificadores.length > 0 && (
-              <div style={{ fontSize: 12, color: "var(--h421-gray-400)" }}>{item.modificadores.map((m) => m.nombreOpcion).join(", ")}</div>
-            )}
-            {item.notas && <div style={{ fontSize: 12, color: "var(--h421-gray-400)" }}>Nota: {item.notas}</div>}
-            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-              <button onClick={() => cambiarCantidad(item.id, -1)} style={{ width: 32, height: 32, minHeight: 0, background: "var(--h421-gray-50)" }}>−</button>
-              <button onClick={() => cambiarCantidad(item.id, 1)} style={{ width: 32, height: 32, minHeight: 0, background: "var(--h421-gray-50)" }}>+</button>
-              <button onClick={() => quitarItem(item.id)} style={{ marginLeft: "auto", width: 32, height: 32, minHeight: 0, background: "#fee2e2", color: "var(--h421-red)" }}>🗑</button>
+          <div key={item.id} style={{ display: "flex", gap: 10, padding: "10px 0", borderBottom: "1px solid var(--h421-gray-200)" }}>
+            <span style={{
+              flexShrink: 0, width: 26, height: 26, borderRadius: 13, background: "var(--h421-blue)", color: "#fff",
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, marginTop: 2,
+            }}>
+              ✓
+            </span>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ fontWeight: 600 }}>{item.cantidad}x {item.nombreProducto}</span>
+                <span style={{ fontWeight: 700 }}>${((item.precioUnitario + item.modificadores.reduce((s, m) => s + m.precioExtra, 0)) * item.cantidad).toFixed(2)}</span>
+              </div>
+              {item.modificadores.length > 0 && (
+                <div style={{ fontSize: 12, color: "var(--h421-gray-400)" }}>{item.modificadores.map((m) => m.nombreOpcion).join(", ")}</div>
+              )}
+              {item.notas && <div style={{ fontSize: 12, color: "var(--h421-gray-400)" }}>Nota: {item.notas}</div>}
+              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                <button onClick={() => cambiarCantidad(item.id, -1)} style={{ width: 28, height: 28, minHeight: 0, background: "var(--h421-gray-50)", borderRadius: 8 }}>−</button>
+                <button onClick={() => cambiarCantidad(item.id, 1)} style={{ width: 28, height: 28, minHeight: 0, background: "var(--h421-gray-50)", borderRadius: 8 }}>+</button>
+                <button onClick={() => quitarItem(item.id)} style={{ marginLeft: "auto", width: 28, height: 28, minHeight: 0, background: "#fee2e2", color: "var(--h421-red)", borderRadius: 8 }}>🗑</button>
+              </div>
             </div>
           </div>
         ))}
@@ -36,10 +44,19 @@ export function PanelPedido({ mesaNombre }: { mesaNombre: string | null }) {
         <FilaTotal label="Subtotal" valor={t.subtotal} />
         <FilaTotal label="Descuento" valor={-t.descuentoTotal} />
         <FilaTotal label="Impuesto" valor={t.impuesto} />
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 20, fontWeight: 800, marginTop: 8, color: "var(--h421-navy)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 20, fontWeight: 800, marginTop: 8, marginBottom: 12, color: "var(--h421-navy)" }}>
           <span>Total</span>
           <span>${t.total.toFixed(2)}</span>
         </div>
+
+        <button
+          onClick={onCobrar}
+          disabled={!enviado}
+          className="btn-grande"
+          style={{ width: "100%", background: "var(--h421-green)", color: "#fff", fontSize: 17, opacity: enviado ? 1 : 0.5 }}
+        >
+          💳 Pagar ${t.total.toFixed(2)}
+        </button>
       </div>
     </aside>
   );

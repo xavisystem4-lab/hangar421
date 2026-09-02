@@ -3,6 +3,7 @@ import { EstadoPedidoItem, WS_EVENTS } from "@hangar421/shared";
 import { apiFetch, cerrarSesion, guardarSesion } from "./api/http";
 import { conectarSocket } from "./api/socket";
 import { ComandaCard, type ComandaItem } from "./components/ComandaCard";
+import logo from "./assets/logo-light.png";
 import "./theme.css";
 
 const COLUMNAS: { estado: EstadoPedidoItem; titulo: string }[] = [
@@ -85,7 +86,7 @@ export default function App() {
         padding: "16px 24px", background: "var(--h421-navy)", borderBottom: "2px solid var(--h421-amber)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <strong style={{ fontSize: 22, color: "var(--h421-amber)" }}>HANGAR 421</strong>
+          <img src={logo} alt="HANGAR 421" style={{ height: 28, width: "auto" }} />
           <span style={{ color: "var(--h421-gray-400)" }}>Cocina</span>
         </div>
         <div style={{ display: "flex", gap: 16, alignItems: "center" }}>

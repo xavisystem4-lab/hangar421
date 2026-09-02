@@ -43,4 +43,7 @@ export interface JwtPayload {
   sucursalId?: string;
   rol?: RolUsuario;
   type: "access" | "refresh";
+  /** Identificador único del token (evita colisiones si dos sesiones se emiten en el mismo
+   *  segundo — el `tokenHash` de refresh_tokens es único y el JWT sin `jti` sería idéntico). */
+  jti?: string;
 }

@@ -22,4 +22,16 @@ contextBridge.exposeInMainWorld("hangar", {
     obtener: (clave: string): Promise<string | null> => ipcRenderer.invoke("config:obtener", clave),
     guardar: (clave: string, valor: string) => ipcRenderer.invoke("config:guardar", clave, valor),
   },
+
+  appVersion: (): Promise<string> => ipcRenderer.invoke("app:version"),
+
+  updater: {
+    verificar: () => ipcRenderer.invoke("updater:verificar"),
+    instalar: () => ipcRenderer.invoke("updater:instalar"),
+    onEvento: (callback: (evento: { tipo: string; data?: unknown }) => void) => {
+      const handler = (_e: unknown, evento: { tipo: string; data?: unknown }) => callback(evento);
+      ipcRenderer.on("updater:evento", handler);
+      return () => ipcRenderer.removeListener("updater:evento", handler);
+    },
+  },
 });

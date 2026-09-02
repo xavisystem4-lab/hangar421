@@ -19,6 +19,12 @@ declare global {
         obtener(clave: string): Promise<string | null>;
         guardar(clave: string, valor: string): Promise<void>;
       };
+      appVersion(): Promise<string>;
+      updater: {
+        verificar(): Promise<void>;
+        instalar(): Promise<void>;
+        onEvento(callback: (evento: { tipo: string; data?: unknown }) => void): () => void;
+      };
     };
   }
 }

@@ -13,8 +13,10 @@ import {
   obtenerConfig,
   guardarConfig,
 } from "./db";
+import { configurarAutoUpdater } from "./updater";
 
 const isDev = process.env.NODE_ENV === "development";
+let ventanaPrincipal: BrowserWindow | null = null;
 
 function crearVentana() {
   const win = new BrowserWindow({
@@ -24,6 +26,7 @@ function crearVentana() {
     minHeight: 700,
     title: "HANGAR 421 POS",
     backgroundColor: "#111318",
+    icon: path.join(__dirname, "../build/icon.ico"),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -37,11 +40,17 @@ function crearVentana() {
   } else {
     win.loadFile(path.join(__dirname, "../dist/index.html"));
   }
+
+  win.on("closed", () => {
+    if (ventanaPrincipal === win) ventanaPrincipal = null;
+  });
+  ventanaPrincipal = win;
 }
 
 app.whenReady().then(() => {
   iniciarBaseDeDatos();
   registrarIpc();
+  configurarAutoUpdater(() => ventanaPrincipal);
   crearVentana();
 
   app.on("activate", () => {

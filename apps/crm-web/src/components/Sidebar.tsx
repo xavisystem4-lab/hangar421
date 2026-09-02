@@ -19,8 +19,9 @@ export function Sidebar() {
   return (
     <aside style={{ width: 220, background: "var(--h421-navy)", color: "#fff", display: "flex", flexDirection: "column", padding: "20px 12px" }}>
       <div style={{ padding: "0 8px 20px" }}>
-        <strong style={{ color: "var(--h421-amber)", fontSize: 18, letterSpacing: 1 }}>HANGAR 421</strong>
-        <div style={{ fontSize: 12, opacity: 0.7 }}>CRM</div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo-light.png" alt="HANGAR 421" style={{ height: 24, width: "auto" }} />
+        <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>CRM</div>
       </div>
 
       <nav style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>
@@ -41,6 +42,11 @@ export function Sidebar() {
         <button onClick={() => { logout(); router.replace("/login"); }} style={{ marginTop: 8, background: "transparent", color: "#fff", padding: 0, textDecoration: "underline" }}>
           Cerrar sesión
         </button>
+      </div>
+
+      <div style={{ padding: "16px 8px 0", marginTop: 12, borderTop: "1px solid rgba(255,255,255,0.12)", fontSize: 11, opacity: 0.55 }}>
+        <div>v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.1.0"}</div>
+        <div>Desarrollado por Soft Gala</div>
       </div>
     </aside>
   );

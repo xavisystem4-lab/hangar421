@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuthStore } from "../store/authStore";
 import { useSyncStore } from "../store/syncStore";
+import logo from "../assets/logo-light.png";
 
 const ETIQUETAS_SYNC: Record<string, { texto: string; color: string }> = {
   SYNCED: { texto: "Sincronizado", color: "var(--h421-green)" },
@@ -25,7 +26,7 @@ export function BarraSuperior({ sucursalNombre, onCambiarPantalla }: { sucursalN
   return (
     <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 20px", background: "var(--h421-navy)", color: "#fff" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <strong style={{ color: "var(--h421-amber)", fontSize: 20, letterSpacing: 1 }}>HANGAR 421</strong>
+        <img src={logo} alt="HANGAR 421" style={{ height: 26, width: "auto" }} />
         <span style={{ opacity: 0.6 }}>|</span>
         <span>{sucursalNombre}</span>
         <span style={{ opacity: 0.6 }}>|</span>

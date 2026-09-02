@@ -11,6 +11,7 @@ import { Mesas } from "./screens/Mesas";
 import { POSHome } from "./screens/POSHome";
 import { Caja } from "./screens/Caja";
 import { BarraSuperior } from "./components/BarraSuperior";
+import { BarraActualizacion } from "./components/BarraActualizacion";
 import "./theme.css";
 
 type Pantalla = "venta" | "mesas" | "caja";
@@ -44,7 +45,16 @@ export default function App() {
   }, [auth.usuario, auth.sucursalId]);
 
   if (auth.cargando) return null;
-  if (!auth.usuario) return <Login />;
+  if (!auth.usuario) {
+    return (
+      <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
+        <div style={{ flex: 1, overflow: "hidden" }}>
+          <Login />
+        </div>
+        <BarraActualizacion />
+      </div>
+    );
+  }
 
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
@@ -74,6 +84,7 @@ export default function App() {
         )}
         {pantalla === "caja" && <Caja sucursalId={auth.sucursalId!} />}
       </div>
+      <BarraActualizacion />
     </div>
   );
 }

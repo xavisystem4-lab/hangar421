@@ -7,7 +7,9 @@ import { PanelPedido } from "../components/PanelPedido";
 import { ModalModificadores } from "../components/ModalModificadores";
 import { ModalCobro } from "../components/ModalCobro";
 import { ModalDescuento } from "../components/ModalDescuento";
+import { AccionCircular } from "../components/AccionCircular";
 import { useAuthStore } from "../store/authStore";
+import { CATEGORIA_COLORES } from "../theme/categoriaColores";
 
 export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | null; onVentaCobrada: () => void }) {
   const { categorias, productos } = useCatalogoStore();
@@ -15,6 +17,7 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
   const sucursalId = useAuthStore((s) => s.sucursalId)!;
   const [categoriaActiva, setCategoriaActiva] = useState<string | null>(null);
   const [busqueda, setBusqueda] = useState("");
+  const [mostrarBusqueda, setMostrarBusqueda] = useState(false);
   const [productoModal, setProductoModal] = useState<Producto | null>(null);
   const [mostrarCobro, setMostrarCobro] = useState(false);
   const [mostrarDescuento, setMostrarDescuento] = useState(false);
@@ -57,59 +60,58 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
   return (
     <div style={{ display: "flex", height: "100%" }}>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {/* Categorías */}
-        <div style={{ display: "flex", gap: 8, padding: "12px 16px", overflowX: "auto", background: "#fff", borderBottom: "1px solid var(--h421-gray-200)" }}>
-          <button onClick={() => setCategoriaActiva(null)} className="btn-grande"
-            style={{ background: !categoriaActiva ? "var(--h421-navy)" : "var(--h421-gray-50)", color: !categoriaActiva ? "#fff" : "#000", padding: "0 18px" }}>
+        {/* Categorías — píldoras de color, una por categoría */}
+        <div style={{ display: "flex", gap: 10, padding: "14px 16px", overflowX: "auto", background: "#fff", borderBottom: "1px solid var(--h421-gray-200)", alignItems: "center" }}>
+          <button onClick={() => setCategoriaActiva(null)} className="pildora-categoria"
+            style={{ background: !categoriaActiva ? "var(--h421-navy)" : "var(--h421-gray-50)", color: !categoriaActiva ? "#fff" : "var(--h421-black)" }}>
             Todas
           </button>
-          {categorias.map((c) => (
-            <button key={c.id} onClick={() => setCategoriaActiva(c.id)} className="btn-grande"
-              style={{ background: categoriaActiva === c.id ? "var(--h421-navy)" : "var(--h421-gray-50)", color: categoriaActiva === c.id ? "#fff" : "#000", padding: "0 18px", whiteSpace: "nowrap" }}>
-              {c.nombre}
-            </button>
-          ))}
-          <input placeholder="🔍 Buscar producto…" value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
-            style={{ marginLeft: "auto", padding: "0 14px", minWidth: 220, borderRadius: 12, border: "1px solid var(--h421-gray-200)" }} />
+          {categorias.map((c, i) => {
+            const color = CATEGORIA_COLORES[i % CATEGORIA_COLORES.length];
+            const activa = categoriaActiva === c.id;
+            return (
+              <button key={c.id} onClick={() => setCategoriaActiva(c.id)} className="pildora-categoria"
+                style={{ background: activa ? color : `${color}1f`, color: activa ? "#fff" : color, boxShadow: activa ? `0 4px 10px ${color}55` : "none" }}>
+                {c.nombre}
+              </button>
+            );
+          })}
+          {mostrarBusqueda && (
+            <input autoFocus placeholder="Buscar producto…" value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
+              style={{ marginLeft: "auto", padding: "0 14px", minWidth: 220, height: 44, borderRadius: 12, border: "1px solid var(--h421-gray-200)" }} />
+          )}
         </div>
 
         {/* Cuadrícula de productos */}
-        <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 14 }}>
+        <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 16 }}>
           {productosFiltrados.map((p) => (
             <ProductoCard key={p.id} producto={p} onSeleccionar={seleccionarProducto} />
           ))}
         </div>
 
-        {/* Barra inferior */}
-        <div style={{ display: "flex", gap: 10, padding: 14, background: "#fff", borderTop: "1px solid var(--h421-gray-200)" }}>
-          <button className="btn-grande" style={{ background: "var(--h421-gray-50)", padding: "0 18px" }}>🔍 Buscar</button>
-          <button className="btn-grande" style={{ background: "var(--h421-gray-50)", padding: "0 18px" }}>👤 Clientes</button>
-          <button className="btn-grande" style={{ background: "var(--h421-gray-50)", padding: "0 18px" }}>⏸ Suspender</button>
-          <button className="btn-grande" style={{ background: "#fef3c7", color: "#92400e", padding: "0 18px" }} onClick={() => setMostrarDescuento(true)}>% Descuento</button>
-          <button className="btn-grande" style={{ background: "#fee2e2", color: "var(--h421-red)", padding: "0 18px" }} onClick={() => useOrderStore.getState().limpiar()}>✕ Cancelar</button>
-          <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
-            <button
-              className="btn-grande"
-              disabled={items.length === 0 || enviando}
-              onClick={manejarEnviarCocina}
-              style={{ background: "var(--h421-blue)", color: "#fff", padding: "0 26px", fontSize: 16 }}
-            >
-              📨 {enviando ? "Enviando…" : "Enviar a cocina"}
-            </button>
-            <button
-              className="btn-grande"
-              disabled={!enviado}
-              onClick={() => setMostrarCobro(true)}
-              style={{ background: "var(--h421-green)", color: "#fff", padding: "0 26px", fontSize: 16 }}
-            >
-              💳 Cobrar
-            </button>
-          </div>
+        {aviso && <div style={{ padding: "4px 16px", fontSize: 13, color: "var(--h421-navy)" }}>{aviso}</div>}
+
+        {/* Barra inferior — acciones rápidas como íconos circulares + envío a cocina */}
+        <div style={{ display: "flex", alignItems: "center", gap: 18, padding: "12px 20px", background: "#fff", borderTop: "1px solid var(--h421-gray-200)" }}>
+          <AccionCircular icono="🔍" etiqueta="Buscar" color="var(--h421-blue)" onClick={() => setMostrarBusqueda((v) => !v)} />
+          <AccionCircular icono="🍽" etiqueta="Mesas" color="var(--h421-blue)" />
+          <AccionCircular icono="👤" etiqueta="Clientes" color="var(--h421-blue)" />
+          <AccionCircular icono="⏸" etiqueta="Suspender" color="var(--h421-gray-400)" />
+          <AccionCircular icono="%" etiqueta="Descuento" color="var(--h421-yellow)" onClick={() => setMostrarDescuento(true)} />
+          <AccionCircular icono="🗑" etiqueta="Eliminar" color="var(--h421-red)" onClick={() => useOrderStore.getState().limpiar()} />
+
+          <button
+            className="btn-grande"
+            disabled={items.length === 0 || enviando}
+            onClick={manejarEnviarCocina}
+            style={{ marginLeft: "auto", background: "var(--h421-navy)", color: "#fff", padding: "0 28px", fontSize: 16 }}
+          >
+            📨 {enviando ? "Enviando…" : "Enviar a cocina"}
+          </button>
         </div>
-        {aviso && <div style={{ padding: "6px 16px", fontSize: 13, color: "var(--h421-navy)" }}>{aviso}</div>}
       </div>
 
-      <PanelPedido mesaNombre={mesaNombre} />
+      <PanelPedido mesaNombre={mesaNombre} onCobrar={() => setMostrarCobro(true)} />
 
       {productoModal && (
         <ModalModificadores

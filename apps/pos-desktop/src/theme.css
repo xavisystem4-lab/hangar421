@@ -10,6 +10,14 @@
   --h421-blue: #2563eb;
   --h421-yellow: #f5a524;
   --h421-red: #dc2626;
+  /* paleta de categorías (píldoras de colores, estilo referencia) */
+  --h421-cat-1: #f5a524; /* Café — ámbar */
+  --h421-cat-2: #2563eb; /* Bebidas frías — azul */
+  --h421-cat-3: #e8734d; /* Panadería — naranja */
+  --h421-cat-4: #16a34a; /* Desayunos — verde */
+  --h421-cat-5: #dc2626; /* Comidas — rojo */
+  --h421-cat-6: #a855f7; /* Postres — morado */
+  --h421-cat-7: #0d9488; /* Extras — teal */
 }
 
 * { box-sizing: border-box; }
@@ -36,6 +44,18 @@ button {
 .btn-grande {
   min-height: 64px;
   font-size: 16px;
+}
+
+.pildora-categoria {
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 22px;
+  white-space: nowrap;
+  font-size: 14px;
+  transition: transform 0.1s ease;
+}
+.pildora-categoria:active {
+  transform: scale(0.96);
 }
 
 input, textarea, select {

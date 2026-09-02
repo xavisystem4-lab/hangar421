@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuthStore } from "../store/authStore";
+import logo from "../assets/logo-dark.png";
 
 export function Login() {
   const { loginCredenciales, error } = useAuthStore();
@@ -19,13 +20,13 @@ export function Login() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--h421-navy)" }}>
+    <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--h421-navy)" }}>
       <form
         onSubmit={(e) => { e.preventDefault(); entrar(); }}
         style={{ background: "#fff", padding: 40, borderRadius: 20, width: 380, textAlign: "center" }}
       >
-        <h1 style={{ color: "var(--h421-navy)", letterSpacing: 1 }}>HANGAR 421</h1>
-        <p style={{ color: "var(--h421-gray-400)", marginTop: -8 }}>Punto de venta</p>
+        <img src={logo} alt="HANGAR 421" style={{ height: 48, width: "auto", margin: "0 auto" }} />
+        <p style={{ color: "var(--h421-gray-400)", marginTop: 10 }}>Punto de venta</p>
 
         <input placeholder="Correo" value={email} onChange={(e) => setEmail(e.target.value)}
           style={{ width: "100%", padding: 14, marginTop: 20, borderRadius: 10, border: "1px solid var(--h421-gray-200)" }} />

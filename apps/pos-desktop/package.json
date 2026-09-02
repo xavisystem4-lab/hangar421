@@ -49,6 +49,11 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "xavisystem4-lab",
+      "repo": "hangar421"
     }
   }
 }

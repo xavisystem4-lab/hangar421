@@ -1,13 +1,15 @@
 node_modules/
 dist/
-build/
 out/
+# nota: NO se ignora build/ en general — apps/pos-desktop/build/ guarda el icon.ico
+# fuente que usa electron-builder (no es un directorio de salida de build).
 .env
 .env.local
 *.log
 .DS_Store
 .turbo/
 coverage/
+*.tsbuildinfo
 
 # Electron
 apps/pos-desktop/release/
