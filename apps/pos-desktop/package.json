@@ -38,6 +38,7 @@
   "build": {
     "appId": "com.hangar421.pos",
     "productName": "HANGAR 421 POS",
+    "electronVersion": "32.1.2",
     "files": ["dist/**/*", "dist-electron/**/*"],
     "directories": { "output": "release" },
     "win": {
