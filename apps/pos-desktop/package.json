@@ -43,7 +43,8 @@
     "electronVersion": "32.1.2",
     "files": [
       "dist/**/*",
-      "dist-electron/**/*"
+      "dist-electron/**/*",
+      "!node_modules/@hangar421/**"
     ],
     "extraResources": [
       {
