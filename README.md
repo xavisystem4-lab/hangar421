@@ -2,6 +2,7 @@
 
 [![Repo en GitHub](https://img.shields.io/badge/GitHub-hangar421-0B1E33?logo=github&logoColor=white)](https://github.com/xavisystem4-lab/hangar421)
 [![CI](https://github.com/xavisystem4-lab/hangar421/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/xavisystem4-lab/hangar421/actions/workflows/ci.yml)
+[![License: Proprietary](https://img.shields.io/badge/license-proprietary-E8A33D.svg)](LICENSE)
 
 Plataforma de punto de venta para cafeterías, **offline-first** y **multisucursal**, con POS
 Windows táctil, app Android para meseros, pantalla de cocina en tiempo real y CRM/panel
@@ -146,5 +147,5 @@ npm test --workspace=apps/backend      # 4 pruebas: idempotencia y reintentos de
 
 ## Licencia y autoría
 
-Proyecto entregado como base de implementación para HANGAR 421. Ajusta la licencia según las
-necesidades del negocio antes de distribuir.
+Software propietario — todos los derechos reservados. Ver [`LICENSE`](LICENSE). El código es de
+uso interno de HANGAR 421; cualquier uso fuera de ese alcance requiere autorización expresa.
