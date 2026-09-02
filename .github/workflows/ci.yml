@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  shared:
+    name: shared — typecheck & tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm install --workspace=packages/shared --no-audit --no-fund
+      - run: npm run typecheck --workspace=packages/shared
+      - run: npm test --workspace=packages/shared
+
+  backend:
+    name: backend — typecheck & tests
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: "postgresql://ci:ci@localhost:5432/hangar421_ci?schema=public"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm install --workspace=apps/backend --workspace=packages/shared --no-audit --no-fund
+      - run: npx prisma generate --schema=apps/backend/prisma/schema.prisma
+      - run: npm run typecheck --workspace=apps/backend
+      - run: npm test --workspace=apps/backend
+
+  kitchen-display:
+    name: kitchen-display — typecheck & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm install --workspace=apps/kitchen-display --workspace=packages/shared --no-audit --no-fund
+      - run: npm run typecheck --workspace=apps/kitchen-display
+      - run: npm run build --workspace=apps/kitchen-display
+
+  crm-web:
+    name: crm-web — typecheck & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm install --workspace=apps/crm-web --workspace=packages/shared --no-audit --no-fund
+      - run: npm run typecheck --workspace=apps/crm-web
+      - run: npm run build --workspace=apps/crm-web
+
+  pos-desktop:
+    name: pos-desktop — typecheck & renderer build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm install --workspace=apps/pos-desktop --workspace=packages/shared --no-audit --no-fund
+      - run: npm run typecheck --workspace=apps/pos-desktop
+      # El instalador .exe requiere Windows/electron-builder (ver docs/installation.md);
+      # aquí solo se valida que el renderer (React) compile su bundle de producción.
+      - run: npx vite build
+        working-directory: apps/pos-desktop
+
+  waiter-mobile:
+    name: waiter-mobile — typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm install --workspace=apps/waiter-mobile --workspace=packages/shared --no-audit --no-fund
+      - run: npm run typecheck --workspace=apps/waiter-mobile

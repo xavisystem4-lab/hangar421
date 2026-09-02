@@ -1,6 +1,7 @@
 # HANGAR 421 — Plataforma POS multisucursal
 
 [![Repo en GitHub](https://img.shields.io/badge/GitHub-hangar421-0B1E33?logo=github&logoColor=white)](https://github.com/xavisystem4-lab/hangar421)
+[![CI](https://github.com/xavisystem4-lab/hangar421/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/xavisystem4-lab/hangar421/actions/workflows/ci.yml)
 
 Plataforma de punto de venta para cafeterías, **offline-first** y **multisucursal**, con POS
 Windows táctil, app Android para meseros, pantalla de cocina en tiempo real y CRM/panel
