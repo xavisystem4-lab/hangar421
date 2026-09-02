@@ -103,9 +103,10 @@ computadora, cambia `EXPO_PUBLIC_API_URL`/`extra.apiUrl` en `apps/waiter-mobile/
 
 **Ya automatizado**: el workflow [`release-pos.yml`](../.github/workflows/release-pos.yml)
 compila el instalador en un runner `windows-latest` y lo publica como
-[GitHub Release](https://github.com/xavisystem4-lab/hangar421/releases/latest) — se dispara
-manualmente (`gh workflow run release-pos.yml` o desde la pestaña Actions) o al empujar un tag
-`pos-v*`. El ícono ya está incluido (`apps/pos-desktop/build/icon.ico`, generado a partir del
+[GitHub Release](https://github.com/xavisystem4-lab/hangar421/releases/tag/v0.1.0) (tag `vX.X.X`)
+— se dispara manualmente (`gh workflow run release-pos.yml` o desde la pestaña Actions) o al
+empujar un tag `pos-v*`. Nota: `/releases/latest` no sirve aquí porque el APK de meseros publica
+en su propia serie de tags (`waiter-vX.X.X`) y puede ser más reciente — usa el tag `vX.X.X` exacto. El ícono ya está incluido (`apps/pos-desktop/build/icon.ico`, generado a partir del
 logotipo — ver `assets/logo/README.md`).
 
 Para compilar localmente en su lugar (Windows, o cross-compilación configurada):
