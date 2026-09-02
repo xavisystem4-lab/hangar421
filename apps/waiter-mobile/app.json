@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "HANGAR 421 Meseros",
+    "slug": "hangar421-waiter",
+    "version": "0.1.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#0B1E33"
+    },
+    "android": {
+      "package": "com.hangar421.waiter",
+      "adaptiveIcon": {
+        "backgroundColor": "#0B1E33"
+      },
+      "permissions": ["INTERNET", "ACCESS_NETWORK_STATE"]
+    },
+    "extra": {
+      "apiUrl": "http://localhost:3000/api/v1",
+      "wsUrl": "http://localhost:3000"
+    }
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "name": "hangar421",
+  "version": "0.1.0",
+  "private": true,
+  "description": "HANGAR 421 — Plataforma POS multisucursal offline-first para cafeterías",
+  "workspaces": [
+    "packages/*",
+    "apps/backend",
+    "apps/pos-desktop",
+    "apps/kitchen-display",
+    "apps/crm-web",
+    "apps/waiter-mobile"
+  ],
+  "scripts": {
+    "dev:backend": "npm run start:dev --workspace=apps/backend",
+    "dev:pos": "npm run dev --workspace=apps/pos-desktop",
+    "dev:kitchen": "npm run dev --workspace=apps/kitchen-display",
+    "dev:crm": "npm run dev --workspace=apps/crm-web",
+    "dev:waiter": "npm run start --workspace=apps/waiter-mobile",
+    "db:migrate": "npm run db:migrate --workspace=apps/backend",
+    "db:seed": "npm run db:seed --workspace=apps/backend",
+    "build:shared": "npm run build --workspace=packages/shared",
+    "build:backend": "npm run build --workspace=apps/backend",
+    "build:pos": "npm run build --workspace=apps/pos-desktop",
+    "build:pos:win": "npm run dist:win --workspace=apps/pos-desktop",
+    "build:crm": "npm run build --workspace=apps/crm-web",
+    "build:waiter:apk": "npm run build:apk --workspace=apps/waiter-mobile"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "allowScripts": {
+    "@nestjs/core@10.4.22": true,
+    "@prisma/client@5.22.0": true,
+    "@prisma/engines@5.22.0": true,
+    "bcrypt@5.1.1": true,
+    "fsevents@2.3.3": true,
+    "prisma@5.22.0": true,
+    "esbuild@0.21.5": true,
+    "better-sqlite3@11.10.0": true,
+    "electron@32.3.3": true
+  }
+}

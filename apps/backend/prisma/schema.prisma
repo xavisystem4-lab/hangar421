@@ -1,0 +1,750 @@
+// ============================================================================
+// HANGAR 421 — Esquema de datos central (PostgreSQL, cloud)
+// Jerarquía: Empresa -> Sucursal -> Area/Estación -> Dispositivo -> Usuario -> Operación
+// Cada terminal local (POS Windows, tablets) replica un subconjunto en SQLite
+// y sincroniza contra este esquema vía /sync (ver docs/sync-flows.md).
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum RolUsuario {
+  ADMIN_CORPORATIVO
+  ADMIN_SUCURSAL
+  CAJERO
+  MESERO
+  COCINA
+  SUPERVISOR
+}
+
+enum TipoArea {
+  SALON
+  BARRA
+  COCINA
+  CAJA
+  ESTACION_COCINA
+  ALMACEN
+}
+
+enum TipoDispositivo {
+  POS_WINDOWS
+  TABLET_MESERO
+  CELULAR_MESERO
+  PANTALLA_COCINA
+  OTRO
+}
+
+enum EstadoMesa {
+  LIBRE
+  OCUPADA
+  RESERVADA
+  POR_COBRAR
+  PEDIDO_LISTO
+}
+
+enum TipoPedido {
+  MESA
+  MOSTRADOR
+  DOMICILIO
+}
+
+enum EstadoPedido {
+  ABIERTO
+  ENVIADO
+  EN_PREPARACION
+  LISTO
+  ENTREGADO
+  POR_COBRAR
+  COBRADO
+  CANCELADO
+}
+
+enum EstadoPedidoItem {
+  NUEVO
+  EN_PREPARACION
+  LISTO
+  ENTREGADO
+  CANCELADO
+}
+
+enum CanalOrigen {
+  POS_WINDOWS
+  APP_MESERO
+  CRM
+}
+
+enum MetodoPago {
+  EFECTIVO
+  TARJETA
+  TRANSFERENCIA
+  QR
+  OTRO
+}
+
+enum TipoMovimientoInventario {
+  ENTRADA
+  SALIDA
+  AJUSTE
+  MERMA
+  CONTEO
+  TRASPASO_SALIDA
+  TRASPASO_ENTRADA
+}
+
+enum EstadoTraspaso {
+  SOLICITADO
+  AUTORIZADO
+  ENVIADO
+  RECIBIDO
+  VALIDADO
+  CANCELADO
+}
+
+enum EstadoTurno {
+  ABIERTO
+  CERRADO
+}
+
+enum SyncStatus {
+  PENDING
+  SYNCED
+  CONFLICT
+  ERROR
+}
+
+enum SyncOperacion {
+  CREATE
+  UPDATE
+  DELETE
+}
+
+enum TipoDescuento {
+  MONTO
+  PORCENTAJE
+}
+
+// ---------------------------------------------------------------------------
+// Jerarquía organizacional
+// ---------------------------------------------------------------------------
+
+model Empresa {
+  id        String   @id @default(uuid())
+  nombre    String
+  rfc       String?
+  logoUrl   String?
+  configJson Json?   @default("{}")
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sucursales   Sucursal[]
+  usuarios     Usuario[]
+  categorias   CategoriaProducto[]
+  productos    Producto[]
+  modificadores Modificador[]
+  insumos      Insumo[]
+  clientes     Cliente[]
+  auditLogs    AuditLog[]
+
+  @@map("empresas")
+}
+
+model Sucursal {
+  id          String   @id @default(uuid())
+  empresaId   String
+  nombre      String
+  direccion   String?
+  horarioApertura String? // "07:00"
+  horarioCierre   String? // "21:00"
+  timezone    String   @default("America/Mexico_City")
+  moneda      String   @default("MXN")
+  tasaImpuesto Decimal @default(0.16) @db.Decimal(5, 4)
+  configJson  Json?    @default("{}")
+  activo      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  empresa     Empresa  @relation(fields: [empresaId], references: [id])
+
+  areas             Area[]
+  dispositivos      Dispositivo[]
+  cajas             Caja[]
+  mesas             Mesa[]
+  usuariosSucursal  UsuarioSucursal[]
+  productosSucursal ProductoSucursal[]
+  inventario        InventarioSucursal[]
+  pedidos           Pedido[]
+  turnos            Turno[]
+  movimientosInv    MovimientoInventario[]
+  traspasosOrigen   Traspaso[] @relation("TraspasoOrigen")
+  traspasosDestino  Traspaso[] @relation("TraspasoDestino")
+  auditLogs         AuditLog[]
+
+  @@index([empresaId])
+  @@map("sucursales")
+}
+
+model Area {
+  id         String   @id @default(uuid())
+  sucursalId String
+  nombre     String
+  tipo       TipoArea
+  descripcion String?
+  activo     Boolean  @default(true)
+
+  sucursal   Sucursal @relation(fields: [sucursalId], references: [id])
+  mesas       Mesa[]
+  dispositivos Dispositivo[]
+
+  @@index([sucursalId])
+  @@map("areas")
+}
+
+model Dispositivo {
+  id             String   @id @default(uuid())
+  sucursalId     String
+  areaId         String?
+  nombre         String
+  tipo           TipoDispositivo
+  identificador  String   @unique // huella única del hardware/instalación
+  ultimaConexion DateTime?
+  activo         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  sucursal  Sucursal @relation(fields: [sucursalId], references: [id])
+  area      Area?    @relation(fields: [areaId], references: [id])
+
+  pedidos       Pedido[]
+  syncItems     SyncQueueItem[]
+  auditLogs     AuditLog[]
+
+  @@index([sucursalId])
+  @@map("dispositivos")
+}
+
+model Usuario {
+  id           String   @id @default(uuid())
+  empresaId    String
+  nombre       String
+  email        String?  @unique
+  passwordHash String?
+  pinHash      String?
+  activo       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  empresa      Empresa  @relation(fields: [empresaId], references: [id])
+
+  sucursales     UsuarioSucursal[]
+  pedidosMesero  Pedido[] @relation("PedidoMesero")
+  pedidosCajero  Pedido[] @relation("PedidoCajero")
+  turnos         Turno[]
+  auditLogs      AuditLog[]
+  refreshTokens  RefreshToken[]
+
+  @@index([empresaId])
+  @@map("usuarios")
+}
+
+model UsuarioSucursal {
+  id          String     @id @default(uuid())
+  usuarioId   String
+  sucursalId  String
+  rol         RolUsuario
+  permisosJson Json?     @default("{}")
+  activo      Boolean    @default(true)
+
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id])
+  sucursal  Sucursal @relation(fields: [sucursalId], references: [id])
+
+  @@unique([usuarioId, sucursalId])
+  @@index([sucursalId])
+  @@map("usuarios_sucursales")
+}
+
+model RefreshToken {
+  id         String   @id @default(uuid())
+  usuarioId  String
+  tokenHash  String   @unique
+  dispositivoId String?
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+
+  @@index([usuarioId])
+  @@map("refresh_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Catálogo
+// ---------------------------------------------------------------------------
+
+model CategoriaProducto {
+  id        String   @id @default(uuid())
+  empresaId String
+  nombre    String
+  orden     Int      @default(0)
+  icono     String?
+  color     String?
+  activo    Boolean  @default(true)
+
+  empresa   Empresa   @relation(fields: [empresaId], references: [id])
+  productos Producto[]
+
+  @@index([empresaId])
+  @@map("categorias_producto")
+}
+
+model Producto {
+  id           String   @id @default(uuid())
+  empresaId    String
+  categoriaId  String
+  nombre       String
+  descripcion  String?
+  imagenUrl    String?
+  precioBase   Decimal  @db.Decimal(10, 2)
+  activo       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  empresa     Empresa            @relation(fields: [empresaId], references: [id])
+  categoria   CategoriaProducto  @relation(fields: [categoriaId], references: [id])
+
+  sucursales       ProductoSucursal[]
+  modificadores    ProductoModificador[]
+  receta           RecetaItem[]
+  pedidoItems      PedidoItem[]
+
+  @@index([empresaId])
+  @@index([categoriaId])
+  @@map("productos")
+}
+
+model ProductoSucursal {
+  id          String   @id @default(uuid())
+  productoId  String
+  sucursalId  String
+  precio      Decimal  @db.Decimal(10, 2)
+  disponible  Boolean  @default(true)
+  stockControlado Boolean @default(false)
+
+  producto  Producto @relation(fields: [productoId], references: [id])
+  sucursal  Sucursal @relation(fields: [sucursalId], references: [id])
+
+  @@unique([productoId, sucursalId])
+  @@index([sucursalId])
+  @@map("productos_sucursal")
+}
+
+model Modificador {
+  id          String   @id @default(uuid())
+  empresaId   String
+  nombre      String
+  tipo        String   @default("SELECCION_UNICA") // SELECCION_UNICA | MULTIPLE
+  obligatorio Boolean  @default(false)
+
+  empresa  Empresa @relation(fields: [empresaId], references: [id])
+  opciones OpcionModificador[]
+  productos ProductoModificador[]
+
+  @@index([empresaId])
+  @@map("modificadores")
+}
+
+model OpcionModificador {
+  id            String  @id @default(uuid())
+  modificadorId String
+  nombre        String
+  precioExtra   Decimal @default(0) @db.Decimal(10, 2)
+  orden         Int     @default(0)
+
+  modificador Modificador @relation(fields: [modificadorId], references: [id])
+  pedidoItemModificadores PedidoItemModificador[]
+
+  @@index([modificadorId])
+  @@map("opciones_modificador")
+}
+
+model ProductoModificador {
+  id            String @id @default(uuid())
+  productoId    String
+  modificadorId String
+  orden         Int    @default(0)
+
+  producto    Producto    @relation(fields: [productoId], references: [id])
+  modificador Modificador @relation(fields: [modificadorId], references: [id])
+
+  @@unique([productoId, modificadorId])
+  @@map("producto_modificadores")
+}
+
+// ---------------------------------------------------------------------------
+// Salón / mesas
+// ---------------------------------------------------------------------------
+
+model Mesa {
+  id         String     @id @default(uuid())
+  sucursalId String
+  areaId     String?
+  nombre     String
+  capacidad  Int        @default(2)
+  estado     EstadoMesa @default(LIBRE)
+
+  sucursal Sucursal @relation(fields: [sucursalId], references: [id])
+  area     Area?    @relation(fields: [areaId], references: [id])
+  pedidos  Pedido[]
+
+  @@index([sucursalId])
+  @@map("mesas")
+}
+
+// ---------------------------------------------------------------------------
+// Caja y turnos
+// ---------------------------------------------------------------------------
+
+model Caja {
+  id         String  @id @default(uuid())
+  sucursalId String
+  nombre     String
+  activo     Boolean @default(true)
+
+  sucursal Sucursal @relation(fields: [sucursalId], references: [id])
+  turnos   Turno[]
+
+  @@index([sucursalId])
+  @@map("cajas")
+}
+
+model Turno {
+  id                String    @id @default(uuid())
+  sucursalId        String
+  cajaId            String
+  usuarioId         String
+  montoInicial      Decimal   @db.Decimal(10, 2)
+  montoFinalDeclarado Decimal? @db.Decimal(10, 2)
+  montoFinalSistema Decimal?  @db.Decimal(10, 2)
+  diferencia        Decimal?  @db.Decimal(10, 2)
+  estado            EstadoTurno @default(ABIERTO)
+  fechaApertura     DateTime  @default(now())
+  fechaCierre       DateTime?
+
+  sucursal Sucursal @relation(fields: [sucursalId], references: [id])
+  caja     Caja     @relation(fields: [cajaId], references: [id])
+  usuario  Usuario  @relation(fields: [usuarioId], references: [id])
+
+  @@index([sucursalId])
+  @@index([cajaId])
+  @@map("turnos")
+}
+
+// ---------------------------------------------------------------------------
+// Pedidos
+// ---------------------------------------------------------------------------
+
+model Pedido {
+  id            String       @id @default(uuid()) // generado en cliente (UUID v7)
+  empresaId     String
+  sucursalId    String
+  mesaId        String?
+  clienteId     String?
+  folio         String
+  tipo          TipoPedido
+  numComensales Int?         @default(1)
+  meseroId      String?
+  cajeroId      String?
+  dispositivoId String?
+  canalOrigen   CanalOrigen
+  estado        EstadoPedido @default(ABIERTO)
+  notasGenerales String?
+  subtotal      Decimal      @default(0) @db.Decimal(10, 2)
+  impuesto      Decimal      @default(0) @db.Decimal(10, 2)
+  descuentoTotal Decimal     @default(0) @db.Decimal(10, 2)
+  total         Decimal      @default(0) @db.Decimal(10, 2)
+
+  syncStatus      SyncStatus @default(SYNCED)
+  idempotencyKey  String?    @unique
+  createdAtLocal  DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  sucursal Sucursal      @relation(fields: [sucursalId], references: [id])
+  mesa     Mesa?         @relation(fields: [mesaId], references: [id])
+  cliente  Cliente?      @relation(fields: [clienteId], references: [id])
+  mesero   Usuario?      @relation("PedidoMesero", fields: [meseroId], references: [id])
+  cajero   Usuario?      @relation("PedidoCajero", fields: [cajeroId], references: [id])
+  dispositivo Dispositivo? @relation(fields: [dispositivoId], references: [id])
+
+  items       PedidoItem[]
+  pagos       Pago[]
+  descuentos  Descuento[]
+
+  @@unique([sucursalId, folio])
+  @@index([sucursalId, estado])
+  @@index([mesaId])
+  @@map("pedidos")
+}
+
+model PedidoItem {
+  id             String            @id @default(uuid())
+  pedidoId       String
+  productoId     String
+  cantidad       Int               @default(1)
+  precioUnitario Decimal           @db.Decimal(10, 2)
+  notas          String?
+  estado         EstadoPedidoItem  @default(NUEVO)
+  estacionCocinaId String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  pedido    Pedido   @relation(fields: [pedidoId], references: [id])
+  producto  Producto @relation(fields: [productoId], references: [id])
+
+  modificadores PedidoItemModificador[]
+
+  @@index([pedidoId])
+  @@index([estado])
+  @@map("pedido_items")
+}
+
+model PedidoItemModificador {
+  id                  String @id @default(uuid())
+  pedidoItemId        String
+  opcionModificadorId String
+  precioExtra         Decimal @db.Decimal(10, 2)
+
+  pedidoItem        PedidoItem        @relation(fields: [pedidoItemId], references: [id])
+  opcionModificador OpcionModificador @relation(fields: [opcionModificadorId], references: [id])
+
+  @@map("pedido_item_modificadores")
+}
+
+model Descuento {
+  id            String       @id @default(uuid())
+  pedidoId      String
+  tipo          TipoDescuento
+  valor         Decimal      @db.Decimal(10, 2)
+  montoAplicado Decimal      @db.Decimal(10, 2)
+  motivo        String
+  autorizadoPorId String?
+  createdAt     DateTime     @default(now())
+
+  pedido Pedido @relation(fields: [pedidoId], references: [id])
+
+  @@index([pedidoId])
+  @@map("descuentos")
+}
+
+model Pago {
+  id         String     @id @default(uuid())
+  pedidoId   String
+  metodo     MetodoPago
+  monto      Decimal    @db.Decimal(10, 2)
+  referencia String?
+  usuarioId  String?
+  createdAt  DateTime   @default(now())
+
+  pedido Pedido @relation(fields: [pedidoId], references: [id])
+
+  @@index([pedidoId])
+  @@map("pagos")
+}
+
+// ---------------------------------------------------------------------------
+// Inventario
+// ---------------------------------------------------------------------------
+
+model Insumo {
+  id            String  @id @default(uuid())
+  empresaId     String
+  nombre        String
+  unidadMedida  String  // "g", "ml", "pz", "kg", "l"
+  costoUnitario Decimal @default(0) @db.Decimal(10, 4)
+  activo        Boolean @default(true)
+
+  empresa Empresa @relation(fields: [empresaId], references: [id])
+
+  receta        RecetaItem[]
+  inventario    InventarioSucursal[]
+  movimientos   MovimientoInventario[]
+  traspasoItems TraspasoItem[]
+
+  @@index([empresaId])
+  @@map("insumos")
+}
+
+model RecetaItem {
+  id         String  @id @default(uuid())
+  productoId String
+  insumoId   String
+  cantidad   Decimal @db.Decimal(10, 4)
+
+  producto Producto @relation(fields: [productoId], references: [id])
+  insumo   Insumo   @relation(fields: [insumoId], references: [id])
+
+  @@unique([productoId, insumoId])
+  @@map("receta_items")
+}
+
+model InventarioSucursal {
+  id         String  @id @default(uuid())
+  sucursalId String
+  insumoId   String
+  existencia Decimal @default(0) @db.Decimal(12, 4)
+  minimo     Decimal @default(0) @db.Decimal(12, 4)
+  maximo     Decimal? @db.Decimal(12, 4)
+
+  sucursal Sucursal @relation(fields: [sucursalId], references: [id])
+  insumo   Insumo   @relation(fields: [insumoId], references: [id])
+
+  @@unique([sucursalId, insumoId])
+  @@index([sucursalId])
+  @@map("inventario_sucursal")
+}
+
+model MovimientoInventario {
+  id            String                   @id @default(uuid())
+  sucursalId    String
+  insumoId      String
+  tipo          TipoMovimientoInventario
+  cantidad      Decimal                  @db.Decimal(12, 4)
+  motivo        String?
+  referenciaId  String?                  // p.ej. pedidoId que generó la salida
+  usuarioId     String?
+  dispositivoId String?
+  syncStatus    SyncStatus               @default(SYNCED)
+  idempotencyKey String?                 @unique
+  createdAt     DateTime                 @default(now())
+
+  sucursal Sucursal @relation(fields: [sucursalId], references: [id])
+  insumo   Insumo   @relation(fields: [insumoId], references: [id])
+
+  @@index([sucursalId, insumoId])
+  @@map("movimientos_inventario")
+}
+
+// ---------------------------------------------------------------------------
+// Traspasos entre sucursales
+// ---------------------------------------------------------------------------
+
+model Traspaso {
+  id                 String         @id @default(uuid())
+  sucursalOrigenId   String
+  sucursalDestinoId  String
+  estado             EstadoTraspaso @default(SOLICITADO)
+  usuarioSolicitaId  String?
+  usuarioAutorizaId  String?
+  usuarioEnviaId     String?
+  usuarioRecibeId    String?
+  fechaSolicitud     DateTime       @default(now())
+  fechaAutorizacion  DateTime?
+  fechaEnvio         DateTime?
+  fechaRecepcion     DateTime?
+  fechaValidacion    DateTime?
+  notas              String?
+
+  sucursalOrigen  Sucursal @relation("TraspasoOrigen", fields: [sucursalOrigenId], references: [id])
+  sucursalDestino Sucursal @relation("TraspasoDestino", fields: [sucursalDestinoId], references: [id])
+
+  items TraspasoItem[]
+
+  @@index([sucursalOrigenId])
+  @@index([sucursalDestinoId])
+  @@map("traspasos")
+}
+
+model TraspasoItem {
+  id                  String  @id @default(uuid())
+  traspasoId          String
+  insumoId            String
+  cantidadSolicitada  Decimal @db.Decimal(12, 4)
+  cantidadEnviada     Decimal? @db.Decimal(12, 4)
+  cantidadRecibida    Decimal? @db.Decimal(12, 4)
+  diferencia          Decimal? @db.Decimal(12, 4)
+
+  traspaso Traspaso @relation(fields: [traspasoId], references: [id])
+  insumo   Insumo   @relation(fields: [insumoId], references: [id])
+
+  @@map("traspaso_items")
+}
+
+// ---------------------------------------------------------------------------
+// Clientes (CRM)
+// ---------------------------------------------------------------------------
+
+model Cliente {
+  id             String   @id @default(uuid())
+  empresaId      String
+  nombre         String
+  telefono       String?
+  email          String?
+  puntosLealtad  Int      @default(0)
+  preferenciasJson Json?  @default("{}")
+  createdAt      DateTime @default(now())
+
+  empresa Empresa  @relation(fields: [empresaId], references: [id])
+  pedidos Pedido[]
+
+  @@index([empresaId])
+  @@map("clientes")
+}
+
+// ---------------------------------------------------------------------------
+// Auditoría y sincronización
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  empresaId      String?
+  sucursalId     String?
+  usuarioId      String?
+  dispositivoId  String?
+  entidad        String
+  entidadId      String?
+  accion         String
+  datosAnteriores Json?
+  datosNuevos    Json?
+  ip             String?
+  createdAt      DateTime @default(now())
+
+  empresa     Empresa?     @relation(fields: [empresaId], references: [id])
+  sucursal    Sucursal?    @relation(fields: [sucursalId], references: [id])
+  usuario     Usuario?     @relation(fields: [usuarioId], references: [id])
+  dispositivo Dispositivo? @relation(fields: [dispositivoId], references: [id])
+
+  @@index([empresaId, createdAt])
+  @@index([sucursalId, createdAt])
+  @@index([entidad, entidadId])
+  @@map("audit_logs")
+}
+
+model SyncQueueItem {
+  id             String        @id @default(uuid())
+  dispositivoId  String
+  entidad        String
+  entidadId      String
+  operacion      SyncOperacion
+  payload        Json
+  idempotencyKey String        @unique
+  estado         SyncStatus    @default(PENDING)
+  intentos       Int           @default(0)
+  ultimoError    String?
+  createdAt      DateTime      @default(now())
+  syncedAt       DateTime?
+
+  dispositivo Dispositivo @relation(fields: [dispositivoId], references: [id])
+
+  @@index([dispositivoId, estado])
+  @@map("sync_queue_items")
+}

@@ -1,0 +1,36 @@
+node_modules/
+dist/
+build/
+out/
+.env
+.env.local
+*.log
+.DS_Store
+.turbo/
+coverage/
+
+# Electron
+apps/pos-desktop/release/
+apps/pos-desktop/dist-electron/
+
+# SQLite locales
+*.sqlite
+*.sqlite-journal
+*.db
+
+# Prisma
+apps/backend/prisma/dev.db*
+
+# Expo / React Native
+apps/waiter-mobile/.expo/
+apps/waiter-mobile/android/
+apps/waiter-mobile/ios/
+*.apk
+*.aab
+
+# Next.js
+apps/crm-web/.next/
+
+# IDE
+.vscode/
+.idea/

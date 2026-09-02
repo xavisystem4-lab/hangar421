@@ -1,0 +1,42 @@
+version: "3.9"
+
+# Stack local de desarrollo: Postgres cloud simulado + backend.
+# Cada sucursal corre su propio POS/kitchen con SQLite local (no va aquí).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: hangar421-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hangar
+      POSTGRES_PASSWORD: hangar_dev_pw
+      POSTGRES_DB: hangar421
+    ports:
+      - "5432:5432"
+    volumes:
+      - hangar421_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hangar -d hangar421"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ../../apps/backend
+      dockerfile: Dockerfile
+    container_name: hangar421-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ../../.env
+    environment:
+      DATABASE_URL: "postgresql://hangar:hangar_dev_pw@postgres:5432/hangar421?schema=public"
+    ports:
+      - "3000:3000"
+
+volumes:
+  hangar421_pg_data:
