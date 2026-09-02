@@ -121,17 +121,25 @@ para habilitar auto-actualización apuntando a un feed de releases (configurar `
 
 ## 9. Generar el APK Android
 
+**Ya automatizado**: el workflow [`release-waiter-apk.yml`](../.github/workflows/release-waiter-apk.yml)
+genera el proyecto nativo (`expo prebuild`) y lo compila con Gradle en un runner Ubuntu — sin
+necesitar cuenta de Expo/EAS — y lo publica como
+[GitHub Release](https://github.com/xavisystem4-lab/hangar421/releases). Se dispara manualmente
+(`gh workflow run release-waiter-apk.yml`) o al empujar un tag `waiter-v*`.
+
+Para compilar localmente en su lugar (requiere Android SDK + JDK 17 instalados):
+
 ```bash
-cd apps/waiter-mobile
-npx eas-cli build --platform android --profile preview --local
+npm run build:apk --workspace=apps/waiter-mobile
+# equivale a: expo prebuild --platform android --non-interactive && cd android && ./gradlew assembleDebug
 ```
 
-- Requiere una cuenta Expo/EAS (`npx eas login`) o build local con Android SDK instalado.
-- El perfil `preview` genera un `.apk` firmado con una keystore de desarrollo autogenerada,
-  listo para distribución interna (instalación directa en tablets/celulares, sin pasar por
-  Play Store). Para producción firmada con tu propia keystore, configura `eas.json`
-  (`eas build:configure`) y usa `credentials.json` — documentado en la
-  [guía oficial de EAS](https://docs.expo.dev/build/introduction/).
+Genera un `.apk` firmado con la keystore de depuración autogenerada por Gradle — válido para
+instalación directa en tablets/celulares (distribución interna, sin pasar por Play Store).
+Para producción firmada con tu propia keystore, usa el flujo de EAS
+(`npm run build:apk:eas --workspace=apps/waiter-mobile`, requiere `npx eas login` y
+`eas build:configure` — documentado en la [guía oficial de EAS](https://docs.expo.dev/build/introduction/))
+o configura `signingConfigs` en `android/app/build.gradle` tras el `prebuild`.
 
 ## 10. Recuperación ante fallas
 

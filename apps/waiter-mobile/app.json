@@ -11,7 +11,9 @@
     },
     "android": {
       "package": "com.hangar421.waiter",
+      "versionCode": 1,
       "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0B1E33"
       },
       "permissions": ["INTERNET", "ACCESS_NETWORK_STATE"]

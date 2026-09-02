@@ -1,0 +1,64 @@
+name: Release Waiter APK
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "waiter-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-android-apk:
+    name: Build .apk (expo prebuild + gradle)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Instalar dependencias (waiter-mobile + shared)
+        run: npm install --workspace=apps/waiter-mobile --workspace=packages/shared --no-audit --no-fund
+
+      - name: Leer versión de la app
+        id: version
+        run: echo "version=$(node -p "require('./apps/waiter-mobile/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Generar el proyecto nativo de Android (expo prebuild)
+        working-directory: apps/waiter-mobile
+        run: npx expo prebuild --platform android --non-interactive
+
+      - name: Compilar el .apk (debug, firmado con la keystore de depuración de Gradle)
+        working-directory: apps/waiter-mobile/android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Renombrar el .apk con la versión
+        working-directory: apps/waiter-mobile/android/app/build/outputs/apk/debug
+        run: mv app-debug.apk HANGAR-421-Meseros-${{ steps.version.outputs.version }}.apk
+
+      - name: Publicar como GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: waiter-v${{ steps.version.outputs.version }}
+          name: HANGAR 421 Meseros v${{ steps.version.outputs.version }}
+          body: |
+            APK de la app de meseros HANGAR 421 (compilado automáticamente vía GitHub Actions —
+            `expo prebuild` + Gradle, firmado con la keystore de depuración; listo para
+            distribución interna e instalación directa en tablets/celulares Android).
+
+            Para producción, firmar con una keystore propia — ver `docs/installation.md` §9.
+          files: apps/waiter-mobile/android/app/build/outputs/apk/debug/HANGAR-421-Meseros-${{ steps.version.outputs.version }}.apk
+          draft: false

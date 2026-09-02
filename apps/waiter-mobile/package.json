@@ -6,7 +6,9 @@
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
-    "build:apk": "eas build --platform android --profile preview --local",
+    "android:prebuild": "expo prebuild --platform android --non-interactive",
+    "build:apk": "npm run android:prebuild && cd android && ./gradlew assembleDebug",
+    "build:apk:eas": "eas build --platform android --profile preview --local",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
