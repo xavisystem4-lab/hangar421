@@ -27,6 +27,11 @@ jobs:
       - name: Instalar dependencias (pos-desktop + backend + shared)
         run: npm install --workspace=apps/pos-desktop --workspace=apps/backend --workspace=packages/shared --no-audit --no-fund
 
+      - name: Generar el cliente de Prisma
+        run: npx prisma generate --schema=apps/backend/prisma/schema.prisma
+        env:
+          DATABASE_URL: "postgresql://ci:ci@localhost:5432/hangar421_ci?schema=public"
+
       - name: Compilar backend
         run: npm run build --workspace=apps/backend
 
