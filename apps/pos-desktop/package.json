@@ -43,7 +43,8 @@
     "electronVersion": "32.1.2",
     "files": [
       "dist/**/*",
-      "dist-electron/**/*"
+      "dist-electron/**/*",
+      "build/icon.ico"
     ],
     "extraResources": [
       {
@@ -55,11 +56,7 @@
     "directories": {
       "output": "release"
     },
-    "asarUnpack": [
-      "**/node_modules/better-sqlite3/**",
-      "**/node_modules/embedded-postgres/**",
-      "**/node_modules/@embedded-postgres/**"
-    ],
+    "asar": false,
     "win": {
       "target": "nsis",
       "icon": "build/icon.ico"
