@@ -3,13 +3,14 @@ import { WS_EVENTS } from "@hangar421/shared";
 import { useAuthStore } from "./store/authStore";
 import { useCatalogoStore } from "./store/catalogStore";
 import { useOrderStore } from "./store/orderStore";
-import { conectarSocket } from "./api/socket";
+import { conectarSocket, configurarWsUrl } from "./api/socket";
 import { iniciarMotorDeSincronizacion, detenerMotorDeSincronizacion, procesarColaSalida } from "./sync/syncEngine";
-import { apiFetch } from "./api/http";
+import { apiFetch, configurarApiUrl } from "./api/http";
 import { Login } from "./screens/Login";
 import { Mesas } from "./screens/Mesas";
 import { POSHome } from "./screens/POSHome";
 import { Caja } from "./screens/Caja";
+import { PantallaArranque } from "./screens/PantallaArranque";
 import { BarraSuperior } from "./components/BarraSuperior";
 import { BarraActualizacion } from "./components/BarraActualizacion";
 import "./theme.css";
@@ -22,10 +23,30 @@ export default function App() {
   const [pantalla, setPantalla] = useState<Pantalla>("mesas");
   const [mesaActiva, setMesaActiva] = useState<{ id: string; nombre: string } | null>(null);
   const [sucursalNombre, setSucursalNombre] = useState("");
+  const [backendListo, setBackendListo] = useState(false);
+  const [mensajeArranque, setMensajeArranque] = useState("Iniciando…");
+
+  // Primero se resuelve dónde vive el backend (embebido, cloud, o dev) — recién entonces
+  // se configuran los clientes HTTP/WebSocket y se puede intentar cualquier login.
+  useEffect(() => {
+    const quitarListener = window.hangar.backend.onEstado(setMensajeArranque);
+    window.hangar.backend
+      .obtenerUrl()
+      .then((url) => {
+        if (url) {
+          configurarApiUrl(url);
+          configurarWsUrl(url);
+        }
+        setBackendListo(true);
+      })
+      .catch((e) => setMensajeArranque(`No se pudo iniciar el backend local: ${e.message}`));
+    return quitarListener;
+  }, []);
 
   useEffect(() => {
-    auth.inicializar();
-  }, []);
+    if (backendListo) auth.inicializar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backendListo]);
 
   useEffect(() => {
     if (!auth.usuario || !auth.sucursalId) return;
@@ -44,6 +65,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth.usuario, auth.sucursalId]);
 
+  if (!backendListo) return <PantallaArranque mensaje={mensajeArranque} />;
   if (auth.cargando) return null;
   if (!auth.usuario) {
     return (

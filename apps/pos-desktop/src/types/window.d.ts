@@ -25,6 +25,10 @@ declare global {
         instalar(): Promise<void>;
         onEvento(callback: (evento: { tipo: string; data?: unknown }) => void): () => void;
       };
+      backend: {
+        obtenerUrl(): Promise<string | null>;
+        onEstado(callback: (mensaje: string) => void): () => void;
+      };
     };
   }
 }

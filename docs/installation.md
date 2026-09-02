@@ -1,5 +1,12 @@
 # HANGAR 421 — Manual de instalación local
 
+> **¿Solo quieres usar el POS en Windows?** No necesitas nada de este documento — descarga el
+> `.exe` ([ver README](../README.md#pos-standalone--funciona-apenas-se-instala)), instálalo y
+> ábrelo: trae su propio backend y base de datos, listo para usarse. Todo lo de abajo es para
+> **desarrollar** el proyecto (correr el backend/CRM/cocina por separado, generar los
+> instaladores, etc.) — necesario también si vas a conectar la pantalla de cocina, la app de
+> meseros o el CRM a un backend cloud propio en vez del embebido del POS.
+
 ## 1. Requisitos previos
 
 - **Node.js 20+** y **npm 10+**.

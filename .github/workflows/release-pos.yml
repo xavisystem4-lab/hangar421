@@ -21,11 +21,20 @@ jobs:
           node-version: "20"
           cache: npm
 
-      - name: Instalar dependencias (pos-desktop + shared)
-        run: npm install --workspace=apps/pos-desktop --workspace=packages/shared --no-audit --no-fund
+      # El instalador incluye su propio backend + PostgreSQL embebidos (ver
+      # electron/backend-manager.ts y scripts/prepare-embedded-backend.js) — por eso se
+      # instala y compila también el backend aquí, no solo pos-desktop.
+      - name: Instalar dependencias (pos-desktop + backend + shared)
+        run: npm install --workspace=apps/pos-desktop --workspace=apps/backend --workspace=packages/shared --no-audit --no-fund
 
-      - name: Compilar renderer + proceso principal
+      - name: Compilar backend
+        run: npm run build --workspace=apps/backend
+
+      - name: Compilar renderer + proceso principal del POS
         run: npm run build --workspace=apps/pos-desktop
+
+      - name: Preparar el backend embebido (dist + prisma + node_modules propio + node.exe)
+        run: npm run prepare:embedded-backend --workspace=apps/pos-desktop
 
       - name: Empaquetar .exe y publicar como GitHub Release
         run: npx electron-builder --win nsis --publish always

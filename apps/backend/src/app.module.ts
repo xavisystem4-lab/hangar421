@@ -4,6 +4,7 @@ import { ConfigModule } from "@nestjs/config";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 
 import { PrismaModule } from "./prisma/prisma.module";
+import { HealthModule } from "./health/health.module";
 import { RealtimeModule } from "./realtime/realtime.module";
 import { AuthModule } from "./auth/auth.module";
 import { EmpresasModule } from "./empresas/empresas.module";
@@ -30,6 +31,7 @@ import { AuditInterceptor } from "./common/interceptors/audit.interceptor";
     ConfigModule.forRoot({ isGlobal: true }),
     ThrottlerModule.forRoot({ throttlers: [{ ttl: 60_000, limit: 120 }] }),
     PrismaModule,
+    HealthModule,
     RealtimeModule,
     AuthModule,
     EmpresasModule,

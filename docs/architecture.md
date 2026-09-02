@@ -116,6 +116,37 @@ hangar421/
 - Rate limiting (`@nestjs/throttler`) en endpoints de auth y sync.
 - Logs estructurados + Sentry (configurable por `SENTRY_DSN`) para monitoreo de errores.
 
+## 5.1 Backend embebido en el POS Windows (standalone)
+
+Desde v0.2.0, el instalador de `pos-desktop` empaqueta un backend NestJS + PostgreSQL
+completos (vía [`embedded-postgres`](https://www.npmjs.com/package/embedded-postgres), un
+Postgres real que corre como proceso hijo, sin instalador aparte) para que la app funcione
+"de una" — sin requerir un backend cloud desplegado, Docker, ni configuración manual. Piezas:
+
+- `apps/pos-desktop/scripts/prepare-embedded-backend.js`: en tiempo de build, compila y copia
+  `apps/backend/dist` + `prisma/` (schema y migraciones) + un `node_modules` de producción
+  instalado desde cero (no el hoisteado del monorepo) + el binario de Node usado para
+  compilar, dentro de `resources/backend/` del instalador (`extraResources` en
+  `electron-builder`). Se quita el CLI de `prisma` tras generar el cliente (no se usa en
+  runtime, ahorra ~70 MB).
+- `apps/pos-desktop/electron/backend-manager.ts`: al arrancar la app empaquetada, levanta
+  Postgres embebido (puerto libre dinámico, datos persistentes en
+  `app.getPath('userData')/local-data`), genera y guarda secretos (password de la BD, JWT)
+  únicos por instalación, y lanza el backend compilado como proceso hijo usando el Node
+  bundleado (no el propio binario de Electron — evita problemas de compatibilidad ABI de
+  módulos nativos entre el Node de Electron y el Node estándar).
+- `apps/backend/src/bootstrap/auto-bootstrap.ts` (activado solo con `AUTO_BOOTSTRAP=true`):
+  si la base está vacía, aplica el `migration.sql` directamente (sin CLI de Prisma) y carga los
+  datos demo (`src/bootstrap/seed-demo-data.ts`, misma lógica que usa `npm run db:seed`).
+- El renderer espera a que el backend esté listo (`window.hangar.backend.obtenerUrl()`,
+  pantalla de arranque) antes de mostrar el login — la primera vez tarda unos segundos
+  (crear la base), después es casi instantáneo.
+
+Esto es exclusivo del POS Windows. Cocina, la app de meseros y el CRM siguen siendo clientes
+de un backend HTTP/WebSocket — el que se embebe en el POS, u otro desplegado en la nube (con
+`HANGAR_CLOUD_API_URL` configurada en el POS para apuntar a ese backend en vez de crear uno
+local, habilitando el escenario multisucursal real con una sola base central).
+
 ## 6. Despliegue cloud (resumen — detalle en `docs/deployment.md` dentro de cada app)
 
 - **Backend + Postgres**: contenedor Docker (`infra/docker/docker-compose.yml` para local;

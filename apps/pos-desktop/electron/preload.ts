@@ -25,6 +25,17 @@ contextBridge.exposeInMainWorld("hangar", {
 
   appVersion: (): Promise<string> => ipcRenderer.invoke("app:version"),
 
+  backend: {
+    /** Resuelve cuando el backend (embebido o cloud configurado) está listo — puede tardar
+     *  unos segundos la primera vez (crea la base de datos local). null en dev (usa VITE_API_URL). */
+    obtenerUrl: (): Promise<string | null> => ipcRenderer.invoke("backend:obtenerUrl"),
+    onEstado: (callback: (mensaje: string) => void) => {
+      const handler = (_e: unknown, mensaje: string) => callback(mensaje);
+      ipcRenderer.on("backend:estado", handler);
+      return () => ipcRenderer.removeListener("backend:estado", handler);
+    },
+  },
+
   updater: {
     verificar: () => ipcRenderer.invoke("updater:verificar"),
     instalar: () => ipcRenderer.invoke("updater:instalar"),

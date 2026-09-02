@@ -1,4 +1,16 @@
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000/api/v1";
+const API_URL_POR_DEFECTO = import.meta.env.VITE_API_URL ?? "http://localhost:3000/api/v1";
+
+/** Se fija una sola vez al iniciar la app, con la URL del backend embebido/cloud resuelta
+ *  por Electron (ver App.tsx `resolverBackend`). Hasta entonces se usa VITE_API_URL. */
+let apiUrlResuelta: string | null = null;
+
+export function configurarApiUrl(url: string) {
+  apiUrlResuelta = url;
+}
+
+function apiUrlActual(): string {
+  return apiUrlResuelta ?? API_URL_POR_DEFECTO;
+}
 
 interface Tokens {
   accessToken: string;
@@ -19,7 +31,7 @@ export function getTokens() {
 
 /** Cliente HTTP con refresh automático del access token ante un 401. */
 export async function apiFetch<T>(path: string, options: RequestInit = {}, reintentar = true): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${apiUrlActual()}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -44,7 +56,7 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}, reint
 async function intentarRefrescar(): Promise<boolean> {
   if (!tokens) return false;
   try {
-    const res = await fetch(`${API_URL}/auth/refresh`, {
+    const res = await fetch(`${apiUrlActual()}/auth/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refreshToken: tokens.refreshToken }),
@@ -59,4 +71,4 @@ async function intentarRefrescar(): Promise<boolean> {
   }
 }
 
-export { API_URL };
+export { apiUrlActual as obtenerApiUrl };

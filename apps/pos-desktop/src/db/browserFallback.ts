@@ -63,6 +63,11 @@ export function instalarFallbackNavegador() {
     // en navegador (sin Electron) no hay auto-actualización real: se simula "al día"
     // para que el footer se pueda desarrollar/depurar sin necesitar la app empaquetada.
     appVersion: async () => "0.0.0-dev",
+    // en navegador (sin Electron) no hay backend embebido: el renderer cae a VITE_API_URL.
+    backend: {
+      obtenerUrl: async () => null,
+      onEstado: () => () => undefined,
+    },
     updater: {
       verificar: async () => undefined,
       instalar: async () => undefined,

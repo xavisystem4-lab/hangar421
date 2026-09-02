@@ -37,7 +37,7 @@ describe("AuthService — jti único por sesión", () => {
 
     const config = { get: jest.fn((_key: string, def?: unknown) => def ?? "15m") };
 
-    const bcrypt = require("bcrypt");
+    const bcrypt = require("bcryptjs");
     jest.spyOn(bcrypt, "compare").mockResolvedValue(true as never);
 
     const service = new AuthService(prisma as any, jwt as any, config as any);

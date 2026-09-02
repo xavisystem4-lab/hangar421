@@ -4,10 +4,17 @@ import { ValidationPipe } from "@nestjs/common";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { ConfigService } from "@nestjs/config";
 import { AppModule } from "./app.module";
+import { PrismaService } from "./prisma/prisma.service";
+import { autoBootstrap } from "./bootstrap/auto-bootstrap";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
+
+  // Solo en el backend embebido del POS Windows (modo standalone) — nunca en cloud.
+  if (config.get<string>("AUTO_BOOTSTRAP") === "true") {
+    await autoBootstrap(app.get(PrismaService));
+  }
 
   const corsOrigins = config.get<string>("CORS_ORIGINS", "*").split(",");
   app.enableCors({ origin: corsOrigins, credentials: true });

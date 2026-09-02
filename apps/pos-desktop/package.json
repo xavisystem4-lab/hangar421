@@ -1,6 +1,6 @@
 {
   "name": "@hangar421/pos-desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "main": "dist-electron/main.js",
   "author": "HANGAR 421",
@@ -9,13 +9,15 @@
     "dev": "concurrently -k \"vite\" \"npm:dev:electron\"",
     "dev:electron": "wait-on tcp:5173 && tsc -p electron/tsconfig.json && cross-env NODE_ENV=development electron dist-electron/main.js",
     "build": "tsc -p tsconfig.json && vite build && tsc -p electron/tsconfig.json",
-    "dist:win": "npm run build && electron-builder --win nsis",
+    "prepare:embedded-backend": "node scripts/prepare-embedded-backend.js",
+    "dist:win": "npm run build && npm run prepare:embedded-backend && electron-builder --win nsis",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p electron/tsconfig.json"
   },
   "dependencies": {
     "@hangar421/shared": "*",
     "better-sqlite3": "^11.3.0",
     "electron-updater": "^6.3.4",
+    "embedded-postgres": "^16.14.0-beta.17",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "socket.io-client": "^4.7.5",
@@ -39,8 +41,25 @@
     "appId": "com.hangar421.pos",
     "productName": "HANGAR 421 POS",
     "electronVersion": "32.1.2",
-    "files": ["dist/**/*", "dist-electron/**/*"],
-    "directories": { "output": "release" },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/backend",
+        "to": "backend",
+        "filter": ["**/*"]
+      }
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**",
+      "**/node_modules/embedded-postgres/**",
+      "**/node_modules/@embedded-postgres/**"
+    ],
     "win": {
       "target": "nsis",
       "icon": "build/icon.ico"

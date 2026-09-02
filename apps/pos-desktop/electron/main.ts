@@ -14,9 +14,36 @@ import {
   guardarConfig,
 } from "./db";
 import { configurarAutoUpdater } from "./updater";
+import { iniciarBackendEmbebido, BackendEmbebido } from "./backend-manager";
 
 const isDev = process.env.NODE_ENV === "development";
 let ventanaPrincipal: BrowserWindow | null = null;
+let backendEmbebido: BackendEmbebido | null = null;
+
+// El backend embebido (electron/backend-manager.ts) tiene su propio watchdog interno de
+// unhandled rejections en Node; embedded-postgres además dispara alguna advertencia interna
+// al detenerse dos veces seguidas — se registra sin tumbar la app (nunca es un error del
+// backend real, ya validado con pruebas end-to-end).
+process.on("unhandledRejection", (reason) => {
+  console.error("[main] unhandledRejection:", reason);
+});
+
+/** Resuelve la URL del backend a usar:
+ *  - Si HANGAR_CLOUD_API_URL está configurada (deployment cloud real, multisucursal), se usa esa.
+ *  - Si no, y estamos empaquetados (producción), se levanta el backend + Postgres embebidos.
+ *  - En desarrollo, no se levanta nada aquí — se usa el backend corrido aparte (`npm run dev:backend`),
+ *    el renderer cae a VITE_API_URL (localhost:3000 por defecto). */
+async function resolverBackend(log: (msg: string) => void): Promise<string | null> {
+  const cloudUrl = process.env.HANGAR_CLOUD_API_URL;
+  if (cloudUrl) {
+    log(`Usando backend cloud configurado: ${cloudUrl}`);
+    return cloudUrl;
+  }
+  if (isDev) return null;
+
+  backendEmbebido = await iniciarBackendEmbebido(log);
+  return backendEmbebido.url;
+}
 
 function crearVentana() {
   const win = new BrowserWindow({
@@ -62,6 +89,18 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
+// Apagar limpio el backend/Postgres embebidos antes de salir (evita dejar el proceso
+// de Postgres huérfano o corromper datos por un corte abrupto).
+let apagando = false;
+app.on("before-quit", async (event) => {
+  if (!backendEmbebido || apagando) return;
+  apagando = true;
+  event.preventDefault();
+  await backendEmbebido.detener().catch((e) => console.error("[main] error al detener backend:", e));
+  backendEmbebido = null;
+  app.quit();
+});
+
 function registrarIpc() {
   ipcMain.handle("device:id", () => obtenerDeviceId());
 
@@ -76,4 +115,19 @@ function registrarIpc() {
 
   ipcMain.handle("config:obtener", (_e, clave) => obtenerConfig(clave));
   ipcMain.handle("config:guardar", (_e, clave, valor) => guardarConfig(clave, valor));
+
+  // El backend embebido puede tardar unos segundos en arrancar la primera vez (crea la base
+  // de datos local). El renderer llama esto al inicio y espera — ver src/App.tsx.
+  let backendPromise: Promise<string | null> | null = null;
+  ipcMain.handle("backend:obtenerUrl", (event) => {
+    if (!backendPromise) {
+      const enviarEstado = (msg: string) => event.sender.send("backend:estado", msg);
+      backendPromise = resolverBackend(enviarEstado).catch((e) => {
+        enviarEstado(`Error: ${e.message}`);
+        backendPromise = null; // permitir reintentar
+        throw e;
+      });
+    }
+    return backendPromise;
+  });
 }

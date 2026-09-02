@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-esm/
 out/
 # nota: NO se ignora build/ en general — apps/pos-desktop/build/ guarda el icon.ico
 # fuente que usa electron-builder (no es un directorio de salida de build).
@@ -14,6 +15,7 @@ coverage/
 # Electron
 apps/pos-desktop/release/
 apps/pos-desktop/dist-electron/
+apps/pos-desktop/resources/backend/
 
 # SQLite locales
 *.sqlite
