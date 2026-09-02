@@ -98,15 +98,22 @@ export interface Modificador {
   opciones: OpcionModificador[];
 }
 
+export type EstacionPreparacion = "BARRA" | "COCINA" | "POSTRES";
+
 export interface Producto {
   id: string;
   empresaId: string;
   categoriaId: string;
   nombre: string;
   descripcion?: string | null;
+  subcategoria?: string | null;
   imagenUrl?: string | null;
   precioBase: number;
+  orden: number;
   activo: boolean;
+  requierePersonalizacion: boolean;
+  estacionPreparacion?: EstacionPreparacion | null;
+  impuestoOverride?: number | null;
   modificadores?: Modificador[];
   // resuelto por sucursal en tiempo de consulta:
   precioSucursal?: number;

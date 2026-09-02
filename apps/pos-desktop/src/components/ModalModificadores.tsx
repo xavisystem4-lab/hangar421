@@ -16,15 +16,31 @@ export function ModalModificadores({
   onCancelar: () => void;
   onConfirmar: (cantidad: number, seleccion: SeleccionModificador[], notas: string) => void;
 }) {
+  const modificadores = producto.modificadores ?? [];
+
   const [cantidad, setCantidad] = useState(1);
   const [notas, setNotas] = useState("");
-  const [seleccionUnica, setSeleccionUnica] = useState<Record<string, SeleccionModificador>>({});
+  // Cada modificador de selección única y obligatorio (ej. Tamaño, Tipo de leche) arranca con
+  // su primera opción (menor `orden`) ya elegida — así "Chico"/"Entera" quedan preseleccionados
+  // sin que el mesero tenga que tocar nada si no quiere cambiarlos.
+  const [seleccionUnica, setSeleccionUnica] = useState<Record<string, SeleccionModificador>>(() => {
+    const inicial: Record<string, SeleccionModificador> = {};
+    for (const mod of modificadores) {
+      if (mod.tipo === "SELECCION_UNICA" && mod.obligatorio && mod.opciones.length > 0) {
+        const primera = [...mod.opciones].sort((a, b) => a.orden - b.orden)[0];
+        inicial[mod.id] = { opcionModificadorId: primera.id, nombreOpcion: primera.nombre, precioExtra: primera.precioExtra };
+      }
+    }
+    return inicial;
+  });
   const [seleccionMultiple, setSeleccionMultiple] = useState<Record<string, SeleccionModificador>>({});
 
-  const modificadores = producto.modificadores ?? [];
   const seleccion = [...Object.values(seleccionUnica), ...Object.values(seleccionMultiple)];
   const precioExtra = seleccion.reduce((s, o) => s + o.precioExtra, 0);
   const total = (producto.precioSucursal ?? producto.precioBase) * cantidad + precioExtra * cantidad;
+
+  // Faltan selecciones obligatorias (defensivo: normalmente ya quedan cubiertas por el default de arriba).
+  const faltanObligatorios = modificadores.some((mod) => mod.tipo === "SELECCION_UNICA" && mod.obligatorio && !seleccionUnica[mod.id]);
 
   return (
     <div style={overlay}>
@@ -58,7 +74,7 @@ export function ModalModificadores({
                       }
                     }}
                     style={{
-                      padding: "8px 12px", fontSize: 13, minHeight: 40,
+                      padding: "10px 16px", fontSize: 14, minHeight: 46,
                       background: activa ? "var(--h421-navy)" : "var(--h421-gray-50)",
                       color: activa ? "#fff" : "var(--h421-black)",
                       border: "1px solid var(--h421-gray-200)",
@@ -78,17 +94,24 @@ export function ModalModificadores({
             style={{ width: "100%", padding: 10, marginTop: 6, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 16 }}>
-          <button onClick={() => setCantidad((c) => Math.max(1, c - 1))} style={{ width: 40, height: 40, background: "var(--h421-gray-50)" }}>−</button>
-          <span style={{ fontSize: 18, fontWeight: 700 }}>{cantidad}</span>
-          <button onClick={() => setCantidad((c) => c + 1)} style={{ width: 40, height: 40, background: "var(--h421-gray-50)" }}>+</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16 }}>
+          <button onClick={() => setCantidad((c) => Math.max(1, c - 1))} style={{ width: 46, height: 46, background: "var(--h421-gray-50)" }}>−</button>
+          <span style={{ fontSize: 18, fontWeight: 700, minWidth: 20, textAlign: "center" }}>{cantidad}</span>
+          <button onClick={() => setCantidad((c) => c + 1)} style={{ width: 46, height: 46, background: "var(--h421-gray-50)" }}>+</button>
         </div>
+
+        {seleccion.length > 0 && (
+          <div style={{ marginTop: 16, padding: "10px 12px", background: "var(--h421-gray-50)", borderRadius: 10, fontSize: 13, color: "var(--h421-black)" }}>
+            {seleccion.map((s) => s.nombreOpcion + (s.precioExtra > 0 ? ` (+$${s.precioExtra})` : "")).join(" · ")}
+          </div>
+        )}
 
         <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
           <button onClick={onCancelar} style={{ flex: 1, padding: 14, background: "var(--h421-gray-200)" }}>Cancelar</button>
           <button
             onClick={() => onConfirmar(cantidad, seleccion, notas)}
-            style={{ flex: 2, padding: 14, background: "var(--h421-green)", color: "#fff", fontSize: 16 }}
+            disabled={faltanObligatorios}
+            style={{ flex: 2, padding: 14, background: "var(--h421-green)", color: "#fff", fontSize: 16, opacity: faltanObligatorios ? 0.5 : 1 }}
           >
             Agregar — ${total.toFixed(2)}
           </button>

@@ -30,8 +30,19 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
     return porCategoria && porBusqueda;
   });
 
+  // Agrupa por subcategoría (ej. dentro de "Postres": Galletas by Domingo / Roles de Canela by
+  // Törtchen / Chunky Cookies) preservando el orden en que llegaron (ya vienen ordenados por
+  // `orden` desde el backend). Si nadie tiene subcategoría, queda un solo grupo sin encabezado.
+  const gruposProductos: { titulo: string | null; productos: typeof productosFiltrados }[] = [];
+  for (const p of productosFiltrados) {
+    const titulo = p.subcategoria ?? null;
+    const grupo = gruposProductos.find((g) => g.titulo === titulo);
+    if (grupo) grupo.productos.push(p);
+    else gruposProductos.push({ titulo, productos: [p] });
+  }
+
   function seleccionarProducto(producto: Producto) {
-    if ((producto.modificadores?.length ?? 0) > 0) {
+    if (producto.requierePersonalizacion) {
       setProductoModal(producto);
     } else {
       agregarItem({
@@ -89,24 +100,33 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
           )}
         </div>
 
-        {/* Cuadrícula de productos — alignContent/alignItems "start" evita que las tarjetas
-            se estiren para llenar el alto disponible cuando hay pocos productos (el default
-            de grid es "stretch", que infla las filas hasta ocupar todo el contenedor). */}
-        <div
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            padding: 16,
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))",
-            gridAutoRows: "min-content",
-            alignContent: "start",
-            alignItems: "start",
-            gap: 16,
-          }}
-        >
-          {productosFiltrados.map((p) => (
-            <ProductoCard key={p.id} producto={p} onSeleccionar={seleccionarProducto} />
+        {/* Cuadrícula de productos, agrupada por subcategoría cuando aplica. alignContent/
+            alignItems "start" evita que las tarjetas se estiren para llenar el alto disponible
+            cuando hay pocos productos (el default de grid es "stretch", que infla las filas
+            hasta ocupar todo el contenedor). */}
+        <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+          {gruposProductos.map((grupo, i) => (
+            <div key={grupo.titulo ?? `_${i}`} style={{ marginTop: i > 0 ? 20 : 0 }}>
+              {grupo.titulo && (
+                <h3 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 700, color: "var(--h421-navy)", textTransform: "uppercase", letterSpacing: 0.4 }}>
+                  {grupo.titulo}
+                </h3>
+              )}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))",
+                  gridAutoRows: "min-content",
+                  alignContent: "start",
+                  alignItems: "start",
+                  gap: 16,
+                }}
+              >
+                {grupo.productos.map((p) => (
+                  <ProductoCard key={p.id} producto={p} onSeleccionar={seleccionarProducto} />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
 

@@ -19,9 +19,12 @@ export class CatalogoService {
       where: { empresaId, activo: true },
       include: {
         sucursales: { where: { sucursalId } },
-        modificadores: { include: { modificador: { include: { opciones: true } } } },
+        modificadores: {
+          orderBy: { orden: "asc" },
+          include: { modificador: { include: { opciones: { orderBy: { orden: "asc" } } } } },
+        },
       },
-      orderBy: { nombre: "asc" },
+      orderBy: [{ orden: "asc" }, { nombre: "asc" }],
     });
 
     return productos.map((p) => {
@@ -32,9 +35,14 @@ export class CatalogoService {
         categoriaId: p.categoriaId,
         nombre: p.nombre,
         descripcion: p.descripcion,
+        subcategoria: p.subcategoria,
         imagenUrl: p.imagenUrl,
         precioBase: Number(p.precioBase),
+        orden: p.orden,
         activo: p.activo,
+        requierePersonalizacion: p.requierePersonalizacion,
+        estacionPreparacion: p.estacionPreparacion,
+        impuestoOverride: p.impuestoOverride != null ? Number(p.impuestoOverride) : null,
         precioSucursal: override ? Number(override.precio) : Number(p.precioBase),
         disponibleSucursal: override ? override.disponible : true,
         modificadores: p.modificadores.map((pm) => ({
@@ -62,13 +70,33 @@ export class CatalogoService {
     categoriaId: string;
     nombre: string;
     descripcion?: string;
+    subcategoria?: string;
     imagenUrl?: string;
     precioBase: number;
+    orden?: number;
+    requierePersonalizacion?: boolean;
+    estacionPreparacion?: "BARRA" | "COCINA" | "POSTRES";
+    impuestoOverride?: number;
   }) {
     return this.prisma.producto.create({ data });
   }
 
-  actualizarProducto(id: string, data: Partial<{ nombre: string; descripcion: string; imagenUrl: string; precioBase: number; activo: boolean; categoriaId: string }>) {
+  actualizarProducto(
+    id: string,
+    data: Partial<{
+      nombre: string;
+      descripcion: string;
+      subcategoria: string;
+      imagenUrl: string;
+      precioBase: number;
+      orden: number;
+      activo: boolean;
+      categoriaId: string;
+      requierePersonalizacion: boolean;
+      estacionPreparacion: "BARRA" | "COCINA" | "POSTRES";
+      impuestoOverride: number | null;
+    }>,
+  ) {
     return this.prisma.producto.update({ where: { id }, data });
   }
 

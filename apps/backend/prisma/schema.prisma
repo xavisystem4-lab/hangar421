@@ -133,6 +133,12 @@ enum TipoDescuento {
   PORCENTAJE
 }
 
+enum EstacionPreparacion {
+  BARRA
+  COCINA
+  POSTRES
+}
+
 // ---------------------------------------------------------------------------
 // Jerarquía organizacional
 // ---------------------------------------------------------------------------
@@ -313,9 +319,14 @@ model Producto {
   categoriaId  String
   nombre       String
   descripcion  String?
+  subcategoria String?  // agrupación visual dentro de la categoría (ej. "Galletas by Domingo")
   imagenUrl    String?
   precioBase   Decimal  @db.Decimal(10, 2)
+  orden        Int      @default(0) // orden visual dentro de la categoría/subcategoría
   activo       Boolean  @default(true)
+  requierePersonalizacion Boolean @default(false) // abre el modal de personalización antes de agregarse al pedido
+  estacionPreparacion EstacionPreparacion?
+  impuestoOverride Decimal? @db.Decimal(5, 4) // null = usa la tasa de la sucursal (Sucursal.tasaImpuesto)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
