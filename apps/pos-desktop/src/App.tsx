@@ -98,6 +98,7 @@ export default function App() {
     <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
       <BarraSuperior
         sucursalNombre={sucursalNombre || auth.sucursalId || ""}
+        pantallaActual={pantalla}
         onCambiarPantalla={(p) => {
           if (p === "venta" && !mesaActiva) useOrderStore.getState().iniciar(null, 1);
           setPantalla(p);

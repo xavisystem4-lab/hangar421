@@ -9,7 +9,7 @@ import { ModalCobro } from "../components/ModalCobro";
 import { ModalDescuento } from "../components/ModalDescuento";
 import { AccionCircular } from "../components/AccionCircular";
 import { useAuthStore } from "../store/authStore";
-import { CATEGORIA_COLORES } from "../theme/categoriaColores";
+import { CATEGORIA_COLORES, colorTextoContraste } from "../theme/categoriaColores";
 
 export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | null; onVentaCobrada: () => void }) {
   const { categorias, productos } = useCatalogoStore();
@@ -71,7 +71,14 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
             const activa = categoriaActiva === c.id;
             return (
               <button key={c.id} onClick={() => setCategoriaActiva(c.id)} className="pildora-categoria"
-                style={{ background: activa ? color : `${color}1f`, color: activa ? "#fff" : color, boxShadow: activa ? `0 4px 10px ${color}55` : "none" }}>
+                style={{
+                  background: color,
+                  color: colorTextoContraste(color),
+                  opacity: activa ? 1 : 0.75,
+                  outline: activa ? "2px solid var(--h421-navy)" : "none",
+                  outlineOffset: 2,
+                  boxShadow: activa ? `0 4px 10px ${color}66` : "none",
+                }}>
                 {c.nombre}
               </button>
             );
@@ -82,8 +89,22 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
           )}
         </div>
 
-        {/* Cuadrícula de productos */}
-        <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 16 }}>
+        {/* Cuadrícula de productos — alignContent/alignItems "start" evita que las tarjetas
+            se estiren para llenar el alto disponible cuando hay pocos productos (el default
+            de grid es "stretch", que infla las filas hasta ocupar todo el contenedor). */}
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            padding: 16,
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))",
+            gridAutoRows: "min-content",
+            alignContent: "start",
+            alignItems: "start",
+            gap: 16,
+          }}
+        >
           {productosFiltrados.map((p) => (
             <ProductoCard key={p.id} producto={p} onSeleccionar={seleccionarProducto} />
           ))}

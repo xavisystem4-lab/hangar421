@@ -10,14 +10,15 @@
   --h421-blue: #2563eb;
   --h421-yellow: #f5a524;
   --h421-red: #dc2626;
-  /* paleta de categorías (píldoras de colores, estilo referencia) */
-  --h421-cat-1: #f5a524; /* Café — ámbar */
-  --h421-cat-2: #2563eb; /* Bebidas frías — azul */
-  --h421-cat-3: #e8734d; /* Panadería — naranja */
-  --h421-cat-4: #16a34a; /* Desayunos — verde */
-  --h421-cat-5: #dc2626; /* Comidas — rojo */
-  --h421-cat-6: #a855f7; /* Postres — morado */
-  --h421-cat-7: #0d9488; /* Extras — teal */
+  /* paleta de categorías (píldoras de colores, acorde a los colores del logotipo —
+     ver src/theme/categoriaColores.ts, fuente real que usa la UI) */
+  --h421-cat-1: #e8a33d; /* Café — ámbar del logo */
+  --h421-cat-2: #0b1e33; /* Bebidas frías — azul marino del logo */
+  --h421-cat-3: #c97c4b; /* Panadería — terracota */
+  --h421-cat-4: #5b7a63; /* Desayunos — verde salvia */
+  --h421-cat-5: #a4472f; /* Comidas — óxido */
+  --h421-cat-6: #6d5875; /* Postres — ciruela */
+  --h421-cat-7: #48586b; /* Extras — gris pizarra */
 }
 
 * { box-sizing: border-box; }

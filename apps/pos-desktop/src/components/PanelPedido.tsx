@@ -53,12 +53,29 @@ export function PanelPedido({ mesaNombre, onCobrar }: { mesaNombre: string | nul
           onClick={onCobrar}
           disabled={!enviado}
           className="btn-grande"
-          style={{ width: "100%", background: "var(--h421-green)", color: "#fff", fontSize: 17, opacity: enviado ? 1 : 0.5 }}
+          style={{
+            width: "100%", background: "var(--h421-navy)", color: "#fff", fontSize: 17,
+            opacity: enviado ? 1 : 0.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+          }}
         >
-          💳 Pagar ${t.total.toFixed(2)}
+          <IconoPago />
+          Pagar ${t.total.toFixed(2)}
         </button>
       </div>
     </aside>
+  );
+}
+
+/** Ícono de pago (tarjeta) en SVG en vez de emoji — el emoji 💳 se renderiza distinto según
+ *  la fuente del sistema (a veces en color, a veces como glifo monocromo apenas legible en
+ *  Windows), un SVG blanco fijo se ve igual siempre y combina con el botón azul marino. */
+function IconoPago() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="2" y="5" width="20" height="14" rx="2.5" stroke="#fff" strokeWidth="2" />
+      <rect x="2" y="9" width="20" height="3.5" fill="#fff" />
+      <rect x="5" y="14.5" width="6" height="2" rx="1" fill="#fff" />
+    </svg>
   );
 }
 

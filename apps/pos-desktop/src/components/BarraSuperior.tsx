@@ -11,7 +11,21 @@ const ETIQUETAS_SYNC: Record<string, { texto: string; color: string }> = {
   OFFLINE: { texto: "Sin conexión", color: "var(--h421-gray-400)" },
 };
 
-export function BarraSuperior({ sucursalNombre, onCambiarPantalla }: { sucursalNombre: string; onCambiarPantalla: (p: "venta" | "mesas" | "caja") => void }) {
+const OPCIONES_NAV: { id: "venta" | "mesas" | "caja"; etiqueta: string }[] = [
+  { id: "venta", etiqueta: "Venta" },
+  { id: "mesas", etiqueta: "Mesas" },
+  { id: "caja", etiqueta: "Caja" },
+];
+
+export function BarraSuperior({
+  sucursalNombre,
+  pantallaActual,
+  onCambiarPantalla,
+}: {
+  sucursalNombre: string;
+  pantallaActual: "venta" | "mesas" | "caja";
+  onCambiarPantalla: (p: "venta" | "mesas" | "caja") => void;
+}) {
   const { usuario } = useAuthStore();
   const sync = useSyncStore();
   const [ahora, setAhora] = useState(new Date());
@@ -34,9 +48,28 @@ export function BarraSuperior({ sucursalNombre, onCambiarPantalla }: { sucursalN
       </div>
 
       <nav style={{ display: "flex", gap: 8 }}>
-        <button onClick={() => onCambiarPantalla("venta")} style={{ background: "transparent", color: "#fff", padding: "8px 14px" }}>Venta</button>
-        <button onClick={() => onCambiarPantalla("mesas")} style={{ background: "transparent", color: "#fff", padding: "8px 14px" }}>Mesas</button>
-        <button onClick={() => onCambiarPantalla("caja")} style={{ background: "transparent", color: "#fff", padding: "8px 14px" }}>Caja</button>
+        {OPCIONES_NAV.map((opcion) => {
+          const activa = pantallaActual === opcion.id;
+          return (
+            <button
+              key={opcion.id}
+              onClick={() => onCambiarPantalla(opcion.id)}
+              style={{
+                background: activa ? "var(--h421-amber)" : "rgba(255,255,255,0.12)",
+                color: activa ? "var(--h421-navy)" : "#fff",
+                fontWeight: activa ? 700 : 500,
+                border: "none",
+                borderRadius: 8,
+                padding: "9px 18px",
+                fontSize: 14,
+                cursor: "pointer",
+                transition: "background 0.15s, color 0.15s",
+              }}
+            >
+              {opcion.etiqueta}
+            </button>
+          );
+        })}
       </nav>
 
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
