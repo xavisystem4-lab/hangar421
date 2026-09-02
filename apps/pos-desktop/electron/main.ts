@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, Menu } from "electron";
 import * as path from "path";
 import {
   iniciarBaseDeDatos,
@@ -75,6 +75,10 @@ function crearVentana() {
 }
 
 app.whenReady().then(() => {
+  // Sin la barra de menú genérica de Electron (File/Edit/View/Window/Help) — no aporta nada
+  // en un POS táctil, y la navegación real vive en la barra superior propia de la app.
+  Menu.setApplicationMenu(null);
+
   iniciarBaseDeDatos();
   registrarIpc();
   configurarAutoUpdater(() => ventanaPrincipal);
