@@ -11,6 +11,7 @@ import {
   SyncStatus,
 } from "@hangar421/shared";
 import { PrismaService } from "../prisma/prisma.service";
+import { resolverDispositivoId } from "../common/dispositivo.util";
 import { PedidosService } from "../pedidos/pedidos.service";
 import { MesasService } from "../mesas/mesas.service";
 import { InventarioService } from "../inventario/inventario.service";
@@ -54,13 +55,17 @@ export class SyncService {
       return { id: item.id, idempotencyKey: item.idempotencyKey, estado: SyncStatus.SYNCED };
     }
 
+    // `SyncQueueItem.dispositivoId` es una llave foránea obligatoria hacia Dispositivo.id —
+    // se resuelve/autoregistra la huella que manda el cliente antes de usarla (ver dispositivo.util.ts).
+    const dispositivoId = (await resolverDispositivoId(this.prisma, item.dispositivoId, item.sucursalId)) ?? item.dispositivoId;
+
     try {
       await this.enrutar(item);
       await this.prisma.syncQueueItem.upsert({
         where: { idempotencyKey: item.idempotencyKey },
         update: { estado: SyncStatus.SYNCED, syncedAt: new Date(), intentos: { increment: 1 } },
         create: {
-          dispositivoId: item.dispositivoId,
+          dispositivoId,
           entidad: item.entidad,
           entidadId: item.id,
           operacion: item.operacion,
@@ -78,7 +83,7 @@ export class SyncService {
         where: { idempotencyKey: item.idempotencyKey },
         update: { estado: SyncStatus.ERROR, ultimoError: error.message, intentos: { increment: 1 } },
         create: {
-          dispositivoId: item.dispositivoId,
+          dispositivoId,
           entidad: item.entidad,
           entidadId: item.id,
           operacion: item.operacion,

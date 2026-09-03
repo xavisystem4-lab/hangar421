@@ -12,6 +12,7 @@ import {
 } from "@hangar421/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { RealtimeGateway } from "../realtime/realtime.gateway";
+import { resolverDispositivoId } from "../common/dispositivo.util";
 import {
   AgregarItemsDto,
   AplicarDescuentoDto,
@@ -60,6 +61,11 @@ export class PedidosService {
 
     const { subtotal, impuesto, total } = calcularTotalesPedido(itemsResueltos, [], Number(sucursal.tasaImpuesto));
 
+    // El POS manda su propia huella de instalación como "dispositivoId" (ver electron/db.ts ->
+    // obtenerDeviceId()), pero acá es una llave foránea real hacia Dispositivo.id — se resuelve/
+    // autoregistra para que un dispositivo nunca antes visto no rompa la creación del pedido.
+    const dispositivoId = await resolverDispositivoId(this.prisma, dto.dispositivoId, dto.sucursalId);
+
     const pedido = await this.prisma.$transaction(async (tx) => {
       const creado = await tx.pedido.create({
         data: {
@@ -72,7 +78,7 @@ export class PedidosService {
           tipo: dto.tipo,
           numComensales: dto.numComensales ?? 1,
           meseroId: dto.meseroId,
-          dispositivoId: dto.dispositivoId,
+          dispositivoId,
           canalOrigen: dto.canalOrigen,
           notasGenerales: dto.notasGenerales,
           idempotencyKey: dto.idempotencyKey,

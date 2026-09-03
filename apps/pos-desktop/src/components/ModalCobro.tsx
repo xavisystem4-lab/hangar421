@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { MetodoPago } from "@hangar421/shared";
 import { useOrderStore } from "../store/orderStore";
 import { useAuthStore } from "../store/authStore";
@@ -35,24 +35,17 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
   const totalAPagar = round2(t.total + propina);
 
   const [pagos, setPagos] = useState<{ metodo: MetodoPago; monto: number }[]>([]);
-  const [montoInput, setMontoInput] = useState(totalAPagar.toFixed(2));
-  const [montoTocado, setMontoTocado] = useState(false);
+  // Arranca en $0.00 — el cajero debe escribir el monto a mano, no se asume que paga el total
+  // exacto (así se ve/confirma lo que realmente se está tecleando antes de cobrar).
+  const [montoInput, setMontoInput] = useState("0");
   const [procesando, setProcesando] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Si el cajero aplica un descuento (o cambia la propina) antes de tocar el teclado, el monto
-  // sugerido se actualiza solo — evita cobrar el monto viejo por olvido tras cambiar el total.
-  useEffect(() => {
-    if (!montoTocado && pagos.length === 0) setMontoInput(totalAPagar.toFixed(2));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [totalAPagar]);
 
   const pagadoHasta = pagos.reduce((s, p) => s + p.monto, 0);
   const restante = Math.max(0, totalAPagar - pagadoHasta);
   const cambio = Math.max(0, pagadoHasta + Number(montoInput || 0) - totalAPagar);
 
   function presionarTecla(tecla: string) {
-    setMontoTocado(true);
     setMontoInput((m) => {
       if (tecla === "borrar") return m.length > 1 ? m.slice(0, -1) : "0";
       if (tecla === ".") return m.includes(".") ? m : `${m}.`;
