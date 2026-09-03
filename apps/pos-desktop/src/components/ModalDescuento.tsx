@@ -29,10 +29,14 @@ export function ModalDescuento({ sucursalId, onCerrar }: { sucursalId: string; o
   const [validando, setValidando] = useState(false);
 
   useEffect(() => {
-    apiFetch<UsuarioLogin[]>("/auth/usuarios-login")
+    // Filtrado por `sucursalId` en el propio backend: solo trae usuarios con acceso a ESTA
+    // sucursal — antes se pedía la lista completa (sin filtro) y podía mostrar a alguien cuya
+    // única sucursal asignada fuera otra; elegirlo hacía que /auth/login-pin lo rechazara con
+    // "sin acceso a la sucursal" sin importar el PIN que se tecleara.
+    apiFetch<UsuarioLogin[]>(`/auth/usuarios-login?sucursalId=${encodeURIComponent(sucursalId)}`)
       .then((usuarios) => setAutorizadores(usuarios.filter((u) => u.rol && ROLES_AUTORIZAN.has(u.rol))))
       .catch(() => setAutorizadores([]));
-  }, []);
+  }, [sucursalId]);
 
   async function confirmar() {
     setError(null);
@@ -48,8 +52,11 @@ export function ModalDescuento({ sucursalId, onCerrar }: { sucursalId: string; o
       });
       aplicarDescuento({ tipo, valor: Number(valor), motivo, autorizadoPorId: usuarioAutorizaId });
       onCerrar();
-    } catch {
-      setError("PIN de autorización inválido");
+    } catch (e: any) {
+      // Antes tapaba cualquier error con "PIN de autorización inválido" — si la causa real era
+      // otra (sin acceso a la sucursal, PIN no configurado, etc.) parecía que NINGÚN PIN
+      // funcionaba nunca. Ahora se muestra el motivo real que manda el backend.
+      setError(e.message ?? "PIN de autorización inválido");
     } finally {
       setValidando(false);
     }

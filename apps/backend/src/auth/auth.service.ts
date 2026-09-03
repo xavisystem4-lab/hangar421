@@ -27,29 +27,43 @@ export class AuthService {
     private config: ConfigService,
   ) {}
 
-  /** Lista pública (sin autenticar) de personal activo para mostrar como selector en la
-   *  pantalla de login del POS ("elige tu usuario, escribe tu contraseña") — solo nombre/rol/
-   *  email (necesario para completar el login con credenciales), nunca contraseñas ni PINs.
-   *  El backend embebido gestiona una sola empresa por instalación, así que no hace falta
-   *  ningún parámetro: se listan los usuarios activos de la primera empresa registrada. */
-  async listarUsuariosPublico() {
+  /** Lista pública (sin autenticar) de personal activo para mostrar como selector — solo
+   *  nombre/rol/email (necesario para completar el login con credenciales), nunca contraseñas
+   *  ni PINs. Se usa en dos lugares con necesidades distintas:
+   *  - Login (`sucursalId` ausente): un usuario por fila, con SU PRIMERA sucursal asignada
+   *    como default (si tiene varias, ver `resolverSucursalActiva`).
+   *  - Autorizar un descuento (`sucursalId` presente, ver ModalDescuento): solo interesan los
+   *    que sí tienen acceso a ESA sucursal en concreto — antes se devolvía "la primera sucursal
+   *    de cada quien" sin importar cuál, así que un supervisor cuya primera sucursal fuera otra
+   *    (ej. de dos cafés) salía en la lista pero `/auth/login-pin` lo rechazaba con "sin acceso
+   *    a la sucursal" — y ModalDescuento mostraba siempre "PIN de autorización inválido" sin
+   *    importar el PIN, porque tapaba cualquier error con ese mismo mensaje genérico. */
+  async listarUsuariosPublico(sucursalId?: string) {
     const empresa = await this.prisma.empresa.findFirst({ orderBy: { createdAt: "asc" } });
     if (!empresa) return [];
     const usuarios = await this.prisma.usuario.findMany({
       where: { empresaId: empresa.id, activo: true, email: { not: null } },
-      select: { id: true, nombre: true, email: true, sucursales: { where: { activo: true }, select: { rol: true, sucursalId: true }, take: 1 } },
+      select: {
+        id: true,
+        nombre: true,
+        email: true,
+        sucursales: {
+          where: { activo: true, ...(sucursalId ? { sucursalId } : {}) },
+          select: { rol: true, sucursalId: true },
+          ...(sucursalId ? {} : { take: 1 }),
+        },
+      },
       orderBy: { nombre: "asc" },
     });
-    // Se manda la primera sucursal asignada como default para el login: un usuario con acceso
-    // a varias sucursales (ej. un supervisor de dos cafés) necesita `sucursalId` explícito o el
-    // login con credenciales lo rechaza pidiendo que se especifique — ver `resolverSucursalActiva`.
-    return usuarios.map((u) => ({
-      id: u.id,
-      nombre: u.nombre,
-      email: u.email!,
-      rol: u.sucursales[0]?.rol ?? null,
-      sucursalId: u.sucursales[0]?.sucursalId ?? null,
-    }));
+    return usuarios
+      .filter((u) => u.sucursales.length > 0)
+      .map((u) => ({
+        id: u.id,
+        nombre: u.nombre,
+        email: u.email!,
+        rol: u.sucursales[0].rol,
+        sucursalId: u.sucursales[0].sucursalId,
+      }));
   }
 
   /** Login con email + password (POS Windows admin, CRM). */

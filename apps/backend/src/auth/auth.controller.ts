@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
 import { Public } from "../common/decorators/public.decorator";
@@ -14,8 +14,8 @@ export class AuthController {
 
   @Public()
   @Get("usuarios-login")
-  usuariosLogin() {
-    return this.auth.listarUsuariosPublico();
+  usuariosLogin(@Query("sucursalId") sucursalId?: string) {
+    return this.auth.listarUsuariosPublico(sucursalId);
   }
 
   @Public()
