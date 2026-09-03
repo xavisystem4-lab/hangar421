@@ -73,6 +73,22 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
     }
   }
 
+  /** Al tocar "Pagar" ya no hace falta haber presionado "Enviar a cocina" primero — si el
+   *  pedido aún no se mandó, se envía en el momento (silencioso) y de una vez se abre el cobro,
+   *  para no bloquear la venta con un paso manual extra. */
+  async function manejarCobrar() {
+    if (!enviado) {
+      setAviso(null);
+      try {
+        await enviarACocina();
+      } catch (e: any) {
+        setAviso(e.message);
+        return;
+      }
+    }
+    setMostrarCobro(true);
+  }
+
   return (
     <div style={{ display: "flex", height: "100%" }}>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -157,7 +173,7 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
         </div>
       </div>
 
-      <PanelPedido mesaNombre={mesaNombre} onCobrar={() => setMostrarCobro(true)} />
+      <PanelPedido mesaNombre={mesaNombre} onCobrar={manejarCobrar} />
 
       {productoModal && (
         <ModalModificadores
@@ -178,7 +194,7 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
       )}
 
       {mostrarCobro && (
-        <ModalCobro onCerrar={() => setMostrarCobro(false)} onCobrado={() => { setMostrarCobro(false); onVentaCobrada(); }} />
+        <ModalCobro mesaNombre={mesaNombre} onCerrar={() => setMostrarCobro(false)} onCobrado={() => { setMostrarCobro(false); onVentaCobrada(); }} />
       )}
 
       {mostrarDescuento && (

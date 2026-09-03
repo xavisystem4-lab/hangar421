@@ -1,7 +1,7 @@
 import { useOrderStore } from "../store/orderStore";
 
 export function PanelPedido({ mesaNombre, onCobrar }: { mesaNombre: string | null; onCobrar: () => void }) {
-  const { items, cambiarCantidad, quitarItem, numComensales, totales, enviado } = useOrderStore();
+  const { items, cambiarCantidad, quitarItem, numComensales, totales } = useOrderStore();
   const t = totales();
 
   return (
@@ -51,7 +51,7 @@ export function PanelPedido({ mesaNombre, onCobrar }: { mesaNombre: string | nul
 
         <button
           onClick={onCobrar}
-          disabled={!enviado}
+          disabled={items.length === 0}
           className="btn-grande btn-pagar"
           style={{ width: "100%", fontSize: 17, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
         >
