@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "../api/http";
 import { useAuthStore } from "../store/authStore";
 import logo from "../assets/logo-dark.png";
+import fondo from "../assets/login-fondo.jpg";
 
 interface UsuarioLogin {
   id: string;
@@ -51,82 +52,76 @@ export function Login() {
   }
 
   return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "var(--h421-navy)", padding: 24, gap: 28 }}>
-      <img src={logo} alt="HANGAR 421" style={{ height: 52, width: "auto" }} />
+    <div
+      style={{
+        height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
+        background: `linear-gradient(rgba(255,255,255,0.88), rgba(255,255,255,0.88)), url(${fondo}) center/cover no-repeat`,
+      }}
+    >
+      <div style={{ width: "100%", maxWidth: 920, background: "#fff", borderRadius: 24, boxShadow: "0 20px 60px rgba(11,30,51,0.18)", padding: "36px 44px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+        <img src={logo} alt="HANGAR 421" style={{ height: 44, width: "auto", marginBottom: 6 }} />
+        <p style={{ color: "var(--h421-gray-400)", margin: 0, fontSize: 14 }}>Elige tu usuario para entrar</p>
 
-      {!seleccionado && (
-        <div style={{ width: "100%", maxWidth: 720, textAlign: "center" }}>
-          <p style={{ color: "rgba(255,255,255,0.7)", marginBottom: 18, fontSize: 15 }}>Elige tu usuario para entrar</p>
+        {errorUsuarios && <p style={{ color: "var(--h421-red)" }}>{errorUsuarios}</p>}
+        {!usuarios && !errorUsuarios && <p style={{ color: "var(--h421-gray-400)" }}>Cargando usuarios…</p>}
 
-          {errorUsuarios && <p style={{ color: "var(--h421-red)" }}>{errorUsuarios}</p>}
-          {!usuarios && !errorUsuarios && <p style={{ color: "rgba(255,255,255,0.7)" }}>Cargando usuarios…</p>}
-
-          {usuarios && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 14 }}>
-              {usuarios.map((u) => (
+        {usuarios && (
+          <div style={{ width: "100%", display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 12, marginTop: 12 }}>
+            {usuarios.map((u) => {
+              const activo = seleccionado?.id === u.id;
+              return (
                 <button
                   key={u.id}
                   onClick={() => setSeleccionado(u)}
                   className="btn-grande"
                   style={{
-                    display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
-                    background: "#fff", borderRadius: 16, padding: "18px 10px",
+                    display: "flex", flexDirection: "column", alignItems: "center", gap: 6, width: 108,
+                    background: activo ? "var(--h421-navy)" : "var(--h421-gray-50)",
+                    borderRadius: 14, padding: "14px 6px",
+                    outline: activo ? "2px solid var(--h421-amber)" : "none",
+                    outlineOffset: 2,
                   }}
                 >
                   <span style={{
-                    width: 56, height: 56, borderRadius: 28, background: "var(--h421-amber)", color: "var(--h421-navy)",
-                    display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontWeight: 800,
+                    width: 48, height: 48, borderRadius: 24, background: "var(--h421-amber)", color: "var(--h421-navy)",
+                    display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, fontWeight: 800,
                   }}>
                     {iniciales(u.nombre)}
                   </span>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: "var(--h421-black)", textAlign: "center" }}>{u.nombre}</span>
-                  {u.rol && <span style={{ fontSize: 11, color: "var(--h421-gray-400)" }}>{ETIQUETA_ROL[u.rol] ?? u.rol}</span>}
+                  <span style={{ fontSize: 12, fontWeight: 700, color: activo ? "#fff" : "var(--h421-black)", textAlign: "center", lineHeight: 1.2 }}>
+                    {u.nombre}
+                  </span>
+                  {u.rol && <span style={{ fontSize: 10, color: activo ? "rgba(255,255,255,0.65)" : "var(--h421-gray-400)" }}>{ETIQUETA_ROL[u.rol] ?? u.rol}</span>}
                 </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+              );
+            })}
+          </div>
+        )}
 
-      {seleccionado && (
         <form
           onSubmit={(e) => { e.preventDefault(); entrar(); }}
-          style={{ background: "#fff", padding: 40, borderRadius: 20, width: 380, textAlign: "center" }}
+          style={{ width: "100%", maxWidth: 340, marginTop: 22, paddingTop: 20, borderTop: "1px solid var(--h421-gray-200)", display: "flex", flexDirection: "column", alignItems: "stretch", gap: 10 }}
         >
-          <button
-            type="button"
-            onClick={() => { setSeleccionado(null); setPassword(""); }}
-            style={{ background: "none", color: "var(--h421-gray-400)", fontSize: 13, padding: 0, marginBottom: 8 }}
-          >
-            ‹ Cambiar de usuario
-          </button>
-
-          <span style={{
-            width: 64, height: 64, borderRadius: 32, background: "var(--h421-amber)", color: "var(--h421-navy)",
-            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 800, margin: "0 auto",
-          }}>
-            {iniciales(seleccionado.nombre)}
-          </span>
-          <p style={{ fontWeight: 700, fontSize: 17, marginTop: 10, marginBottom: 0 }}>{seleccionado.nombre}</p>
-          {seleccionado.rol && <p style={{ color: "var(--h421-gray-400)", fontSize: 13, marginTop: 2 }}>{ETIQUETA_ROL[seleccionado.rol] ?? seleccionado.rol}</p>}
-
+          <p style={{ margin: 0, fontSize: 13, color: "var(--h421-gray-400)", textAlign: "center" }}>
+            {seleccionado ? <>Contraseña de <strong style={{ color: "var(--h421-black)" }}>{seleccionado.nombre}</strong></> : "Elige tu usuario arriba"}
+          </p>
           <input
-            autoFocus
             placeholder="Contraseña"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            style={{ width: "100%", padding: 14, marginTop: 16, borderRadius: 10, border: "1px solid var(--h421-gray-200)" }}
+            disabled={!seleccionado}
+            style={{ width: "100%", padding: 14, borderRadius: 10, border: "1px solid var(--h421-gray-200)" }}
           />
 
-          {error && <p style={{ color: "var(--h421-red)", fontSize: 13 }}>{error}</p>}
+          {error && <p style={{ color: "var(--h421-red)", fontSize: 13, textAlign: "center", margin: 0 }}>{error}</p>}
 
-          <button type="submit" disabled={cargando} className="btn-grande"
-            style={{ width: "100%", marginTop: 18, background: "var(--h421-esmeralda)", color: "#fff", fontSize: 16 }}>
+          <button type="submit" disabled={cargando || !seleccionado} className="btn-grande"
+            style={{ width: "100%", background: "var(--h421-esmeralda)", color: "#fff", fontSize: 16, opacity: seleccionado ? 1 : 0.5 }}>
             {cargando ? "Ingresando…" : "Entrar"}
           </button>
         </form>
-      )}
+      </div>
     </div>
   );
 }

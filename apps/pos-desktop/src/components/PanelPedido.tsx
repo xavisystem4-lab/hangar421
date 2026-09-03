@@ -54,8 +54,12 @@ export function PanelPedido({ mesaNombre, onCobrar }: { mesaNombre: string | nul
           disabled={!enviado}
           className="btn-grande"
           style={{
-            width: "100%", background: "var(--h421-esmeralda)", color: "#fff", fontSize: 17,
-            opacity: enviado ? 1 : 0.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+            width: "100%", fontSize: 17, fontWeight: 800,
+            // Verde pino sólido y fuerte siempre que se pueda cobrar — antes se aclaraba con
+            // opacity cuando el pedido no se había enviado a cocina, y se veía "lavado"; ahora
+            // el estado deshabilitado usa un gris sólido en vez de diluir el verde.
+            background: enviado ? "var(--h421-esmeralda)" : "var(--h421-gray-400)",
+            color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
           }}
         >
           <IconoPago />
