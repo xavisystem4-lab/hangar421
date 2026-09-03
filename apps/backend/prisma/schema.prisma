@@ -200,6 +200,7 @@ model Sucursal {
   traspasosOrigen   Traspaso[] @relation("TraspasoOrigen")
   traspasosDestino  Traspaso[] @relation("TraspasoDestino")
   auditLogs         AuditLog[]
+  horarios          HorarioUsuario[]
 
   @@index([empresaId])
   @@map("sucursales")
@@ -263,6 +264,7 @@ model Usuario {
   movimientosCaja MovimientoCaja[]
   auditLogs      AuditLog[]
   refreshTokens  RefreshToken[]
+  horarios       HorarioUsuario[]
 
   @@index([empresaId])
   @@map("usuarios")
@@ -282,6 +284,27 @@ model UsuarioSucursal {
   @@unique([usuarioId, sucursalId])
   @@index([sucursalId])
   @@map("usuarios_sucursales")
+}
+
+// Horario semanal recurrente de un empleado en una sucursal (no es el turno de caja — ver
+// modelo Turno, que es la apertura/cierre real de una caja con corte de efectivo).
+model HorarioUsuario {
+  id         String   @id @default(uuid())
+  usuarioId  String
+  sucursalId String
+  diaSemana  Int      // 0=domingo … 6=sábado
+  horaInicio String   // "09:00"
+  horaFin    String   // "17:00"
+  notas      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  usuario  Usuario  @relation(fields: [usuarioId], references: [id])
+  sucursal Sucursal @relation(fields: [sucursalId], references: [id])
+
+  @@index([usuarioId])
+  @@index([sucursalId])
+  @@map("horarios_usuario")
 }
 
 model RefreshToken {

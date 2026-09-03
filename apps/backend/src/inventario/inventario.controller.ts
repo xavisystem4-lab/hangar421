@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { RolUsuario, TipoMovimientoInventario } from "@hangar421/shared";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
@@ -30,6 +30,18 @@ export class InventarioController {
   @Audit("RECETA", "DEFINIR")
   definirReceta(@Param("id") id: string, @Body("items") items: { insumoId: string; cantidad: number }[]) {
     return this.inventario.definirReceta(id, items);
+  }
+
+  @Get("productos/:id/receta")
+  listarReceta(@Param("id") id: string) {
+    return this.inventario.listarReceta(id);
+  }
+
+  @Delete("receta/:recetaItemId")
+  @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
+  @Audit("RECETA", "ELIMINAR_ITEM")
+  eliminarItemReceta(@Param("recetaItemId") recetaItemId: string) {
+    return this.inventario.eliminarItemReceta(recetaItemId);
   }
 
   @Get("existencias")

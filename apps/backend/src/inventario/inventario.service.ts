@@ -27,6 +27,14 @@ export class InventarioService {
     );
   }
 
+  listarReceta(productoId: string) {
+    return this.prisma.recetaItem.findMany({ where: { productoId }, include: { insumo: true } });
+  }
+
+  eliminarItemReceta(recetaItemId: string) {
+    return this.prisma.recetaItem.delete({ where: { id: recetaItemId } });
+  }
+
   async existencias(sucursalId: string) {
     return this.prisma.inventarioSucursal.findMany({
       where: { sucursalId },

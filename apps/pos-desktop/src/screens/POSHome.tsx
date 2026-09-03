@@ -73,9 +73,11 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
             return (
               <button key={c.id} onClick={() => setCategoriaActiva(c.id)} className="pildora-categoria"
                 style={{
+                  // Color sólido siempre — antes las píldoras inactivas bajaban a 75% de opacidad
+                  // y se veían lavadas; ahora todas se ven igual de fuertes, y solo el contorno
+                  // navy + sombra marcan cuál está seleccionada.
                   background: color,
                   color: colorTextoContraste(color),
-                  opacity: activa ? 1 : 0.75,
                   outline: activa ? "2px solid var(--h421-navy)" : "none",
                   outlineOffset: 2,
                   boxShadow: activa ? `0 4px 10px ${color}66` : "none",

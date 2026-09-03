@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { RolUsuario } from "@hangar421/shared";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
@@ -44,5 +44,40 @@ export class UsuariosController {
   @Audit("USUARIO", "DESACTIVAR")
   desactivar(@Param("id") id: string) {
     return this.usuarios.desactivar(id);
+  }
+
+  @Patch(":id/activar")
+  @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
+  @Audit("USUARIO", "ACTIVAR")
+  activar(@Param("id") id: string) {
+    return this.usuarios.activar(id);
+  }
+
+  // --- Horarios ---
+
+  @Get(":id/horarios")
+  listarHorarios(@Param("id") id: string) {
+    return this.usuarios.listarHorarios(id);
+  }
+
+  @Post(":id/horarios")
+  @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
+  @Audit("HORARIO", "CREAR")
+  crearHorario(@Param("id") id: string, @Body() body: { sucursalId: string; diaSemana: number; horaInicio: string; horaFin: string; notas?: string }) {
+    return this.usuarios.crearHorario(id, body);
+  }
+
+  @Patch("horarios/:horarioId")
+  @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
+  @Audit("HORARIO", "ACTUALIZAR")
+  actualizarHorario(@Param("horarioId") horarioId: string, @Body() body: any) {
+    return this.usuarios.actualizarHorario(horarioId, body);
+  }
+
+  @Delete("horarios/:horarioId")
+  @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
+  @Audit("HORARIO", "ELIMINAR")
+  eliminarHorario(@Param("horarioId") horarioId: string) {
+    return this.usuarios.eliminarHorario(horarioId);
   }
 }

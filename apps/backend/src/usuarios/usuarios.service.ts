@@ -53,4 +53,30 @@ export class UsuariosService {
   desactivar(usuarioId: string) {
     return this.prisma.usuario.update({ where: { id: usuarioId }, data: { activo: false } });
   }
+
+  activar(usuarioId: string) {
+    return this.prisma.usuario.update({ where: { id: usuarioId }, data: { activo: true } });
+  }
+
+  // --- Horarios (turno semanal recurrente, no confundir con Turno de caja) ---
+
+  listarHorarios(usuarioId: string) {
+    return this.prisma.horarioUsuario.findMany({
+      where: { usuarioId },
+      include: { sucursal: { select: { id: true, nombre: true } } },
+      orderBy: [{ diaSemana: "asc" }, { horaInicio: "asc" }],
+    });
+  }
+
+  crearHorario(usuarioId: string, data: { sucursalId: string; diaSemana: number; horaInicio: string; horaFin: string; notas?: string }) {
+    return this.prisma.horarioUsuario.create({ data: { usuarioId, ...data } });
+  }
+
+  actualizarHorario(horarioId: string, data: Partial<{ diaSemana: number; horaInicio: string; horaFin: string; notas: string }>) {
+    return this.prisma.horarioUsuario.update({ where: { id: horarioId }, data });
+  }
+
+  eliminarHorario(horarioId: string) {
+    return this.prisma.horarioUsuario.delete({ where: { id: horarioId } });
+  }
 }

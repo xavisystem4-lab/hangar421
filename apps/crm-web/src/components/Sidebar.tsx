@@ -6,9 +6,11 @@ import { useAuthCrm } from "@/lib/authClient";
 
 const ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: "📊" },
+  { href: "/reportes", label: "Reportes", icon: "📈" },
   { href: "/sucursales", label: "Sucursales", icon: "🏬" },
   { href: "/catalogo", label: "Catálogo", icon: "☕" },
   { href: "/inventario", label: "Inventario", icon: "📦" },
+  { href: "/usuarios", label: "Usuarios", icon: "👥" },
 ];
 
 export function Sidebar() {

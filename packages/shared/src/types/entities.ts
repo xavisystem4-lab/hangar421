@@ -72,6 +72,16 @@ export interface UsuarioSucursal {
   rol: RolUsuario;
 }
 
+export interface HorarioUsuario {
+  id: string;
+  usuarioId: string;
+  sucursalId: string;
+  diaSemana: number; // 0=domingo … 6=sábado
+  horaInicio: string;
+  horaFin: string;
+  notas?: string | null;
+}
+
 export interface CategoriaProducto {
   id: string;
   empresaId: string;
