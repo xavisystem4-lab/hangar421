@@ -99,6 +99,11 @@ export enum EstadoTurno {
   CERRADO = "CERRADO",
 }
 
+export enum TipoMovimientoCaja {
+  INGRESO = "INGRESO",
+  EGRESO = "EGRESO",
+}
+
 export enum SyncStatus {
   PENDING = "PENDING",
   SYNCING = "SYNCING",

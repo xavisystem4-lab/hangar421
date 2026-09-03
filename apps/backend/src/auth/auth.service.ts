@@ -27,6 +27,22 @@ export class AuthService {
     private config: ConfigService,
   ) {}
 
+  /** Lista pública (sin autenticar) de personal activo para mostrar como selector en la
+   *  pantalla de login del POS ("elige tu usuario, escribe tu contraseña") — solo nombre/rol/
+   *  email (necesario para completar el login con credenciales), nunca contraseñas ni PINs.
+   *  El backend embebido gestiona una sola empresa por instalación, así que no hace falta
+   *  ningún parámetro: se listan los usuarios activos de la primera empresa registrada. */
+  async listarUsuariosPublico() {
+    const empresa = await this.prisma.empresa.findFirst({ orderBy: { createdAt: "asc" } });
+    if (!empresa) return [];
+    const usuarios = await this.prisma.usuario.findMany({
+      where: { empresaId: empresa.id, activo: true, email: { not: null } },
+      select: { id: true, nombre: true, email: true, sucursales: { where: { activo: true }, select: { rol: true }, take: 1 } },
+      orderBy: { nombre: "asc" },
+    });
+    return usuarios.map((u) => ({ id: u.id, nombre: u.nombre, email: u.email!, rol: u.sucursales[0]?.rol ?? null }));
+  }
+
   /** Login con email + password (POS Windows admin, CRM). */
   async loginConCredenciales(dto: LoginCredencialesDto): Promise<LoginResponse> {
     const usuario = await this.prisma.usuario.findUnique({

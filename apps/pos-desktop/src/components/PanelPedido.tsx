@@ -54,7 +54,7 @@ export function PanelPedido({ mesaNombre, onCobrar }: { mesaNombre: string | nul
           disabled={!enviado}
           className="btn-grande"
           style={{
-            width: "100%", background: "var(--h421-navy)", color: "#fff", fontSize: 17,
+            width: "100%", background: "var(--h421-esmeralda)", color: "#fff", fontSize: 17,
             opacity: enviado ? 1 : 0.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
           }}
         >

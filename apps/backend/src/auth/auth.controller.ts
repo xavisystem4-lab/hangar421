@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
 import { Public } from "../common/decorators/public.decorator";
@@ -11,6 +11,12 @@ import { LoginCredencialesDto, LoginPinDto, RefreshTokenDto, SwitchSucursalDto }
 @Controller("auth")
 export class AuthController {
   constructor(private auth: AuthService) {}
+
+  @Public()
+  @Get("usuarios-login")
+  usuariosLogin() {
+    return this.auth.listarUsuariosPublico();
+  }
 
   @Public()
   @Throttle({ default: { limit: 10, ttl: 60_000 } })

@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
-import { RolUsuario } from "@hangar421/shared";
+import { RolUsuario, TipoMovimientoCaja } from "@hangar421/shared";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../common/guards/roles.guard";
 import { Roles } from "../common/decorators/roles.decorator";
@@ -28,12 +28,27 @@ export class CajaController {
   @Post("turnos/:id/cerrar")
   @Roles(RolUsuario.CAJERO, RolUsuario.SUPERVISOR, RolUsuario.ADMIN_SUCURSAL, RolUsuario.ADMIN_CORPORATIVO)
   @Audit("TURNO", "CERRAR")
-  cerrar(@Param("id") id: string, @Body("montoFinalDeclarado") monto: number) {
-    return this.caja.cerrarTurno(id, monto);
+  cerrar(@Param("id") id: string, @Body() body: { montoFinalDeclarado: number; desgloseEfectivo?: unknown }) {
+    return this.caja.cerrarTurno(id, body.montoFinalDeclarado, body.desgloseEfectivo);
   }
 
   @Get("turnos/:id/resumen")
   resumen(@Param("id") id: string) {
     return this.caja.resumenTurno(id);
+  }
+
+  @Post("turnos/:id/movimientos")
+  @Roles(RolUsuario.CAJERO, RolUsuario.SUPERVISOR, RolUsuario.ADMIN_SUCURSAL, RolUsuario.ADMIN_CORPORATIVO)
+  @Audit("MOVIMIENTO_CAJA", "CREAR")
+  registrarMovimiento(
+    @Param("id") id: string,
+    @Body() body: { tipo: TipoMovimientoCaja; monto: number; motivo: string; usuarioId: string },
+  ) {
+    return this.caja.registrarMovimiento({ turnoId: id, ...body });
+  }
+
+  @Get("turnos/:id/movimientos")
+  listarMovimientos(@Param("id") id: string) {
+    return this.caja.listarMovimientos(id);
   }
 }

@@ -115,6 +115,11 @@ enum EstadoTurno {
   CERRADO
 }
 
+enum TipoMovimientoCaja {
+  INGRESO
+  EGRESO
+}
+
 enum SyncStatus {
   PENDING
   SYNCED
@@ -255,6 +260,7 @@ model Usuario {
   pedidosMesero  Pedido[] @relation("PedidoMesero")
   pedidosCajero  Pedido[] @relation("PedidoCajero")
   turnos         Turno[]
+  movimientosCaja MovimientoCaja[]
   auditLogs      AuditLog[]
   refreshTokens  RefreshToken[]
 
@@ -447,17 +453,38 @@ model Turno {
   montoFinalDeclarado Decimal? @db.Decimal(10, 2)
   montoFinalSistema Decimal?  @db.Decimal(10, 2)
   diferencia        Decimal?  @db.Decimal(10, 2)
+  desgloseEfectivo  Json?     // conteo de billetes/monedas MXN y billetes USD declarados al corte
   estado            EstadoTurno @default(ABIERTO)
   fechaApertura     DateTime  @default(now())
   fechaCierre       DateTime?
 
-  sucursal Sucursal @relation(fields: [sucursalId], references: [id])
-  caja     Caja     @relation(fields: [cajaId], references: [id])
-  usuario  Usuario  @relation(fields: [usuarioId], references: [id])
+  sucursal    Sucursal          @relation(fields: [sucursalId], references: [id])
+  caja        Caja              @relation(fields: [cajaId], references: [id])
+  usuario     Usuario           @relation(fields: [usuarioId], references: [id])
+  movimientos MovimientoCaja[]
 
   @@index([sucursalId])
   @@index([cajaId])
   @@map("turnos")
+}
+
+// Entradas/salidas de efectivo de caja durante un turno que NO son ventas (ej. retiro para
+// cambio, pago a proveedor de contado, depósito extra) — se incluyen en el corte de caja para
+// que el efectivo contado cuadre contra lo esperado.
+model MovimientoCaja {
+  id        String             @id @default(uuid())
+  turnoId   String
+  tipo      TipoMovimientoCaja
+  monto     Decimal            @db.Decimal(10, 2)
+  motivo    String
+  usuarioId String
+  createdAt DateTime           @default(now())
+
+  turno   Turno   @relation(fields: [turnoId], references: [id])
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+
+  @@index([turnoId])
+  @@map("movimientos_caja")
 }
 
 // ---------------------------------------------------------------------------

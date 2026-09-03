@@ -3,13 +3,13 @@
  *  en vez de colores saturados sin relación entre sí. Se asigna por índice y se repite
  *  si hay más categorías que colores. */
 export const CATEGORIA_COLORES = [
-  "#e8a33d", // Café — ámbar del logo
-  "#0b1e33", // Bebidas frías — azul marino del logo
-  "#c97c4b", // Panadería — terracota cálido
-  "#5b7a63", // Desayunos — verde salvia apagado
-  "#a4472f", // Comidas — óxido/ladrillo
-  "#6d5875", // Postres — ciruela apagado
-  "#48586b", // Extras — gris pizarra azulado
+  "#f2a92c", // Bebidas frías — ámbar vivo del logo
+  "#132a47", // Bebidas calientes — azul marino vivo del logo
+  "#e2703a", // Refresher — terracota vivo
+  "#3f9c56", // Para llevar — verde vivo
+  "#c8432e", // Postres — óxido/rojo ladrillo vivo
+  "#8b4fa0", // Combos — morado ciruela vivo
+  "#3d6b99", // Extras — azul acero vivo
 ];
 
 /** Devuelve el color de texto (blanco o azul marino) con mejor contraste sobre un fondo

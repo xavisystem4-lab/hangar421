@@ -7,18 +7,19 @@
   --h421-gray-400: #9ca3af;
   --h421-amber: #e8a33d;
   --h421-green: #1f9d55;
+  --h421-esmeralda: #138a4b;
   --h421-blue: #2563eb;
   --h421-yellow: #f5a524;
   --h421-red: #dc2626;
-  /* paleta de categorías (píldoras de colores, acorde a los colores del logotipo —
-     ver src/theme/categoriaColores.ts, fuente real que usa la UI) */
-  --h421-cat-1: #e8a33d; /* Café — ámbar del logo */
-  --h421-cat-2: #0b1e33; /* Bebidas frías — azul marino del logo */
-  --h421-cat-3: #c97c4b; /* Panadería — terracota */
-  --h421-cat-4: #5b7a63; /* Desayunos — verde salvia */
-  --h421-cat-5: #a4472f; /* Comidas — óxido */
-  --h421-cat-6: #6d5875; /* Postres — ciruela */
-  --h421-cat-7: #48586b; /* Extras — gris pizarra */
+  /* paleta de categorías (píldoras de colores, acorde a los colores del logotipo, en tono
+     vivo/llamativo — ver src/theme/categoriaColores.ts, fuente real que usa la UI) */
+  --h421-cat-1: #f2a92c; /* Bebidas frías — ámbar vivo */
+  --h421-cat-2: #132a47; /* Bebidas calientes — azul marino vivo */
+  --h421-cat-3: #e2703a; /* Refresher — terracota vivo */
+  --h421-cat-4: #3f9c56; /* Para llevar — verde vivo */
+  --h421-cat-5: #c8432e; /* Postres — óxido vivo */
+  --h421-cat-6: #8b4fa0; /* Combos — morado vivo */
+  --h421-cat-7: #3d6b99; /* Extras — azul acero vivo */
 }
 
 * { box-sizing: border-box; }
@@ -48,11 +49,12 @@ button {
 }
 
 .pildora-categoria {
-  min-height: 44px;
-  padding: 0 18px;
-  border-radius: 22px;
+  min-height: 60px;
+  padding: 0 28px;
+  border-radius: 14px; /* cuadrada como las tarjetas de producto (16px), no una píldora completa */
   white-space: nowrap;
-  font-size: 14px;
+  font-size: 18px;
+  font-weight: 700;
   transition: transform 0.1s ease;
 }
 .pildora-categoria:active {

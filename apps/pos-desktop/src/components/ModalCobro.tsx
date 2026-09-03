@@ -87,7 +87,7 @@ export function ModalCobro({ onCerrar, onCobrado }: { onCerrar: () => void; onCo
         <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
           <button onClick={onCerrar} style={{ flex: 1, padding: 14, background: "var(--h421-gray-200)" }}>Cancelar</button>
           <button onClick={confirmar} disabled={procesando} className="btn-grande"
-            style={{ flex: 2, background: "var(--h421-green)", color: "#fff", fontSize: 16 }}>
+            style={{ flex: 2, background: "var(--h421-esmeralda)", color: "#fff", fontSize: 16 }}>
             {procesando ? "Procesando…" : "CONFIRMAR COBRO"}
           </button>
         </div>

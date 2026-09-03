@@ -26,7 +26,7 @@ export function BarraSuperior({
   pantallaActual: "venta" | "mesas" | "caja";
   onCambiarPantalla: (p: "venta" | "mesas" | "caja") => void;
 }) {
-  const { usuario } = useAuthStore();
+  const { usuario, logout } = useAuthStore();
   const sync = useSyncStore();
   const [ahora, setAhora] = useState(new Date());
 
@@ -78,6 +78,20 @@ export function BarraSuperior({
           <span style={{ width: 10, height: 10, borderRadius: 5, background: estadoInfo.color, display: "inline-block" }} />
           {estadoInfo.texto}{sync.pendientes > 0 ? ` (${sync.pendientes})` : ""}
         </span>
+        <span style={{ opacity: 0.6 }}>|</span>
+        <button
+          onClick={() => logout()}
+          title="Vuelve a la pantalla de inicio para que otro usuario entre con su contraseña"
+          style={{ background: "rgba(255,255,255,0.12)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600 }}
+        >
+          ⇄ Cambiar de usuario
+        </button>
+        <button
+          onClick={() => logout()}
+          style={{ background: "var(--h421-red)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600 }}
+        >
+          ⏻ Cerrar sesión
+        </button>
       </div>
     </header>
   );

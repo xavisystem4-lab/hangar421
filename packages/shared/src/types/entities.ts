@@ -11,6 +11,7 @@ import {
   TipoArea,
   TipoDescuento,
   TipoDispositivo,
+  TipoMovimientoCaja,
   TipoMovimientoInventario,
   TipoPedido,
 } from "../enums";
@@ -201,9 +202,20 @@ export interface Turno {
   montoFinalDeclarado?: number | null;
   montoFinalSistema?: number | null;
   diferencia?: number | null;
+  desgloseEfectivo?: unknown;
   estado: EstadoTurno;
   fechaApertura: string;
   fechaCierre?: string | null;
+}
+
+export interface MovimientoCaja {
+  id: string;
+  turnoId: string;
+  tipo: TipoMovimientoCaja;
+  monto: number;
+  motivo: string;
+  usuarioId: string;
+  createdAt: string;
 }
 
 export interface Insumo {
