@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { MetodoPago } from "@hangar421/shared";
 import { useOrderStore } from "../store/orderStore";
+import { useAuthStore } from "../store/authStore";
+import { ModalDescuento } from "./ModalDescuento";
 
 const METODOS: { valor: MetodoPago; etiqueta: string; icono: string }[] = [
   { valor: MetodoPago.EFECTIVO, etiqueta: "Efectivo", icono: "💵" },
@@ -18,7 +20,9 @@ function round2(n: number): number {
 
 export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: string | null; onCerrar: () => void; onCobrado: () => void }) {
   const { items, totales, descuentos, pedidoId, enviarACocina, cobrar } = useOrderStore();
+  const sucursalId = useAuthStore((s) => s.sucursalId)!;
   const t = totales();
+  const [mostrarDescuento, setMostrarDescuento] = useState(false);
 
   const [metodoActivo, setMetodoActivo] = useState<MetodoPago>(MetodoPago.EFECTIVO);
 
@@ -32,14 +36,23 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
 
   const [pagos, setPagos] = useState<{ metodo: MetodoPago; monto: number }[]>([]);
   const [montoInput, setMontoInput] = useState(totalAPagar.toFixed(2));
+  const [montoTocado, setMontoTocado] = useState(false);
   const [procesando, setProcesando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Si el cajero aplica un descuento (o cambia la propina) antes de tocar el teclado, el monto
+  // sugerido se actualiza solo — evita cobrar el monto viejo por olvido tras cambiar el total.
+  useEffect(() => {
+    if (!montoTocado && pagos.length === 0) setMontoInput(totalAPagar.toFixed(2));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totalAPagar]);
 
   const pagadoHasta = pagos.reduce((s, p) => s + p.monto, 0);
   const restante = Math.max(0, totalAPagar - pagadoHasta);
   const cambio = Math.max(0, pagadoHasta + Number(montoInput || 0) - totalAPagar);
 
   function presionarTecla(tecla: string) {
+    setMontoTocado(true);
     setMontoInput((m) => {
       if (tecla === "borrar") return m.length > 1 ? m.slice(0, -1) : "0";
       if (tecla === ".") return m.includes(".") ? m : `${m}.`;
@@ -80,6 +93,7 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
   }
 
   return (
+    <>
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }}>
       <div style={{ background: "#fff", borderRadius: 20, width: "100%", maxWidth: 980, maxHeight: "92vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(11,30,51,0.3)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 24px", borderBottom: "1px solid var(--h421-gray-200)" }}>
@@ -142,11 +156,17 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
             </div>
 
             <h4 style={{ marginBottom: 4, marginTop: 18 }}>Descuento / Cortesía</h4>
-            <p style={{ margin: 0, fontSize: 13, color: "var(--h421-gray-400)" }}>
-              {t.descuentoTotal > 0
-                ? <>Aplicado: <strong style={{ color: "var(--h421-black)" }}>−${t.descuentoTotal.toFixed(2)}</strong> {descuentos[0]?.motivo ? `(${descuentos[0].motivo})` : ""}</>
-                : <>Sin descuento — se autoriza desde el botón <strong>% Descuento</strong> del panel de venta (requiere PIN de supervisor).</>}
-            </p>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <p style={{ margin: 0, fontSize: 13, color: "var(--h421-gray-400)" }}>
+                {t.descuentoTotal > 0
+                  ? <>Aplicado: <strong style={{ color: "var(--h421-black)" }}>−${t.descuentoTotal.toFixed(2)}</strong> {descuentos[0]?.motivo ? `(${descuentos[0].motivo})` : ""}</>
+                  : "Sin descuento aplicado."}
+              </p>
+              <button onClick={() => setMostrarDescuento(true)} style={{ padding: "8px 14px", fontSize: 13, background: "var(--h421-yellow)", color: "#000", flexShrink: 0 }}>
+                {t.descuentoTotal > 0 ? "Cambiar" : "% Descuento"}
+              </button>
+            </div>
+            <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--h421-gray-400)" }}>Requiere PIN de supervisor.</p>
 
             {pagos.length > 0 && (
               <ul style={{ listStyle: "none", padding: 0, marginTop: 14, fontSize: 14 }}>
@@ -212,5 +232,10 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
         </div>
       </div>
     </div>
+
+    {mostrarDescuento && (
+      <ModalDescuento sucursalId={sucursalId} onCerrar={() => setMostrarDescuento(false)} />
+    )}
+    </>
   );
 }

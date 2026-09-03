@@ -1,23 +1,41 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { TipoDescuento } from "@hangar421/shared";
 import { apiFetch } from "../api/http";
 import { useOrderStore } from "../store/orderStore";
 
+interface UsuarioLogin { id: string; nombre: string; rol: string | null }
+
+// Roles que pueden autorizar un descuento (deben coincidir con los que acepta el backend en
+// POST /pedidos/:id/descuentos — ver `@Roles` en pedidos.controller.ts).
+const ROLES_AUTORIZAN = new Set(["SUPERVISOR", "ADMIN_SUCURSAL", "ADMIN_CORPORATIVO"]);
+const ETIQUETA_ROL: Record<string, string> = {
+  ADMIN_CORPORATIVO: "Admin. corporativo", ADMIN_SUCURSAL: "Admin. sucursal", SUPERVISOR: "Supervisor",
+};
+
 /** Descuento con autorización: requiere el PIN de un Supervisor/Admin — se valida contra
- *  /auth/login-pin (sin cambiar la sesión activa, solo para confirmar identidad y rol). */
+ *  /auth/login-pin (sin cambiar la sesión activa, solo para confirmar identidad y rol). El
+ *  cajero elige el nombre de una lista en vez de tener que teclear el ID del usuario a mano. */
 export function ModalDescuento({ sucursalId, onCerrar }: { sucursalId: string; onCerrar: () => void }) {
   const { aplicarDescuento } = useOrderStore();
   const [tipo, setTipo] = useState<TipoDescuento>(TipoDescuento.PORCENTAJE);
   const [valor, setValor] = useState("10");
   const [motivo, setMotivo] = useState("");
+  const [autorizadores, setAutorizadores] = useState<UsuarioLogin[] | null>(null);
   const [usuarioAutorizaId, setUsuarioAutorizaId] = useState("");
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [validando, setValidando] = useState(false);
 
+  useEffect(() => {
+    apiFetch<UsuarioLogin[]>("/auth/usuarios-login")
+      .then((usuarios) => setAutorizadores(usuarios.filter((u) => u.rol && ROLES_AUTORIZAN.has(u.rol))))
+      .catch(() => setAutorizadores([]));
+  }, []);
+
   async function confirmar() {
     setError(null);
     if (!motivo.trim()) return setError("Indica el motivo del descuento");
+    if (!usuarioAutorizaId) return setError("Elige quién autoriza el descuento");
     setValidando(true);
     try {
       // valida que el PIN corresponda a un usuario con permiso en esta sucursal
@@ -36,7 +54,7 @@ export function ModalDescuento({ sucursalId, onCerrar }: { sucursalId: string; o
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
-      <div style={{ background: "#fff", borderRadius: 16, padding: 24, width: 380 }}>
+      <div style={{ background: "#fff", borderRadius: 16, padding: 24, width: 380, maxHeight: "90vh", overflowY: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
           <h2 style={{ margin: 0 }}>Aplicar descuento</h2>
           <button onClick={onCerrar} style={{ background: "none", fontSize: 20 }}>✕</button>
@@ -53,10 +71,34 @@ export function ModalDescuento({ sucursalId, onCerrar }: { sucursalId: string; o
 
         <div style={{ marginTop: 14, padding: 10, background: "var(--h421-gray-50)", borderRadius: 8 }}>
           <strong style={{ fontSize: 13 }}>Autorización de supervisor</strong>
-          <input placeholder="ID de usuario autoriza" value={usuarioAutorizaId} onChange={(e) => setUsuarioAutorizaId(e.target.value)}
-            style={{ width: "100%", padding: 10, marginTop: 6, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
+
+          {autorizadores === null && <p style={{ fontSize: 13, color: "var(--h421-gray-400)", marginBottom: 0 }}>Cargando…</p>}
+          {autorizadores?.length === 0 && <p style={{ fontSize: 13, color: "var(--h421-red)", marginBottom: 0 }}>No hay usuarios con rol de supervisor o admin dados de alta.</p>}
+
+          {autorizadores && autorizadores.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+              {autorizadores.map((u) => {
+                const activo = usuarioAutorizaId === u.id;
+                return (
+                  <button
+                    key={u.id}
+                    onClick={() => setUsuarioAutorizaId(u.id)}
+                    style={{
+                      padding: "8px 12px", fontSize: 13, minHeight: 40,
+                      background: activo ? "var(--h421-navy)" : "#fff",
+                      color: activo ? "#fff" : "var(--h421-black)",
+                      border: "1px solid var(--h421-gray-200)",
+                    }}
+                  >
+                    {u.nombre}{u.rol ? ` · ${ETIQUETA_ROL[u.rol] ?? u.rol}` : ""}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           <input placeholder="PIN" type="password" value={pin} onChange={(e) => setPin(e.target.value)}
-            style={{ width: "100%", padding: 10, marginTop: 6, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
+            style={{ width: "100%", padding: 10, marginTop: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
         </div>
 
         {error && <p style={{ color: "var(--h421-red)" }}>{error}</p>}
