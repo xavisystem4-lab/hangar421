@@ -105,11 +105,11 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
               <div
                 style={{
                   display: "grid",
-                  // "auto-fit" (no "auto-fill"): las columnas vacías de sobra colapsan a 0 en vez
-                  // de quedarse reservadas como espacio invisible — así, cuando una subcategoría
-                  // trae pocos productos (ej. 2), esas tarjetas se reparten el ancho completo de
-                  // la fila en vez de dejar hueco vacío a la derecha.
-                  gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+                  // "auto-fill" con un máximo (210px): las tarjetas mantienen siempre el mismo
+                  // tamaño que en una categoría con muchos productos (ej. Bebidas frías) — antes,
+                  // con "auto-fit" y sin tope, una subcategoría con pocos productos (ej. 2) las
+                  // estiraba mucho más grandes para llenar la fila, y no coincidían con el resto.
+                  gridTemplateColumns: "repeat(auto-fill, minmax(170px, 210px))",
                   gridAutoRows: "min-content",
                   alignContent: "start",
                   alignItems: "start",

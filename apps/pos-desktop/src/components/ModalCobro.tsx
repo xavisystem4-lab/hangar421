@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { MetodoPago } from "@hangar421/shared";
 import { useOrderStore } from "../store/orderStore";
 import { useAuthStore } from "../store/authStore";
@@ -64,6 +64,34 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
     // directamente lo que falta para el próximo pago (0 si este ya cubrió todo).
     setMontoInput(restante.toFixed(2));
   }
+
+  // Teclado físico de la PC (fila numérica o numpad) — funciona en cuanto se abre la ventana,
+  // sin tener que hacerle clic al teclado en pantalla primero. Se ignora mientras el foco esté
+  // en un <input>/<textarea> real (ej. "Porcentaje %", "Motivo" del descuento) para no duplicar
+  // lo que se esté escribiendo ahí.
+  useEffect(() => {
+    function manejarTecladoFisico(e: KeyboardEvent) {
+      const foco = document.activeElement;
+      if (foco && (foco.tagName === "INPUT" || foco.tagName === "TEXTAREA")) return;
+
+      if (/^[0-9]$/.test(e.key)) {
+        presionarTecla(e.key);
+        e.preventDefault();
+      } else if (e.key === "." || e.key === ",") {
+        presionarTecla(".");
+        e.preventDefault();
+      } else if (e.key === "Backspace" || e.key === "Delete") {
+        presionarTecla("borrar");
+        e.preventDefault();
+      } else if (e.key === "Enter") {
+        agregarPago();
+        e.preventDefault();
+      }
+    }
+    window.addEventListener("keydown", manejarTecladoFisico);
+    return () => window.removeEventListener("keydown", manejarTecladoFisico);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [montoInput, restante, metodoActivo]);
 
   function elegirPropinaRapida(pct: number) {
     setPropinaPorcentaje(pct);
