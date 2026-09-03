@@ -13,7 +13,7 @@ import { CATEGORIA_COLORES, colorTextoContraste } from "../theme/categoriaColore
 
 export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | null; onVentaCobrada: () => void }) {
   const { categorias, productos } = useCatalogoStore();
-  const { agregarItem, items, enviarACocina, enviado } = useOrderStore();
+  const { agregarItem } = useOrderStore();
   const sucursalId = useAuthStore((s) => s.sucursalId)!;
   const [categoriaActiva, setCategoriaActiva] = useState<string | null>(null);
   const [busqueda, setBusqueda] = useState("");
@@ -21,8 +21,6 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
   const [productoModal, setProductoModal] = useState<Producto | null>(null);
   const [mostrarCobro, setMostrarCobro] = useState(false);
   const [mostrarDescuento, setMostrarDescuento] = useState(false);
-  const [enviando, setEnviando] = useState(false);
-  const [aviso, setAviso] = useState<string | null>(null);
 
   // Respaldo defensivo en el front: si por lo que sea el catálogo trae una categoría repetida
   // (incluso con el catálogo del backend ya corregido para no duplicar), se muestra una sola
@@ -58,35 +56,6 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
         modificadores: [],
       });
     }
-  }
-
-  async function manejarEnviarCocina() {
-    setAviso(null);
-    setEnviando(true);
-    try {
-      await enviarACocina();
-      setAviso("Pedido enviado a cocina ✔");
-    } catch (e: any) {
-      setAviso(e.message);
-    } finally {
-      setEnviando(false);
-    }
-  }
-
-  /** Al tocar "Pagar" ya no hace falta haber presionado "Enviar a cocina" primero — si el
-   *  pedido aún no se mandó, se envía en el momento (silencioso) y de una vez se abre el cobro,
-   *  para no bloquear la venta con un paso manual extra. */
-  async function manejarCobrar() {
-    if (!enviado) {
-      setAviso(null);
-      try {
-        await enviarACocina();
-      } catch (e: any) {
-        setAviso(e.message);
-        return;
-      }
-    }
-    setMostrarCobro(true);
   }
 
   return (
@@ -151,9 +120,10 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
           ))}
         </div>
 
-        {aviso && <div style={{ padding: "4px 16px", fontSize: 13, color: "var(--h421-navy)" }}>{aviso}</div>}
-
-        {/* Barra inferior — acciones rápidas como íconos circulares + envío a cocina */}
+        {/* Barra inferior — acciones rápidas como íconos circulares. Este negocio no tiene
+            cocina/estación de preparación separada: el cliente pide y paga en el momento, así
+            que no hay un paso de "enviar a cocina" — "Pagar" en el panel de la derecha crea el
+            pedido y lo cobra en una sola acción. */}
         <div style={{ display: "flex", alignItems: "center", gap: 18, padding: "12px 20px", background: "#fff", borderTop: "1px solid var(--h421-gray-200)" }}>
           <AccionCircular icono="🔍" etiqueta="Buscar" color="var(--h421-blue)" onClick={() => setMostrarBusqueda((v) => !v)} />
           <AccionCircular icono="🍽" etiqueta="Mesas" color="var(--h421-blue)" />
@@ -161,19 +131,10 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
           <AccionCircular icono="⏸" etiqueta="Suspender" color="var(--h421-gray-400)" />
           <AccionCircular icono="%" etiqueta="Descuento" color="var(--h421-yellow)" onClick={() => setMostrarDescuento(true)} />
           <AccionCircular icono="🗑" etiqueta="Eliminar" color="var(--h421-red)" onClick={() => useOrderStore.getState().limpiar()} />
-
-          <button
-            className="btn-grande"
-            disabled={items.length === 0 || enviando}
-            onClick={manejarEnviarCocina}
-            style={{ marginLeft: "auto", background: "var(--h421-navy)", color: "#fff", padding: "0 28px", fontSize: 16 }}
-          >
-            📨 {enviando ? "Enviando…" : "Enviar a cocina"}
-          </button>
         </div>
       </div>
 
-      <PanelPedido mesaNombre={mesaNombre} onCobrar={manejarCobrar} />
+      <PanelPedido mesaNombre={mesaNombre} onCobrar={() => setMostrarCobro(true)} />
 
       {productoModal && (
         <ModalModificadores

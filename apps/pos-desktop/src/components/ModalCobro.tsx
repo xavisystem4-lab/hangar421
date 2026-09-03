@@ -17,7 +17,7 @@ function round2(n: number): number {
 }
 
 export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: string | null; onCerrar: () => void; onCobrado: () => void }) {
-  const { items, totales, descuentos, cobrar } = useOrderStore();
+  const { items, totales, descuentos, pedidoId, enviarACocina, cobrar } = useOrderStore();
   const t = totales();
 
   const [metodoActivo, setMetodoActivo] = useState<MetodoPago>(MetodoPago.EFECTIVO);
@@ -65,6 +65,11 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
     const pagosFinales = pagos.length > 0 ? pagos : [{ metodo: metodoActivo, monto: Number(montoInput) }];
     setProcesando(true);
     try {
+      // Este negocio no tiene cocina — no hay un paso separado de "enviar pedido"; el pedido
+      // se crea aquí mismo (si todavía no existe) y se cobra en el mismo toque de "Confirmar
+      // pago". Al estar ya dentro del modal, cualquier error de esta creación se ve en pantalla
+      // en vez de bloquear silenciosamente la apertura de la ventana de cobro.
+      if (!pedidoId) await enviarACocina();
       await cobrar(pagosFinales);
       onCobrado();
     } catch (e: any) {

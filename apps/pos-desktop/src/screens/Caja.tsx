@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { apiFetch } from "../api/http";
 import { useAuthStore } from "../store/authStore";
 
@@ -33,6 +33,24 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+/** Enter/flecha abajo pasa al siguiente campo de denominación, flecha arriba al anterior —
+ *  como capturar en Excel, para contar efectivo rápido sin tocar el mouse. Los campos deben
+ *  vivir dentro de un contenedor con `data-desglose-container` y llevar `data-denom-input`. */
+function manejarTeclaDesglose(e: KeyboardEvent<HTMLInputElement>) {
+  if (e.key !== "Enter" && e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+  const contenedor = e.currentTarget.closest("[data-desglose-container]");
+  if (!contenedor) return;
+  const inputs = Array.from(contenedor.querySelectorAll<HTMLInputElement>("input[data-denom-input]"));
+  const idx = inputs.indexOf(e.currentTarget);
+  if (idx === -1) return;
+  const siguiente = inputs[idx + (e.key === "ArrowUp" ? -1 : 1)];
+  if (siguiente) {
+    e.preventDefault();
+    siguiente.focus();
+    siguiente.select();
+  }
+}
+
 const tarjeta: CSSProperties = { background: "#fff", padding: 20, borderRadius: 16, display: "flex", flexDirection: "column", gap: 4 };
 
 export function Caja({ sucursalId }: { sucursalId: string }) {
@@ -49,6 +67,12 @@ export function Caja({ sucursalId }: { sucursalId: string }) {
   const [billetesMXN, setBilletesMXN] = useState<Conteo>({});
   const [monedasMXN, setMonedasMXN] = useState<Conteo>({});
   const [billetesUSD, setBilletesUSD] = useState<Conteo>({});
+  const [capturado, setCapturado] = useState(false);
+
+  // Cualquier cambio en el desglose invalida una captura previa (hay que volver a confirmar).
+  function actualizarBilletesMXN(c: Conteo) { setBilletesMXN(c); setCapturado(false); }
+  function actualizarMonedasMXN(c: Conteo) { setMonedasMXN(c); setCapturado(false); }
+  function actualizarBilletesUSD(c: Conteo) { setBilletesUSD(c); setCapturado(false); }
 
   const [tipoMov, setTipoMov] = useState<"INGRESO" | "EGRESO">("EGRESO");
   const [montoMov, setMontoMov] = useState("");
@@ -81,6 +105,7 @@ export function Caja({ sucursalId }: { sucursalId: string }) {
     setMonedasMXN({});
     setBilletesUSD({});
     setObservaciones("");
+    setCapturado(false);
   }
 
   async function abrir() {
@@ -239,9 +264,26 @@ export function Caja({ sucursalId }: { sucursalId: string }) {
             )}
 
             <h3 style={{ margin: "12px 0 0" }}>Desglose de efectivo</h3>
-            <GrupoDenominaciones titulo="Billetes MXN" denominaciones={BILLETES_MXN} conteo={billetesMXN} onChange={setBilletesMXN} prefijo="$" />
-            <GrupoDenominaciones titulo="Monedas MXN" denominaciones={MONEDAS_MXN} conteo={monedasMXN} onChange={setMonedasMXN} prefijo="$" />
-            <GrupoDenominaciones titulo="Billetes USD" denominaciones={BILLETES_USD} conteo={billetesUSD} onChange={setBilletesUSD} prefijo="US$" />
+            <p style={{ margin: "0 0 4px", fontSize: 12, color: "var(--h421-gray-400)" }}>
+              Enter o ↓ pasa al siguiente campo, ↑ regresa al anterior — sin usar el mouse.
+            </p>
+            <div data-desglose-container>
+              <GrupoDenominaciones titulo="Billetes MXN" denominaciones={BILLETES_MXN} conteo={billetesMXN} onChange={actualizarBilletesMXN} prefijo="$" />
+              <GrupoDenominaciones titulo="Monedas MXN" denominaciones={MONEDAS_MXN} conteo={monedasMXN} onChange={actualizarMonedasMXN} prefijo="$" />
+              <GrupoDenominaciones titulo="Billetes USD" denominaciones={BILLETES_USD} conteo={billetesUSD} onChange={actualizarBilletesUSD} prefijo="US$" />
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12, padding: "10px 14px", background: "var(--h421-gray-50)", borderRadius: 10 }}>
+              <span style={{ fontSize: 14, fontWeight: 700 }}>
+                Total del desglose{totalUSDContado > 0 ? " (MXN + USD informativo)" : ""}
+              </span>
+              <span style={{ fontSize: 18, fontWeight: 800, color: "var(--h421-navy)" }}>
+                ${totalMXNContado.toFixed(2)}{totalUSDContado > 0 ? ` + US$${totalUSDContado.toFixed(2)}` : ""}
+              </span>
+            </div>
+            <button onClick={() => setCapturado(true)} className="btn-grande" style={{ marginTop: 8, background: capturado ? "var(--h421-esmeralda)" : "var(--h421-navy)", color: "#fff" }}>
+              {capturado ? "✓ Capturado" : "Capturar"}
+            </button>
           </div>
 
           {/* Columna derecha: bloque de corte, siempre visible */}
@@ -336,8 +378,10 @@ function GrupoDenominaciones({
             <input
               type="number"
               min={0}
+              data-denom-input
               value={conteo[d] ?? ""}
               onChange={(e) => onChange({ ...conteo, [d]: Number(e.target.value) })}
+              onKeyDown={manejarTeclaDesglose}
               placeholder="0"
               style={{ width: 48, padding: 6, borderRadius: 6, border: "1px solid var(--h421-gray-200)" }}
             />
