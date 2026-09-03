@@ -42,8 +42,11 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
   const [error, setError] = useState<string | null>(null);
 
   const pagadoHasta = pagos.reduce((s, p) => s + p.monto, 0);
-  const restante = Math.max(0, totalAPagar - pagadoHasta);
-  const cambio = Math.max(0, pagadoHasta + Number(montoInput || 0) - totalAPagar);
+  // Incluye lo que se está tecleando en el momento (no solo los pagos ya agregados) — así el
+  // cambio/falta-cubrir se actualiza en cuanto se escribe el importe, sin esperar a "Agregar pago".
+  const totalConTeclaActual = pagadoHasta + Number(montoInput || 0);
+  const restante = Math.max(0, totalAPagar - totalConTeclaActual);
+  const cambio = Math.max(0, totalConTeclaActual - totalAPagar);
 
   function presionarTecla(tecla: string) {
     setMontoInput((m) => {
@@ -57,7 +60,9 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
     const monto = Number(montoInput);
     if (!monto || monto <= 0) return;
     setPagos((p) => [...p, { metodo: metodoActivo, monto }]);
-    setMontoInput(Math.max(0, restante - monto).toFixed(2));
+    // `restante` ya descuenta lo que se acaba de escribir (ver más arriba), así que es
+    // directamente lo que falta para el próximo pago (0 si este ya cubrió todo).
+    setMontoInput(restante.toFixed(2));
   }
 
   function elegirPropinaRapida(pct: number) {
@@ -104,12 +109,12 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
               </div>
             ))}
 
-            <div style={{ borderTop: "1px solid var(--h421-gray-200)", marginTop: 10, paddingTop: 10, fontSize: 14 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", color: "var(--h421-gray-400)" }}>
+            <div style={{ borderTop: "1px solid var(--h421-gray-200)", marginTop: 10, paddingTop: 10, fontSize: 16, fontWeight: 700, color: "var(--h421-navy)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span>Subtotal</span><span>${t.subtotal.toFixed(2)} MXN</span>
               </div>
               {t.descuentoTotal > 0 && (
-                <div style={{ display: "flex", justifyContent: "space-between", color: "var(--h421-gray-400)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span>Descuento</span><span>−${t.descuentoTotal.toFixed(2)} MXN</span>
                 </div>
               )}
@@ -152,16 +157,16 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
 
             <h4 style={{ marginBottom: 4, marginTop: 18 }}>Descuento / Cortesía</h4>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-              <p style={{ margin: 0, fontSize: 13, color: "var(--h421-gray-400)" }}>
+              <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "var(--h421-navy)" }}>
                 {t.descuentoTotal > 0
-                  ? <>Aplicado: <strong style={{ color: "var(--h421-black)" }}>−${t.descuentoTotal.toFixed(2)}</strong> {descuentos[0]?.motivo ? `(${descuentos[0].motivo})` : ""}</>
+                  ? <>Aplicado: <strong>−${t.descuentoTotal.toFixed(2)}</strong> {descuentos[0]?.motivo ? `(${descuentos[0].motivo})` : ""}</>
                   : "Sin descuento aplicado."}
               </p>
               <button onClick={() => setMostrarDescuento(true)} style={{ padding: "8px 14px", fontSize: 13, background: "var(--h421-yellow)", color: "#000", flexShrink: 0 }}>
                 {t.descuentoTotal > 0 ? "Cambiar" : "% Descuento"}
               </button>
             </div>
-            <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--h421-gray-400)" }}>Requiere PIN de supervisor.</p>
+            <p style={{ margin: "4px 0 0", fontSize: 14, fontWeight: 700, color: "var(--h421-navy)" }}>Requiere PIN de supervisor.</p>
 
             {pagos.length > 0 && (
               <ul style={{ listStyle: "none", padding: 0, marginTop: 14, fontSize: 14 }}>
@@ -175,14 +180,16 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
             )}
 
             <div style={{ borderTop: "1px solid var(--h421-gray-200)", marginTop: 14, paddingTop: 10 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, color: "var(--h421-gray-400)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 700, color: "var(--h421-navy)" }}>
                 <span>Propina</span><span>${propina.toFixed(2)} MXN</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 20 }}>
                 <span>Total a pagar</span><span>${totalAPagar.toFixed(2)} MXN</span>
               </div>
-              <p style={{ margin: "6px 0 0", fontSize: 13, color: "var(--h421-gray-400)" }}>
-                {restante > 0 ? <>Falta cubrir: ${restante.toFixed(2)}</> : <span style={{ color: "var(--h421-esmeralda)", fontWeight: 700 }}>Cambio: ${cambio.toFixed(2)}</span>}
+              <p style={{ margin: "6px 0 0", fontSize: 19, fontWeight: 800 }}>
+                {restante > 0
+                  ? <span style={{ color: "var(--h421-navy)" }}>Falta cubrir: ${restante.toFixed(2)}</span>
+                  : <span style={{ color: "var(--h421-esmeralda)" }}>Cambio: ${cambio.toFixed(2)}</span>}
               </p>
             </div>
 
