@@ -2,13 +2,16 @@
  *  (azul marino + ámbar) y variaciones sobrias del mismo espíritu "elegante industrial" —
  *  en vez de colores saturados sin relación entre sí. Se asigna por índice y se repite
  *  si hay más categorías que colores. */
+// El orden acá debe coincidir con el orden de categorías del backend (ver
+// `cargarCatalogoHangar421` en seed-demo-data.ts): Combos, Bebidas frías, Bebidas calientes,
+// Postres, Refresher, Para llevar, Extras.
 export const CATEGORIA_COLORES = [
+  "#8b4fa0", // Combos — morado ciruela vivo
   "#f2a92c", // Bebidas frías — ámbar vivo del logo
   "#132a47", // Bebidas calientes — azul marino vivo del logo
+  "#c8432e", // Postres — óxido/rojo ladrillo vivo
   "#e2703a", // Refresher — terracota vivo
   "#3f9c56", // Para llevar — verde vivo
-  "#c8432e", // Postres — óxido/rojo ladrillo vivo
-  "#8b4fa0", // Combos — morado ciruela vivo
   "#3d6b99", // Extras — azul acero vivo
 ];
 

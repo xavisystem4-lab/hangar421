@@ -24,6 +24,11 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
   const [enviando, setEnviando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
 
+  // Respaldo defensivo en el front: si por lo que sea el catálogo trae una categoría repetida
+  // (incluso con el catálogo del backend ya corregido para no duplicar), se muestra una sola
+  // vez — se conserva la primera aparición, ya ordenada por `orden` desde la API.
+  const categoriasUnicas = Array.from(new Map(categorias.map((c) => [c.nombre, c])).values());
+
   const productosFiltrados = productos.filter((p) => {
     const porCategoria = !categoriaActiva || p.categoriaId === categoriaActiva;
     const porBusqueda = !busqueda || p.nombre.toLowerCase().includes(busqueda.toLowerCase());
@@ -77,7 +82,7 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
             style={{ background: !categoriaActiva ? "var(--h421-navy)" : "var(--h421-gray-50)", color: !categoriaActiva ? "#fff" : "var(--h421-black)" }}>
             Todas
           </button>
-          {categorias.map((c, i) => {
+          {categoriasUnicas.map((c, i) => {
             const color = CATEGORIA_COLORES[i % CATEGORIA_COLORES.length];
             const activa = categoriaActiva === c.id;
             return (

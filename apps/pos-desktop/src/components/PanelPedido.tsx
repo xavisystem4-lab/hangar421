@@ -52,15 +52,8 @@ export function PanelPedido({ mesaNombre, onCobrar }: { mesaNombre: string | nul
         <button
           onClick={onCobrar}
           disabled={!enviado}
-          className="btn-grande"
-          style={{
-            width: "100%", fontSize: 17, fontWeight: 800,
-            // Verde pino sólido y fuerte siempre que se pueda cobrar — antes se aclaraba con
-            // opacity cuando el pedido no se había enviado a cocina, y se veía "lavado"; ahora
-            // el estado deshabilitado usa un gris sólido en vez de diluir el verde.
-            background: enviado ? "var(--h421-esmeralda)" : "var(--h421-gray-400)",
-            color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-          }}
+          className="btn-grande btn-pagar"
+          style={{ width: "100%", fontSize: 17, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
         >
           <IconoPago />
           Pagar ${t.total.toFixed(2)}

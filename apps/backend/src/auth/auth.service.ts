@@ -37,10 +37,19 @@ export class AuthService {
     if (!empresa) return [];
     const usuarios = await this.prisma.usuario.findMany({
       where: { empresaId: empresa.id, activo: true, email: { not: null } },
-      select: { id: true, nombre: true, email: true, sucursales: { where: { activo: true }, select: { rol: true }, take: 1 } },
+      select: { id: true, nombre: true, email: true, sucursales: { where: { activo: true }, select: { rol: true, sucursalId: true }, take: 1 } },
       orderBy: { nombre: "asc" },
     });
-    return usuarios.map((u) => ({ id: u.id, nombre: u.nombre, email: u.email!, rol: u.sucursales[0]?.rol ?? null }));
+    // Se manda la primera sucursal asignada como default para el login: un usuario con acceso
+    // a varias sucursales (ej. un supervisor de dos cafés) necesita `sucursalId` explícito o el
+    // login con credenciales lo rechaza pidiendo que se especifique — ver `resolverSucursalActiva`.
+    return usuarios.map((u) => ({
+      id: u.id,
+      nombre: u.nombre,
+      email: u.email!,
+      rol: u.sucursales[0]?.rol ?? null,
+      sucursalId: u.sucursales[0]?.sucursalId ?? null,
+    }));
   }
 
   /** Login con email + password (POS Windows admin, CRM). */

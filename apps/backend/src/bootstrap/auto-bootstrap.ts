@@ -29,33 +29,29 @@ export async function autoBootstrap(prisma: PrismaClient, log: (msg: string) => 
     await seedDemoData(prisma);
     log("[bootstrap] Datos demo listos.");
   } else {
-    log("[bootstrap] Base de datos ya inicializada, se omite la siembra de datos demo.");
-    await actualizarCatalogoSiHaceFalta(prisma, log);
+    log("[bootstrap] Base de datos ya inicializada — sincronizando catálogo...");
+    await sincronizarCatalogo(prisma, log);
   }
 }
 
-/** Si una instalación ya tenía datos (por ejemplo, de una versión anterior del POS con el menú
- *  demo viejo) y `CATALOGO_VERSION` subió desde entonces, reemplaza el catálogo (categorías,
- *  productos, modificadores) de cada empresa por el vigente — sin tocar usuarios, sucursales
- *  ni pedidos. Los productos/categorías viejos se desactivan (`activo:false`, ya filtrados en
- *  todas las consultas del catálogo) en vez de borrarse, para no chocar con pedidos históricos
- *  que los referencien. */
-async function actualizarCatalogoSiHaceFalta(prisma: PrismaClient, log: (msg: string) => void) {
+/** Sincroniza el catálogo (categorías, modificadores, productos) de cada empresa contra el menú
+ *  vigente de HANGAR 421 Coffee Shop, sin tocar usuarios, sucursales ni pedidos.
+ *  `cargarCatalogoHangar421` es idempotente (upsert por nombre, nunca duplica) y desactiva
+ *  cualquier categoría/producto que no sea parte del menú vigente (de un catálogo demo/anterior,
+ *  o de una corrida previa que se haya interrumpido a medias) — así que correr esto en TODO
+ *  arranque, y no solo la primera vez que sube `CATALOGO_VERSION`, hace que la base se autocorrija
+ *  sola sin depender de que un marcador de versión se haya guardado correctamente. */
+async function sincronizarCatalogo(prisma: PrismaClient, log: (msg: string) => void) {
   const empresas = await prisma.empresa.findMany();
   for (const empresa of empresas) {
-    const config = (empresa.configJson as { catalogoVersion?: number } | null) ?? {};
-    const version = config.catalogoVersion ?? 0;
-    if (version >= CATALOGO_VERSION) continue;
-
-    log(`[bootstrap] Actualizando catálogo de "${empresa.nombre}" (v${version} → v${CATALOGO_VERSION})...`);
-    await prisma.categoriaProducto.updateMany({ where: { empresaId: empresa.id }, data: { activo: false } });
-    await prisma.producto.updateMany({ where: { empresaId: empresa.id }, data: { activo: false } });
-
     const sucursales = await prisma.sucursal.findMany({ where: { empresaId: empresa.id }, select: { id: true } });
     await cargarCatalogoHangar421(prisma, empresa.id, sucursales.map((s) => s.id));
-    await prisma.empresa.update({ where: { id: empresa.id }, data: { configJson: { ...config, catalogoVersion: CATALOGO_VERSION } } });
-    log(`[bootstrap] Catálogo de "${empresa.nombre}" actualizado.`);
+    const config = (empresa.configJson as { catalogoVersion?: number } | null) ?? {};
+    if (config.catalogoVersion !== CATALOGO_VERSION) {
+      await prisma.empresa.update({ where: { id: empresa.id }, data: { configJson: { ...config, catalogoVersion: CATALOGO_VERSION } } });
+    }
   }
+  log("[bootstrap] Catálogo sincronizado.");
 }
 
 async function tablaExiste(prisma: PrismaClient, tabla: string): Promise<boolean> {

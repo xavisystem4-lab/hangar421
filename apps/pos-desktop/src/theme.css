@@ -13,12 +13,12 @@
   --h421-red: #dc2626;
   /* paleta de categorías (píldoras de colores, acorde a los colores del logotipo, en tono
      vivo/llamativo — ver src/theme/categoriaColores.ts, fuente real que usa la UI) */
-  --h421-cat-1: #f2a92c; /* Bebidas frías — ámbar vivo */
-  --h421-cat-2: #132a47; /* Bebidas calientes — azul marino vivo */
-  --h421-cat-3: #e2703a; /* Refresher — terracota vivo */
-  --h421-cat-4: #3f9c56; /* Para llevar — verde vivo */
-  --h421-cat-5: #c8432e; /* Postres — óxido vivo */
-  --h421-cat-6: #8b4fa0; /* Combos — morado vivo */
+  --h421-cat-1: #8b4fa0; /* Combos — morado vivo */
+  --h421-cat-2: #f2a92c; /* Bebidas frías — ámbar vivo */
+  --h421-cat-3: #132a47; /* Bebidas calientes — azul marino vivo */
+  --h421-cat-4: #c8432e; /* Postres — óxido vivo */
+  --h421-cat-5: #e2703a; /* Refresher — terracota vivo */
+  --h421-cat-6: #3f9c56; /* Para llevar — verde vivo */
   --h421-cat-7: #3d6b99; /* Extras — azul acero vivo */
 }
 
@@ -59,6 +59,24 @@ button {
 }
 .pildora-categoria:active {
   transform: scale(0.96);
+}
+
+/* Botón principal de cobro ("Pagar $..."): verde esmeralda sólido siempre que esté disponible,
+   con un tono más oscuro al pasar el cursor o presionar — el estado no disponible (pedido aún
+   no enviado a cocina) usa gris sólido en vez de aclarar/opacar el verde. */
+.btn-pagar {
+  background: var(--h421-esmeralda);
+  color: #fff;
+}
+.btn-pagar:hover:not(:disabled) {
+  background: #0f713d;
+}
+.btn-pagar:active:not(:disabled) {
+  background: #0f713d;
+}
+.btn-pagar:disabled {
+  background: var(--h421-gray-400);
+  cursor: not-allowed;
 }
 
 input, textarea, select {

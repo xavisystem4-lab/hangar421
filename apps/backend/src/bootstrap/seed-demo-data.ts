@@ -123,128 +123,138 @@ export async function seedDemoData(prisma: PrismaClient) {
   return { empresa, sucursales: [sucursalRoma, sucursalCondesa] };
 }
 
+/** Busca una categoría existente por (empresaId, nombre) y la actualiza, o la crea si no
+ *  existe — nunca duplica aunque se vuelva a correr (a diferencia de `.create()` a secas, que
+ *  generaba una fila nueva cada vez que este catálogo se recargaba). */
+async function upsertCategoria(prisma: PrismaClient, empresaId: string, data: { nombre: string; orden: number; color: string }) {
+  const existente = await prisma.categoriaProducto.findFirst({ where: { empresaId, nombre: data.nombre } });
+  if (existente) {
+    return prisma.categoriaProducto.update({ where: { id: existente.id }, data: { orden: data.orden, color: data.color, activo: true } });
+  }
+  return prisma.categoriaProducto.create({ data: { empresaId, ...data, activo: true } });
+}
+
+/** Igual que `upsertCategoria` pero para modificadores — las opciones NO se borran y recrean
+ *  (podrían estar referenciadas por modificadores de pedidos ya cobrados); se actualiza el
+ *  precio/orden de las que coinciden por nombre y se agregan las que falten. */
+async function upsertModificador(
+  prisma: PrismaClient,
+  empresaId: string,
+  data: { nombre: string; tipo: "SELECCION_UNICA" | "MULTIPLE"; obligatorio?: boolean; opciones: { nombre: string; precioExtra: number; orden: number }[] },
+) {
+  let modificador = await prisma.modificador.findFirst({ where: { empresaId, nombre: data.nombre } });
+  if (modificador) {
+    await prisma.modificador.update({ where: { id: modificador.id }, data: { tipo: data.tipo, obligatorio: data.obligatorio ?? false } });
+  } else {
+    modificador = await prisma.modificador.create({ data: { empresaId, nombre: data.nombre, tipo: data.tipo, obligatorio: data.obligatorio ?? false } });
+  }
+  for (const op of data.opciones) {
+    const existente = await prisma.opcionModificador.findFirst({ where: { modificadorId: modificador.id, nombre: op.nombre } });
+    if (existente) await prisma.opcionModificador.update({ where: { id: existente.id }, data: { precioExtra: op.precioExtra, orden: op.orden } });
+    else await prisma.opcionModificador.create({ data: { modificadorId: modificador.id, ...op } });
+  }
+  return modificador;
+}
+
 /**
  * Catálogo real de HANGAR 421 Coffee Shop (categorías, modificadores y productos) — separado de
- * `seedDemoData` para poder reaplicarse sobre una empresa ya existente cuando sube
- * `CATALOGO_VERSION` (ver `bootstrap/auto-bootstrap.ts`), sin tocar usuarios/sucursales/pedidos.
+ * `seedDemoData` para poder reaplicarse sobre una empresa ya existente (ver
+ * `bootstrap/auto-bootstrap.ts`), sin tocar usuarios/sucursales/pedidos.
+ *
+ * Es completamente idempotente: cada categoría/modificador/producto se busca por su nombre
+ * (o nombre+precio para los productos) antes de crearlo, así que correrlo varias veces nunca
+ * genera duplicados — y al final desactiva cualquier categoría/producto de esta empresa que NO
+ * forme parte del menú vigente (por ejemplo, categorías de un catálogo demo anterior tipo
+ * "Café"/"Comidas"/"Panadería"), así una base que haya quedado en un estado inconsistente por
+ * una corrida anterior interrumpida se autocorrige la siguiente vez que arranca la app.
  */
 export async function cargarCatalogoHangar421(prisma: PrismaClient, empresaId: string, sucursalIds: string[]) {
-  // --- Categorías (colores acordes al logotipo — ver apps/pos-desktop/src/theme/categoriaColores.ts) ---
+  // --- Categorías (orden pedido: Combos primero, luego bebidas/postres/refresher; colores
+  //     acordes al logotipo — ver apps/pos-desktop/src/theme/categoriaColores.ts) ---
   const categoriasData = [
-    { nombre: "Bebidas frías", orden: 1, color: "#e8a33d" },
-    { nombre: "Bebidas calientes", orden: 2, color: "#0b1e33" },
-    { nombre: "Refresher", orden: 3, color: "#c97c4b" },
-    { nombre: "Para llevar", orden: 4, color: "#5b7a63" },
-    { nombre: "Postres", orden: 5, color: "#a4472f" },
-    { nombre: "Combos", orden: 6, color: "#6d5875" },
+    { nombre: "Combos", orden: 1, color: "#6d5875" },
+    { nombre: "Bebidas frías", orden: 2, color: "#e8a33d" },
+    { nombre: "Bebidas calientes", orden: 3, color: "#0b1e33" },
+    { nombre: "Postres", orden: 4, color: "#a4472f" },
+    { nombre: "Refresher", orden: 5, color: "#c97c4b" },
+    { nombre: "Para llevar", orden: 6, color: "#5b7a63" },
     { nombre: "Extras", orden: 7, color: "#48586b" },
   ];
   const categorias: Record<string, string> = {};
+  const categoriaIdsVigentes = new Set<string>();
   for (const c of categoriasData) {
-    const cat = await prisma.categoriaProducto.create({ data: { empresaId: empresaId, ...c } });
+    const cat = await upsertCategoria(prisma, empresaId, c);
     categorias[c.nombre] = cat.id;
+    categoriaIdsVigentes.add(cat.id);
   }
+  // Cualquier categoría de esta empresa que no sea parte del menú vigente (de un catálogo
+  // demo/anterior) se desactiva — ya no aparece en el POS, sin borrar productos históricos.
+  await prisma.categoriaProducto.updateMany({
+    where: { empresaId, id: { notIn: [...categoriaIdsVigentes] }, activo: true },
+    data: { activo: false },
+  });
 
   // --- Modificadores ---
   // Tamaño y Tipo de leche: selección única y obligatoria — la primera opción (orden 1) queda
   // preseleccionada por defecto en el modal de personalización (Chico / Entera).
-  const modTamano = await prisma.modificador.create({
-    data: {
-      empresaId: empresaId,
-      nombre: "Tamaño",
-      tipo: "SELECCION_UNICA",
-      obligatorio: true,
-      opciones: {
-        create: [
-          { nombre: "Chico", precioExtra: 0, orden: 1 },
-          { nombre: "Grande", precioExtra: 12, orden: 2 },
-          { nombre: "XL", precioExtra: 20, orden: 3 },
-        ],
-      },
-    },
+  const modTamano = await upsertModificador(prisma, empresaId, {
+    nombre: "Tamaño", tipo: "SELECCION_UNICA", obligatorio: true,
+    opciones: [
+      { nombre: "Chico", precioExtra: 0, orden: 1 },
+      { nombre: "Grande", precioExtra: 12, orden: 2 },
+      { nombre: "XL", precioExtra: 20, orden: 3 },
+    ],
   });
-  const modLeche = await prisma.modificador.create({
-    data: {
-      empresaId: empresaId,
-      nombre: "Tipo de leche",
-      tipo: "SELECCION_UNICA",
-      obligatorio: true,
-      opciones: {
-        create: [
-          { nombre: "Entera", precioExtra: 0, orden: 1 },
-          { nombre: "Deslactosada", precioExtra: 0, orden: 2 },
-          { nombre: "Avena", precioExtra: 25, orden: 3 },
-          { nombre: "Almendra", precioExtra: 20, orden: 4 },
-        ],
-      },
-    },
+  const modLeche = await upsertModificador(prisma, empresaId, {
+    nombre: "Tipo de leche", tipo: "SELECCION_UNICA", obligatorio: true,
+    opciones: [
+      { nombre: "Entera", precioExtra: 0, orden: 1 },
+      { nombre: "Deslactosada", precioExtra: 0, orden: 2 },
+      { nombre: "Avena", precioExtra: 25, orden: 3 },
+      { nombre: "Almendra", precioExtra: 20, orden: 4 },
+    ],
   });
-  const modExtras = await prisma.modificador.create({
-    data: {
-      empresaId: empresaId,
-      nombre: "Extras",
-      tipo: "MULTIPLE",
-      opciones: {
-        create: [
-          { nombre: "Shot extra", precioExtra: 25, orden: 1 },
-          { nombre: "Sin azúcar", precioExtra: 0, orden: 2 },
-          { nombre: "Canela", precioExtra: 5, orden: 3 },
-          { nombre: "Gr de Matcha", precioExtra: 20, orden: 4 },
-        ],
-      },
-    },
+  const modExtras = await upsertModificador(prisma, empresaId, {
+    nombre: "Extras", tipo: "MULTIPLE",
+    opciones: [
+      { nombre: "Shot extra", precioExtra: 25, orden: 1 },
+      { nombre: "Sin azúcar", precioExtra: 0, orden: 2 },
+      { nombre: "Canela", precioExtra: 5, orden: 3 },
+      { nombre: "Gr de Matcha", precioExtra: 20, orden: 4 },
+    ],
   });
-  const modJarabe = await prisma.modificador.create({
-    data: {
-      empresaId: empresaId,
-      nombre: "Jarabe",
-      tipo: "MULTIPLE",
-      opciones: {
-        create: [
-          { nombre: "Vainilla", precioExtra: 15, orden: 1 },
-          { nombre: "Caramelo", precioExtra: 15, orden: 2 },
-          { nombre: "Miel de agave", precioExtra: 15, orden: 3 },
-          { nombre: "Cacao", precioExtra: 15, orden: 4 },
-          { nombre: "Salted Caramel", precioExtra: 15, orden: 5 },
-          { nombre: "Plátano", precioExtra: 15, orden: 6 },
-        ],
-      },
-    },
+  const modJarabe = await upsertModificador(prisma, empresaId, {
+    nombre: "Jarabe", tipo: "MULTIPLE",
+    opciones: [
+      { nombre: "Vainilla", precioExtra: 15, orden: 1 },
+      { nombre: "Caramelo", precioExtra: 15, orden: 2 },
+      { nombre: "Miel de agave", precioExtra: 15, orden: 3 },
+      { nombre: "Cacao", precioExtra: 15, orden: 4 },
+      { nombre: "Salted Caramel", precioExtra: 15, orden: 5 },
+      { nombre: "Plátano", precioExtra: 15, orden: 6 },
+    ],
   });
-  const modColdFoam = await prisma.modificador.create({
-    data: {
-      empresaId: empresaId,
-      nombre: "Cold Foam",
-      tipo: "MULTIPLE",
-      opciones: {
-        create: [
-          { nombre: "Blue Matcha", precioExtra: 25, orden: 1 },
-          { nombre: "Matcha", precioExtra: 25, orden: 2 },
-          { nombre: "Cajeta", precioExtra: 25, orden: 3 },
-          { nombre: "Plátano", precioExtra: 25, orden: 4 },
-          { nombre: "Vainilla", precioExtra: 25, orden: 5 },
-        ],
-      },
-    },
+  const modColdFoam = await upsertModificador(prisma, empresaId, {
+    nombre: "Cold Foam", tipo: "MULTIPLE",
+    opciones: [
+      { nombre: "Blue Matcha", precioExtra: 25, orden: 1 },
+      { nombre: "Matcha", precioExtra: 25, orden: 2 },
+      { nombre: "Cajeta", precioExtra: 25, orden: 3 },
+      { nombre: "Plátano", precioExtra: 25, orden: 4 },
+      { nombre: "Vainilla", precioExtra: 25, orden: 5 },
+    ],
   });
   // Jarabe incluido en los combos H&T / BnE&T (sin cargo — ya está contemplado en el precio del combo).
-  const modJarabeEscoger = await prisma.modificador.create({
-    data: {
-      empresaId: empresaId,
-      nombre: "Jarabe a escoger",
-      tipo: "SELECCION_UNICA",
-      obligatorio: true,
-      opciones: {
-        create: [
-          { nombre: "Vainilla", precioExtra: 0, orden: 1 },
-          { nombre: "Caramelo", precioExtra: 0, orden: 2 },
-          { nombre: "Miel de agave", precioExtra: 0, orden: 3 },
-          { nombre: "Cacao", precioExtra: 0, orden: 4 },
-          { nombre: "Salted Caramel", precioExtra: 0, orden: 5 },
-          { nombre: "Plátano", precioExtra: 0, orden: 6 },
-        ],
-      },
-    },
+  const modJarabeEscoger = await upsertModificador(prisma, empresaId, {
+    nombre: "Jarabe a escoger", tipo: "SELECCION_UNICA", obligatorio: true,
+    opciones: [
+      { nombre: "Vainilla", precioExtra: 0, orden: 1 },
+      { nombre: "Caramelo", precioExtra: 0, orden: 2 },
+      { nombre: "Miel de agave", precioExtra: 0, orden: 3 },
+      { nombre: "Cacao", precioExtra: 0, orden: 4 },
+      { nombre: "Salted Caramel", precioExtra: 0, orden: 5 },
+      { nombre: "Plátano", precioExtra: 0, orden: 6 },
+    ],
   });
 
   // --- Productos — menú real de HANGAR 421 Coffee Shop ---
@@ -355,35 +365,49 @@ export async function cargarCatalogoHangar421(prisma: PrismaClient, empresaId: s
   ];
 
   const productos: Record<string, string> = {};
+  const productoIdsVigentes = new Set<string>();
   for (const p of productosData) {
-    const producto = await prisma.producto.create({
-      data: {
-        empresaId: empresaId,
-        categoriaId: categorias[p.categoria],
-        nombre: p.nombre,
-        descripcion: p.descripcion,
-        subcategoria: p.subcategoria,
-        precioBase: p.precio,
-        orden: p.orden,
-        estacionPreparacion: p.estacion,
-        requierePersonalizacion: !!p.personalizacion,
-      },
-    });
-    // Los dos "Solo Bagel" comparten nombre — se distinguen por precio/descripción, así que
-    // se indexan por id compuesto (nombre + precio) en vez de solo nombre.
+    // "Solo Bagel" se repite con dos precios distintos — el nombre solo no alcanza como llave
+    // natural, así que se busca por (empresaId, nombre, precioBase).
+    let producto = await prisma.producto.findFirst({ where: { empresaId, nombre: p.nombre, precioBase: p.precio } });
+    const datosProducto = {
+      categoriaId: categorias[p.categoria],
+      descripcion: p.descripcion,
+      subcategoria: p.subcategoria,
+      orden: p.orden,
+      estacionPreparacion: p.estacion,
+      requierePersonalizacion: !!p.personalizacion,
+      activo: true,
+    };
+    if (producto) {
+      producto = await prisma.producto.update({ where: { id: producto.id }, data: datosProducto });
+    } else {
+      producto = await prisma.producto.create({ data: { empresaId, nombre: p.nombre, precioBase: p.precio, ...datosProducto } });
+    }
     productos[`${p.nombre}#${p.precio}`] = producto.id;
+    productoIdsVigentes.add(producto.id);
 
+    // Sincroniza los modificadores vinculados al producto: se borran los que ya no correspondan
+    // y se agregan/actualizan los vigentes — es solo la tabla puente, no hay pedidos históricos
+    // que dependan de estas filas (los pedidos referencian la opción elegida, no este vínculo).
+    const linksDeseados: { modificadorId: string; orden: number }[] = [];
     if (p.personalizacion) {
-      const links: { modificadorId: string; orden: number }[] = [];
       let orden = 1;
-      if (p.personalizacion.tamano) links.push({ modificadorId: modTamano.id, orden: orden++ });
-      if (p.personalizacion.leche) links.push({ modificadorId: modLeche.id, orden: orden++ });
-      if (p.personalizacion.extras) links.push({ modificadorId: modExtras.id, orden: orden++ });
-      if (p.personalizacion.jarabe) links.push({ modificadorId: modJarabe.id, orden: orden++ });
-      if (p.personalizacion.coldFoam) links.push({ modificadorId: modColdFoam.id, orden: orden++ });
-      if (p.personalizacion.jarabeEscoger) links.push({ modificadorId: modJarabeEscoger.id, orden: orden++ });
-      await prisma.productoModificador.createMany({
-        data: links.map((l) => ({ productoId: producto.id, ...l })),
+      if (p.personalizacion.tamano) linksDeseados.push({ modificadorId: modTamano.id, orden: orden++ });
+      if (p.personalizacion.leche) linksDeseados.push({ modificadorId: modLeche.id, orden: orden++ });
+      if (p.personalizacion.extras) linksDeseados.push({ modificadorId: modExtras.id, orden: orden++ });
+      if (p.personalizacion.jarabe) linksDeseados.push({ modificadorId: modJarabe.id, orden: orden++ });
+      if (p.personalizacion.coldFoam) linksDeseados.push({ modificadorId: modColdFoam.id, orden: orden++ });
+      if (p.personalizacion.jarabeEscoger) linksDeseados.push({ modificadorId: modJarabeEscoger.id, orden: orden++ });
+    }
+    await prisma.productoModificador.deleteMany({
+      where: { productoId: producto.id, modificadorId: { notIn: linksDeseados.map((l) => l.modificadorId) } },
+    });
+    for (const l of linksDeseados) {
+      await prisma.productoModificador.upsert({
+        where: { productoId_modificadorId: { productoId: producto.id, modificadorId: l.modificadorId } },
+        update: { orden: l.orden },
+        create: { productoId: producto.id, ...l },
       });
     }
 
@@ -391,11 +415,21 @@ export async function cargarCatalogoHangar421(prisma: PrismaClient, empresaId: s
     // receta — no se especificaron ingredientes ni cantidades en el menú, queda configurable por
     // admin)
     for (const sucursalId of sucursalIds) {
-      await prisma.productoSucursal.create({
-        data: { productoId: producto.id, sucursalId, precio: p.precio, disponible: true },
+      await prisma.productoSucursal.upsert({
+        where: { productoId_sucursalId: { productoId: producto.id, sucursalId } },
+        update: { precio: p.precio, disponible: true },
+        create: { productoId: producto.id, sucursalId, precio: p.precio, disponible: true },
       });
     }
   }
 
-  console.log(`[catalogo] ${productosData.length} productos cargados para empresa ${empresaId}.`);
+  // Cualquier producto de esta empresa que no sea parte del menú vigente (de un catálogo demo/
+  // anterior, ej. "Espresso", "Cheesecake") se desactiva — deja de verse en el POS sin borrar
+  // pedidos históricos que lo hayan usado.
+  await prisma.producto.updateMany({
+    where: { empresaId, id: { notIn: [...productoIdsVigentes] }, activo: true },
+    data: { activo: false },
+  });
+
+  console.log(`[catalogo] ${productosData.length} productos sincronizados para empresa ${empresaId}.`);
 }

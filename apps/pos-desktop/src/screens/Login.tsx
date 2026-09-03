@@ -9,6 +9,7 @@ interface UsuarioLogin {
   nombre: string;
   email: string;
   rol: string | null;
+  sucursalId: string | null;
 }
 
 const ETIQUETA_ROL: Record<string, string> = {
@@ -43,7 +44,7 @@ export function Login() {
     if (!seleccionado) return;
     setCargando(true);
     try {
-      await loginCredenciales(seleccionado.email, password);
+      await loginCredenciales(seleccionado.email, password, seleccionado.sucursalId ?? undefined);
     } catch {
       // el error ya queda reflejado en el store
     } finally {
@@ -55,7 +56,7 @@ export function Login() {
     <div
       style={{
         height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
-        background: `linear-gradient(rgba(255,255,255,0.88), rgba(255,255,255,0.88)), url(${fondo}) center/cover no-repeat`,
+        background: `linear-gradient(rgba(255,255,255,0.45), rgba(255,255,255,0.45)), url(${fondo}) center/cover no-repeat`,
       }}
     >
       <div style={{ width: "100%", maxWidth: 920, background: "#fff", borderRadius: 24, boxShadow: "0 20px 60px rgba(11,30,51,0.18)", padding: "36px 44px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
