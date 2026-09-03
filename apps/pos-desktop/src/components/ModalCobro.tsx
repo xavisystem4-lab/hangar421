@@ -68,7 +68,9 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
   // Teclado físico de la PC (fila numérica o numpad) — funciona en cuanto se abre la ventana,
   // sin tener que hacerle clic al teclado en pantalla primero. Se ignora mientras el foco esté
   // en un <input>/<textarea> real (ej. "Porcentaje %", "Motivo" del descuento) para no duplicar
-  // lo que se esté escribiendo ahí.
+  // lo que se esté escribiendo ahí. Enter confirma el cobro completo (no solo agrega un pago
+  // parcial — para eso sigue estando el botón "Agregar pago" con el mouse) y Esc cancela/cierra
+  // la ventana, igual que el botón "Cancelar".
   useEffect(() => {
     function manejarTecladoFisico(e: KeyboardEvent) {
       const foco = document.activeElement;
@@ -84,14 +86,17 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
         presionarTecla("borrar");
         e.preventDefault();
       } else if (e.key === "Enter") {
-        agregarPago();
         e.preventDefault();
+        if (!procesando) confirmar();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        onCerrar();
       }
     }
     window.addEventListener("keydown", manejarTecladoFisico);
     return () => window.removeEventListener("keydown", manejarTecladoFisico);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [montoInput, restante, metodoActivo]);
+  }, [montoInput, restante, metodoActivo, pagos, procesando, propina, totalAPagar]);
 
   function elegirPropinaRapida(pct: number) {
     setPropinaPorcentaje(pct);
@@ -256,8 +261,11 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
             </div>
 
             <button onClick={agregarPago} className="btn-grande" style={{ marginTop: 10, background: "var(--h421-navy)", color: "#fff", fontSize: 16 }}>
-              ENTER · Agregar pago
+              Agregar pago
             </button>
+            <p style={{ margin: "10px 0 0", fontSize: 12, color: "var(--h421-gray-400)", textAlign: "center" }}>
+              Enter confirma el cobro · Esc cancela
+            </p>
           </div>
         </div>
       </div>

@@ -1,6 +1,6 @@
 {
   "name": "@hangar421/pos-desktop",
-  "version": "0.2.19",
+  "version": "0.2.20",
   "private": true,
   "main": "dist-electron/main.js",
   "author": "HANGAR 421",
