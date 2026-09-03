@@ -214,6 +214,11 @@ export class PedidosService {
   /** Cobro: registra pagos, cierra el pedido y descuenta inventario según receta. */
   async cobrar(pedidoId: string, dto: CobrarPedidoDto) {
     const pedido = await this.obtener(pedidoId);
+
+    // Idempotente ante un doble toque de "Confirmar pago" (doble clic, reintento de red): si ya
+    // está cobrado, se devuelve tal cual en vez de insertar pagos duplicados o fallar.
+    if (pedido.estado === EstadoPedido.COBRADO) return pedido;
+
     const { suficiente, totalPagado, faltante } = validarPagoSuficiente(dto.pagos, Number(pedido.total));
     if (!suficiente) {
       throw new BadRequestException(
@@ -221,24 +226,42 @@ export class PedidosService {
       );
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.pago.createMany({
-        data: dto.pagos.map((p) => ({
-          pedidoId,
-          metodo: p.metodo,
-          monto: p.monto,
-          referencia: p.referencia,
-          usuarioId: dto.cajeroId,
-        })),
+    // Si `cajeroId` no corresponde a un usuario real de esta base (ej. sesión vieja en el
+    // cliente apuntando a un usuario que ya no existe aquí), que falle con un mensaje claro en
+    // vez de un 500 genérico al chocar contra la relación en `pagos`/`pedidos`.
+    if (dto.cajeroId) {
+      const cajero = await this.prisma.usuario.findUnique({ where: { id: dto.cajeroId }, select: { id: true } });
+      if (!cajero) throw new BadRequestException(`El usuario que cobra (${dto.cajeroId}) no existe en esta base — vuelve a iniciar sesión.`);
+    }
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.pago.createMany({
+          data: dto.pagos.map((p) => ({
+            pedidoId,
+            metodo: p.metodo,
+            monto: p.monto,
+            referencia: p.referencia,
+            usuarioId: dto.cajeroId,
+          })),
+        });
+        await tx.pedido.update({
+          where: { id: pedidoId },
+          data: { estado: EstadoPedido.COBRADO, cajeroId: dto.cajeroId },
+        });
+        if (pedido.mesaId) {
+          await tx.mesa.update({ where: { id: pedido.mesaId }, data: { estado: EstadoMesa.LIBRE } });
+        }
       });
-      await tx.pedido.update({
-        where: { id: pedidoId },
-        data: { estado: EstadoPedido.COBRADO, cajeroId: dto.cajeroId },
-      });
-      if (pedido.mesaId) {
-        await tx.mesa.update({ where: { id: pedido.mesaId }, data: { estado: EstadoMesa.LIBRE } });
+    } catch (e: any) {
+      // Prisma P2003 = viola una relación (FK) — el caso más probable es cajeroId/mesaId
+      // apuntando a algo que ya no existe. Se traduce a un 400 con el detalle real en vez de
+      // dejar que se vaya como 500 genérico ("Error interno del servidor").
+      if (e?.code === "P2003") {
+        throw new BadRequestException(`No se pudo registrar el cobro — datos inconsistentes (${e.meta?.field_name ?? "relación inválida"}). Vuelve a intentar; si persiste, cierra sesión y entra de nuevo.`);
       }
-    });
+      throw e;
+    }
 
     await this.descontarInventarioPorReceta(pedido);
 

@@ -35,20 +35,60 @@ function round2(n: number): number {
 
 /** Enter/flecha abajo pasa al siguiente campo de denominación, flecha arriba al anterior —
  *  como capturar en Excel, para contar efectivo rápido sin tocar el mouse. Los campos deben
- *  vivir dentro de un contenedor con `data-desglose-container` y llevar `data-denom-input`. */
+ *  vivir dentro de un contenedor con `data-desglose-container` y llevar `data-denom-input`.
+ *  Arriba/abajo saltan al campo de la fila anterior/siguiente que quede más cerca en horizontal
+ *  (posición real en pantalla, no solo el siguiente del arreglo — si no fuera así, "abajo" en el
+ *  primer campo de una fila caería en el segundo campo de la MISMA fila). Izquierda/derecha (y
+ *  Enter, que se comporta como "derecha"/"siguiente") sí usan el orden del arreglo porque dentro
+ *  de una fila ese orden ya es el orden visual de izquierda a derecha. */
 function manejarTeclaDesglose(e: KeyboardEvent<HTMLInputElement>) {
-  if (e.key !== "Enter" && e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+  const teclas = ["Enter", "ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight"];
+  if (!teclas.includes(e.key)) return;
   const contenedor = e.currentTarget.closest("[data-desglose-container]");
   if (!contenedor) return;
   const inputs = Array.from(contenedor.querySelectorAll<HTMLInputElement>("input[data-denom-input]"));
   const idx = inputs.indexOf(e.currentTarget);
   if (idx === -1) return;
-  const siguiente = inputs[idx + (e.key === "ArrowUp" ? -1 : 1)];
-  if (siguiente) {
-    e.preventDefault();
-    siguiente.focus();
-    siguiente.select();
+
+  let destino: HTMLInputElement | undefined;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    destino = vecinoEnFila(inputs, e.currentTarget, e.key === "ArrowDown" ? 1 : -1) ?? inputs[idx + (e.key === "ArrowDown" ? 1 : -1)];
+  } else {
+    destino = inputs[idx + (e.key === "ArrowLeft" ? -1 : 1)];
   }
+  if (destino) {
+    e.preventDefault();
+    destino.focus();
+    destino.select();
+  }
+}
+
+/** Entre los campos que estén en la fila de abajo (o de arriba), regresa el más cercano en X al
+ *  campo actual — así "abajo"/"arriba" se mueve en la misma columna visual, no al azar. */
+function vecinoEnFila(inputs: HTMLInputElement[], actual: HTMLInputElement, direccion: 1 | -1): HTMLInputElement | undefined {
+  const rectActual = actual.getBoundingClientRect();
+  let filaTop: number | null = null;
+  for (const inp of inputs) {
+    if (inp === actual) continue;
+    const r = inp.getBoundingClientRect();
+    const enDireccion = direccion === 1 ? r.top > rectActual.top + 4 : r.top < rectActual.top - 4;
+    if (!enDireccion) continue;
+    if (filaTop === null || (direccion === 1 ? r.top < filaTop : r.top > filaTop)) filaTop = r.top;
+  }
+  if (filaTop === null) return undefined;
+
+  let mejor: HTMLInputElement | undefined;
+  let mejorDistancia = Infinity;
+  for (const inp of inputs) {
+    const r = inp.getBoundingClientRect();
+    if (Math.abs(r.top - filaTop) > 4) continue;
+    const distancia = Math.abs(r.left - rectActual.left);
+    if (distancia < mejorDistancia) {
+      mejorDistancia = distancia;
+      mejor = inp;
+    }
+  }
+  return mejor;
 }
 
 const tarjeta: CSSProperties = { background: "#fff", padding: 20, borderRadius: 16, display: "flex", flexDirection: "column", gap: 4 };
@@ -265,7 +305,7 @@ export function Caja({ sucursalId }: { sucursalId: string }) {
 
             <h3 style={{ margin: "12px 0 0" }}>Desglose de efectivo</h3>
             <p style={{ margin: "0 0 4px", fontSize: 12, color: "var(--h421-gray-400)" }}>
-              Enter o ↓ pasa al siguiente campo, ↑ regresa al anterior — sin usar el mouse.
+              Enter o las flechas (↑ ↓ ← →) mueven entre los campos — sin usar el mouse.
             </p>
             <div data-desglose-container>
               <GrupoDenominaciones titulo="Billetes MXN" denominaciones={BILLETES_MXN} conteo={billetesMXN} onChange={actualizarBilletesMXN} prefijo="$" />
