@@ -61,9 +61,10 @@ button {
   transform: scale(0.96);
 }
 
-/* Botón principal de cobro ("Pagar $..."): verde esmeralda sólido siempre que esté disponible,
-   con un tono más oscuro al pasar el cursor o presionar — el estado no disponible (pedido aún
-   no enviado a cocina) usa gris sólido en vez de aclarar/opacar el verde. */
+/* Botones principales de cobro/corte ("Pagar $...", "Realizar corte de caja"): verde esmeralda
+   sólido siempre — incluso deshabilitados (ej. Pagar antes de enviar el pedido a cocina), para
+   que se vea igual de fuerte en todo momento — con un tono más oscuro al pasar el cursor o
+   presionar. El cursor sí cambia en el estado deshabilitado para marcar que no es clickeable. */
 .btn-pagar {
   background: var(--h421-esmeralda);
   color: #fff;
@@ -75,7 +76,6 @@ button {
   background: #0f713d;
 }
 .btn-pagar:disabled {
-  background: var(--h421-gray-400);
   cursor: not-allowed;
 }
 
