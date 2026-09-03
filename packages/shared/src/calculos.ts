@@ -38,19 +38,22 @@ export interface TotalesPedido {
   total: number;
 }
 
+/** Los precios del catálogo son finales (ya incluyen cualquier impuesto) — no se suma nada
+ *  encima al cobrar, así que `impuesto` siempre es 0 y el total es subtotal menos descuentos.
+ *  `tasaImpuesto` se conserva en la firma por compatibilidad con quien la llame y por si algún
+ *  reporte fiscal necesita más adelante desglosar cuánto de ese precio final es impuesto (sin
+ *  volver a sumarlo), pero no participa en el cálculo del total a cobrar. */
 export function calcularTotalesPedido(
   items: ItemParaTotal[],
   descuentos: { tipo: TipoDescuento; valor: number }[],
-  tasaImpuesto: number,
+  _tasaImpuesto: number,
 ): TotalesPedido {
   const subtotal = calcularSubtotal(items);
   const descuentoTotal = round2(
     descuentos.reduce((acc, d) => acc + calcularMontoDescuento(d.tipo, d.valor, subtotal - acc), 0),
   );
-  const baseGravable = subtotal - descuentoTotal;
-  const impuesto = calcularImpuesto(baseGravable, tasaImpuesto);
-  const total = round2(baseGravable + impuesto);
-  return { subtotal, descuentoTotal, impuesto, total };
+  const total = round2(subtotal - descuentoTotal);
+  return { subtotal, descuentoTotal, impuesto: 0, total };
 }
 
 /** Pagos mixtos: la suma de los pagos debe cubrir el total (puede exceder — habrá cambio en efectivo). */

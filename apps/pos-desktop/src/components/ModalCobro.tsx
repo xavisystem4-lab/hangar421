@@ -115,9 +115,11 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
               <div style={{ display: "flex", justifyContent: "space-between", color: "var(--h421-gray-400)" }}>
                 <span>Subtotal</span><span>${t.subtotal.toFixed(2)} MXN</span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", color: "var(--h421-gray-400)" }}>
-                <span>Impuesto</span><span>${t.impuesto.toFixed(2)} MXN</span>
-              </div>
+              {t.descuentoTotal > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", color: "var(--h421-gray-400)" }}>
+                  <span>Descuento</span><span>−${t.descuentoTotal.toFixed(2)} MXN</span>
+                </div>
+              )}
               <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 20, marginTop: 4 }}>
                 <span>Total</span><span>${t.total.toFixed(2)} MXN</span>
               </div>

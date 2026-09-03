@@ -43,7 +43,6 @@ export function PanelPedido({ mesaNombre, onCobrar }: { mesaNombre: string | nul
       <div style={{ padding: "14px 16px", borderTop: "1px solid var(--h421-gray-200)", fontSize: 14 }}>
         <FilaTotal label="Subtotal" valor={t.subtotal} />
         <FilaTotal label="Descuento" valor={-t.descuentoTotal} />
-        <FilaTotal label="Impuesto" valor={t.impuesto} />
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 20, fontWeight: 800, marginTop: 8, marginBottom: 12, color: "var(--h421-navy)" }}>
           <span>Total</span>
           <span>${t.total.toFixed(2)}</span>

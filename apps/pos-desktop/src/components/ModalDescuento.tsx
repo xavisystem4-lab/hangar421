@@ -18,7 +18,9 @@ const ETIQUETA_ROL: Record<string, string> = {
 export function ModalDescuento({ sucursalId, onCerrar }: { sucursalId: string; onCerrar: () => void }) {
   const { aplicarDescuento } = useOrderStore();
   const [tipo, setTipo] = useState<TipoDescuento>(TipoDescuento.PORCENTAJE);
-  const [valor, setValor] = useState("10");
+  // Arranca en cero — nunca se aplica un descuento "por accidente" si el cajero abre el modal
+  // y confirma sin querer; hay que escribir el valor explícitamente.
+  const [valor, setValor] = useState("0");
   const [motivo, setMotivo] = useState("");
   const [autorizadores, setAutorizadores] = useState<UsuarioLogin[] | null>(null);
   const [usuarioAutorizaId, setUsuarioAutorizaId] = useState("");
@@ -34,6 +36,7 @@ export function ModalDescuento({ sucursalId, onCerrar }: { sucursalId: string; o
 
   async function confirmar() {
     setError(null);
+    if (!(Number(valor) > 0)) return setError("Indica el valor del descuento (mayor a cero)");
     if (!motivo.trim()) return setError("Indica el motivo del descuento");
     if (!usuarioAutorizaId) return setError("Elige quién autoriza el descuento");
     setValidando(true);
@@ -103,9 +106,13 @@ export function ModalDescuento({ sucursalId, onCerrar }: { sucursalId: string; o
 
         {error && <p style={{ color: "var(--h421-red)" }}>{error}</p>}
 
-        <button onClick={confirmar} disabled={validando} className="btn-grande" style={{ width: "100%", marginTop: 16, background: "var(--h421-yellow)", color: "#000" }}>
-          {validando ? "Validando…" : "Aplicar descuento"}
-        </button>
+        {/* Cancelar cierra sin tocar nada — no se aplica ni se resta ningún descuento. */}
+        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+          <button onClick={onCerrar} style={{ flex: 1, padding: 14, background: "var(--h421-gray-200)" }}>Cancelar</button>
+          <button onClick={confirmar} disabled={validando} className="btn-grande" style={{ flex: 2, background: "var(--h421-yellow)", color: "#000" }}>
+            {validando ? "Validando…" : "Aplicar descuento"}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -54,7 +54,7 @@ describe("calcularMontoDescuento", () => {
 });
 
 describe("calcularTotalesPedido", () => {
-  it("calcula subtotal, impuesto y total sin descuentos", () => {
+  it("calcula subtotal y total sin descuentos — los precios del catálogo ya son finales, no se suma impuesto encima", () => {
     const totales = calcularTotalesPedido(
       [{ precioUnitario: 49, cantidad: 2 }, { precioUnitario: 65, cantidad: 1 }],
       [],
@@ -62,11 +62,11 @@ describe("calcularTotalesPedido", () => {
     );
     expect(totales.subtotal).toBe(163);
     expect(totales.descuentoTotal).toBe(0);
-    expect(totales.impuesto).toBe(26.08);
-    expect(totales.total).toBe(189.08);
+    expect(totales.impuesto).toBe(0);
+    expect(totales.total).toBe(163);
   });
 
-  it("aplica el descuento antes de calcular el impuesto (sobre la base gravable)", () => {
+  it("el descuento se resta directo del subtotal, sin impuesto de por medio", () => {
     const totales = calcularTotalesPedido(
       [{ precioUnitario: 100, cantidad: 1 }],
       [{ tipo: TipoDescuento.PORCENTAJE, valor: 10 }],
@@ -74,8 +74,8 @@ describe("calcularTotalesPedido", () => {
     );
     expect(totales.subtotal).toBe(100);
     expect(totales.descuentoTotal).toBe(10);
-    expect(totales.impuesto).toBe(14.4); // 16% de 90, no de 100
-    expect(totales.total).toBe(104.4);
+    expect(totales.impuesto).toBe(0);
+    expect(totales.total).toBe(90);
   });
 
   it("acumula varios descuentos sin exceder el subtotal", () => {
