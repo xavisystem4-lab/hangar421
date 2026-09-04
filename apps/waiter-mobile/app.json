@@ -2,7 +2,7 @@
   "expo": {
     "name": "HANGAR 421 Meseros",
     "slug": "hangar421-waiter",
-    "version": "0.1.2",
+    "version": "0.1.3",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -11,7 +11,7 @@
     },
     "android": {
       "package": "com.hangar421.waiter",
-      "versionCode": 3,
+      "versionCode": 4,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0B1E33"
