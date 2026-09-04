@@ -1,4 +1,6 @@
-import logo from "../assets/logo-dark.png";
+import { useThemeStore } from "../store/themeStore";
+import logoOscuro from "../assets/logo-dark.png";
+import logoClaro from "../assets/logo-light.png";
 
 /** Se muestra mientras Electron levanta el backend embebido (Postgres + API local) — solo
  *  toma unos segundos, y solo la primera vez que se abre la app crea la base de datos.
@@ -13,9 +15,10 @@ export function PantallaArranque({
   error?: string | null;
   onReintentar?: () => void;
 }) {
+  const tema = useThemeStore((s) => s.tema);
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "var(--h421-gray-50)", gap: 24, padding: 24 }}>
-      <img src={logo} alt="HANGAR 421" style={{ width: "50vw", maxWidth: 640, height: "auto" }} />
+      <img src={tema === "oscuro" ? logoClaro : logoOscuro} alt="HANGAR 421" style={{ width: "50vw", maxWidth: 640, height: "auto" }} />
 
       {!error && (
         <>

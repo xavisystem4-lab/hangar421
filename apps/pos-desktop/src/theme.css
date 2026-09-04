@@ -1,5 +1,10 @@
 :root {
   --h421-navy: #0b1e33;
+  /* Navy usado como TEXTO destacado (precios, totales, subtítulos) sobre una superficie que
+     cambia con el tema — distinto de --h421-navy usado como FONDO de marca (botones, header),
+     que se queda fijo en ambos modos. En claro es idéntico al navy; en oscuro se aclara para
+     seguir contrastando sobre las superficies oscuras (ver bloque [data-theme="oscuro"]). */
+  --h421-navy-texto: #0b1e33;
   --h421-black: #111318;
   --h421-white: #ffffff;
   --h421-gray-50: #f6f7f8;
@@ -23,6 +28,22 @@
   --h421-cat-7: #3d6b99; /* Extras — azul acero vivo */
 }
 
+/* Modo oscuro — se activa con [data-theme="oscuro"] en <html> (ver src/store/themeStore.ts).
+   Solo se redefinen los tokens de SUPERFICIE/TEXTO (fondo de página, tarjetas, bordes, texto
+   principal); los colores de acento (navy, amber, green, red, las píldoras de categoría, etc.)
+   se mantienen iguales en ambos modos — son color de marca, no de superficie. Como todo el resto
+   de la UI ya lee estos mismos tokens vía var(--h421-...) en sus estilos inline, este único
+   bloque basta para que toda la app responda sin tocar cada pantalla. */
+:root[data-theme="oscuro"] {
+  --h421-white: #1a212c;      /* superficie elevada: tarjetas, modales, barra de categorías */
+  --h421-gray-50: #10141c;    /* fondo de página + botones/opciones "inactivos" dentro de una tarjeta */
+  --h421-gray-200: #2b3444;   /* bordes/divisores, visibles sobre el fondo oscuro */
+  --h421-black: #e8ebf0;      /* texto principal, casi blanco */
+  --h421-navy-texto: #8fb4e0; /* navy aclarado — mismo rol que --h421-navy pero como texto, legible sobre superficies oscuras */
+  --h421-gray-400: #8b95a8;   /* texto secundario/placeholder, igual de legible en ambos modos */
+  --h421-gray-600: #aab3c2;   /* texto secundario un poco más marcado que gray-400 (labels de formulario) */
+}
+
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; }
 
@@ -37,6 +58,10 @@ body {
 
 button {
   font-family: inherit;
+  /* Sin esto, un <button> sin `color` propio usa el color de texto por defecto del navegador
+     (no hereda del body) — invisible en modo oscuro sobre fondos oscuros (ej. "Mesa 1" en las
+     tarjetas de Mesas.tsx, que no fija su propio color). */
+  color: inherit;
   cursor: pointer;
   border: none;
   border-radius: 12px;
@@ -83,6 +108,11 @@ button {
 input, textarea, select {
   font-family: inherit;
   font-size: 15px;
+  /* Igual que con button: sin esto, los campos usan el fondo/texto por defecto del navegador
+     para controles de formulario en vez de los tokens del tema — se ven como un "hueco" claro
+     fijo dentro de una tarjeta oscura en modo oscuro. */
+  background: var(--h421-white);
+  color: var(--h421-black);
 }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -91,7 +121,7 @@ input, textarea, select {
 /* Tarjeta genérica (mismo estilo que usa apps/crm-web) — usada por la pantalla de
    Administración (Reportes/Inventario/Usuarios), que reutiliza esos módulos del CRM. */
 .card {
-  background: #fff;
+  background: var(--h421-white);
   border-radius: 14px;
   padding: 18px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);

@@ -9,7 +9,7 @@ export function ProductoCard({ producto, onSeleccionar }: { producto: Producto; 
       className="btn-grande"
       style={{
         display: "flex", flexDirection: "column", alignItems: "stretch",
-        background: "#fff", padding: 0, overflow: "hidden",
+        background: "var(--h421-white)", padding: 0, overflow: "hidden",
         border: "none", borderRadius: 16, opacity: disponible ? 1 : 0.5,
         textAlign: "left", minHeight: 170,
         boxShadow: "0 2px 8px rgba(11,30,51,0.08)",
@@ -29,7 +29,7 @@ export function ProductoCard({ producto, onSeleccionar }: { producto: Producto; 
       </div>
       <div style={{ padding: "10px 12px 12px" }}>
         <div style={{ fontWeight: 700, fontSize: 14, color: "var(--h421-black)", lineHeight: 1.25, minHeight: 34 }}>{producto.nombre}</div>
-        <div style={{ fontWeight: 800, fontSize: 17, color: "var(--h421-navy)", marginTop: 6 }}>
+        <div style={{ fontWeight: 800, fontSize: 17, color: "var(--h421-navy-texto)", marginTop: 6 }}>
           ${(producto.precioSucursal ?? producto.precioBase).toFixed(2)}
         </div>
       </div>
