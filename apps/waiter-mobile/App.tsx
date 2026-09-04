@@ -26,6 +26,22 @@ export default function App() {
   const [mesaActiva, setMesaActiva] = useState<Mesa | null>(null);
   const [configurandoEstacion, setConfigurandoEstacion] = useState(false);
 
+  // "Pegajoso": solo cambia con un resultado DEFINITIVO ("conectado" o "error"), nunca con
+  // "verificando" — ver el efecto de abajo. Antes se leía `conexion.estado === "error"`
+  // directo en el render, y el heartbeat (cada 15s) pone `estado` en "verificando" un instante
+  // aunque la Estación siga sin responder iguales que antes: ese parpadeo hacía que
+  // ConexionScreen se desmontara y remontara mientras el mesero estaba a media escritura de la
+  // IP/puerto, borrándosela — probablemente la razón real de que "nunca lograra conectar", no
+  // solo de que "se borre lo que escribo".
+  const [mostrarConexion, setMostrarConexion] = useState(false);
+  useEffect(() => {
+    if (conexion.cargando) return;
+    if (conexion.estado === "conectado") setMostrarConexion(false);
+    else if (conexion.estado === "error") setMostrarConexion(true);
+    // "verificando" no toca `mostrarConexion` — se queda como estaba hasta que el heartbeat
+    // resuelva a uno de los otros dos estados.
+  }, [conexion.estado, conexion.cargando]);
+
   useEffect(() => {
     conexion.cargar();
     conexion.iniciarHeartbeat();
@@ -74,13 +90,12 @@ export default function App() {
     // una vez logeado, si la conexión se cae, la app sigue funcionando en modo offline-first
     // (ver syncEngine/outbox) en vez de bloquear la pantalla.
     //
-    // OJO: se compara contra "error" (no contra "!== conectado"). El heartbeat de conexionStore
-    // vuelve a poner estado en "verificando" cada 15s aunque siga todo bien — si aquí se hubiera
-    // seguido tratando "verificando" como desconectado, cada 15s esta pantalla habría cambiado
-    // de LoginScreen a ConexionScreen y de vuelta, desmontando el formulario de login a medio
-    // escribir (el mesero perdía el PIN que estaba tecleando). Con "error" el cambio de pantalla
-    // solo ocurre cuando el heartbeat de verdad confirma que la Estación dejó de responder.
-    if (conexion.estado === "error" || configurandoEstacion) {
+    // `mostrarConexion` (no `conexion.estado` directo) — ver el efecto que lo calcula arriba:
+    // solo cambia con un resultado definitivo, nunca con el "verificando" transitorio del
+    // heartbeat (cada 15s) — si se leyera `estado` directo, cada 15s esta pantalla cambiaría de
+    // LoginScreen a ConexionScreen y de vuelta (o viceversa, si ya se estaba en ConexionScreen),
+    // desmontando el formulario a medio escribir.
+    if (mostrarConexion || configurandoEstacion) {
       return (
         <SafeAreaView style={{ flex: 1, backgroundColor: colores.navy }}>
           <View style={{ flex: 1 }}>
