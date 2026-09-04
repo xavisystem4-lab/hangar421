@@ -21,6 +21,11 @@ FROM node:20-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 
+# El motor de Prisma (query engine / schema engine) necesita libssl en tiempo de ejecución —
+# node:20-alpine no lo trae por defecto. Sin esto, tanto `prisma migrate deploy` (pre-deploy
+# command) como el propio backend al arrancar fallan con "Could not parse schema engine response".
+RUN apk add --no-cache openssl
+
 # node_modules completo de la raíz (ahí quedan los symlinks de los workspaces y el cliente de
 # Prisma generado) + los `dist` compilados + el schema/migraciones de Prisma.
 COPY --from=build /app/node_modules ./node_modules
