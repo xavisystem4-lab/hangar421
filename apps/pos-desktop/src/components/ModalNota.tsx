@@ -36,12 +36,21 @@ export function ModalNota({
           autoFocus
           value={nota}
           onChange={(e) => setNota(e.target.value)}
+          onKeyDown={(e) => {
+            // Enter guarda (Shift+Enter deja escribir una segunda línea si hace falta) — Esc
+            // cancela, igual que el botón "Cancelar". Así no hay que soltar el teclado para
+            // tocar un botón en pantalla, como ya hacen ModalCobro/ModalDescuento.
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); guardar(); }
+            else if (e.key === "Escape") { e.preventDefault(); onCerrar(); }
+          }}
           placeholder="Ej. sin hielo, alergia a nuez, extra caliente…"
           rows={3}
           style={{ width: "100%", padding: 10, marginTop: 14, borderRadius: 8, border: "1px solid var(--h421-gray-200)", fontFamily: "inherit", fontSize: 14, resize: "none" }}
         />
 
-        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+        <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--h421-gray-400)" }}>Enter guarda · Esc cancela</p>
+
+        <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
           <button onClick={onCerrar} style={{ flex: 1, padding: 14, background: "var(--h421-gray-200)" }}>Cancelar</button>
           <button onClick={guardar} className="btn-grande" style={{ flex: 2, background: "var(--h421-navy)", color: "#fff" }}>
             Guardar nota
