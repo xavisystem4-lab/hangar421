@@ -14,6 +14,11 @@ interface ConexionState {
   estado: EstadoConexion;
   ultimoError: string | null;
   ultimaVerificacion: number | null;
+  /** Nombre de la empresa que responde en host:puerto (viene de GET /health) — permite
+   *  "reconocer" la Estación (mostrar "Conectado a HANGAR 421" en vez de solo una IP pelada),
+   *  útil para confirmar que se apuntó al negocio correcto antes de guardar. null mientras no
+   *  se ha verificado con éxito, o si el servidor no lo informó (versiones viejas del backend). */
+  nombreEstacion: string | null;
   cargando: boolean;
   /** Carga la Estación guardada (o el valor por defecto de app.json) y hace la primera verificación. */
   cargar: () => Promise<void>;
@@ -63,6 +68,7 @@ export const useConexionStore = create<ConexionState>((set, get) => ({
   estado: "verificando",
   ultimoError: null,
   ultimaVerificacion: null,
+  nombreEstacion: null,
   cargando: true,
 
   cargar: async () => {
@@ -92,11 +98,12 @@ export const useConexionStore = create<ConexionState>((set, get) => ({
       const res = await fetch(`${baseUrl(host, puerto)}/api/v1/health`, { signal: controlador.signal });
       clearTimeout(limite);
       if (!res.ok) throw new Error(`La Estación respondió con error ${res.status}`);
-      set({ estado: "conectado", ultimoError: null, ultimaVerificacion: Date.now() });
+      const body = await res.json().catch(() => ({}));
+      set({ estado: "conectado", ultimoError: null, ultimaVerificacion: Date.now(), nombreEstacion: body?.empresa ?? null });
       return true;
     } catch (e: any) {
       const mensaje = e?.name === "AbortError" ? "Tiempo de espera agotado" : e?.message ?? "No se pudo conectar con la Estación";
-      set({ estado: "error", ultimoError: mensaje, ultimaVerificacion: Date.now() });
+      set({ estado: "error", ultimoError: mensaje, ultimaVerificacion: Date.now(), nombreEstacion: null });
       return false;
     }
   },

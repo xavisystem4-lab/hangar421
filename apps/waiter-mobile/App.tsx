@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { SafeAreaView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, SafeAreaView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import type { Mesa } from "@hangar421/shared";
 import { useAuthStore } from "./src/store/authStore";
 import { useSyncStore } from "./src/store/syncStore";
@@ -48,6 +48,25 @@ export default function App() {
 
   const estilos = crearEstilos(colores);
 
+  function cerrarSesion() {
+    // Confirmación simple — un toque accidental en medio de un pedido perdería lo que el mesero
+    // llevaba capturado en esa pantalla (el borrador del pedido solo vive en memoria hasta que
+    // se envía a cocina, ver orderStore). No hace falta contraseña: es la misma terminal
+    // compartida, cualquier mesero puede volver a entrar con su PIN al toque.
+    Alert.alert("Cerrar sesión", "¿Seguro que quieres cerrar tu sesión?", [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Cerrar sesión",
+        style: "destructive",
+        onPress: () => {
+          setPantalla("mesas");
+          setMesaActiva(null);
+          auth.logout();
+        },
+      },
+    ]);
+  }
+
   if (auth.cargando || conexion.cargando || tema.cargando) return null;
 
   if (!auth.usuario) {
@@ -90,6 +109,9 @@ export default function App() {
           <Text style={estilos.headerSync}>{sync.estado === "SYNCED" ? "● Sincronizado" : sync.estado === "SYNCING" ? "● Sincronizando…" : `○ Sin conexión (${sync.pendientes})`}</Text>
           <TouchableOpacity onPress={tema.alternar} style={estilos.botonTema}>
             <Text style={estilos.botonTemaTexto}>{tema.tema === "oscuro" ? "☀️" : "🌙"}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={cerrarSesion} style={estilos.botonTema} accessibilityLabel="Cerrar sesión">
+            <Text style={estilos.botonTemaTexto}>🚪</Text>
           </TouchableOpacity>
         </View>
       </View>

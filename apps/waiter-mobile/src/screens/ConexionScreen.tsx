@@ -9,7 +9,7 @@ import { usarColores } from "../store/temaStore";
  *  configurada, o en cualquier momento cuando la conexión se pierde (el heartbeat del store la
  *  detecta solo, cada 15s). También es accesible manualmente desde la pantalla de login. */
 export function ConexionScreen({ onConectado, onCancelar }: { onConectado?: () => void; onCancelar?: () => void }) {
-  const { host, puerto, estado, ultimoError, probarYGuardar } = useConexionStore();
+  const { host, puerto, estado, ultimoError, nombreEstacion, probarYGuardar } = useConexionStore();
   const colores = usarColores();
   const estilos = crearEstilos(colores);
   const [ip, setIp] = useState(host);
@@ -54,7 +54,9 @@ export function ConexionScreen({ onConectado, onCancelar }: { onConectado?: () =
         />
 
         {estado === "conectado" && (
-          <Text style={estilos.ok}>✓ Conectado a la Estación {host}:{puerto}</Text>
+          <Text style={estilos.ok}>
+            ✓ Conectado{nombreEstacion ? ` a ${nombreEstacion}` : " a la Estación"} ({host}:{puerto})
+          </Text>
         )}
         {estado === "error" && ultimoError && <Text style={estilos.error}>⚠ {ultimoError}</Text>}
 
