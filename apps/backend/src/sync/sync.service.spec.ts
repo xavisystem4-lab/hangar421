@@ -18,7 +18,14 @@ function crearServicio() {
         return Promise.resolve(nuevo);
       }),
     },
-    dispositivo: { update: jest.fn(() => Promise.resolve({})) },
+    dispositivo: {
+      update: jest.fn(() => Promise.resolve({})),
+      // resolverDispositivoId (common/dispositivo.util.ts) los usa para dar de alta el
+      // dispositivo sobre la marcha la primera vez que se ve — sin estos dos el mock queda
+      // incompleto y cualquier item con dispositivoId truena con "is not a function".
+      findUnique: jest.fn(() => Promise.resolve(null)),
+      create: jest.fn(() => Promise.resolve({ id: "dispositivo-1" })),
+    },
   };
 
   const pedidos = { crear: jest.fn(() => Promise.resolve({ id: "pedido-1" })) };
