@@ -1,8 +1,13 @@
+import { useState } from "react";
 import { useOrderStore } from "../store/orderStore";
+import { ModalNota } from "./ModalNota";
 
 export function PanelPedido({ mesaNombre, onCobrar }: { mesaNombre: string | null; onCobrar: () => void }) {
   const { items, cambiarCantidad, quitarItem, numComensales, totales } = useOrderStore();
   const t = totales();
+  // id del item cuya nota se está editando (null = modal cerrado)
+  const [itemNotaId, setItemNotaId] = useState<string | null>(null);
+  const itemNota = items.find((i) => i.id === itemNotaId);
 
   return (
     <aside style={{ width: 340, background: "#fff", borderLeft: "1px solid var(--h421-gray-200)", display: "flex", flexDirection: "column", height: "100%" }}>
@@ -33,6 +38,16 @@ export function PanelPedido({ mesaNombre, onCobrar }: { mesaNombre: string | nul
               <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                 <button onClick={() => cambiarCantidad(item.id, -1)} style={{ width: 36, height: 36, minHeight: 0, fontSize: 18, fontWeight: 700, background: "var(--h421-gray-50)", borderRadius: 8 }}>−</button>
                 <button onClick={() => cambiarCantidad(item.id, 1)} style={{ width: 36, height: 36, minHeight: 0, fontSize: 18, fontWeight: 700, background: "var(--h421-gray-50)", borderRadius: 8 }}>+</button>
+                <button
+                  onClick={() => setItemNotaId(item.id)}
+                  title={item.notas ? "Editar nota" : "Agregar nota"}
+                  style={{
+                    width: 36, height: 36, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 8,
+                    background: item.notas ? "#dbeafe" : "var(--h421-gray-50)", color: item.notas ? "var(--h421-blue)" : "var(--h421-gray-600)",
+                  }}
+                >
+                  <IconoNota />
+                </button>
                 <button onClick={() => quitarItem(item.id)} style={{ marginLeft: "auto", width: 36, height: 36, minHeight: 0, fontSize: 17, background: "#fee2e2", color: "var(--h421-red)", borderRadius: 8 }}>🗑</button>
               </div>
             </div>
@@ -58,7 +73,29 @@ export function PanelPedido({ mesaNombre, onCobrar }: { mesaNombre: string | nul
           Pagar ${t.total.toFixed(2)}
         </button>
       </div>
+
+      {itemNota && (
+        <ModalNota
+          itemId={itemNota.id}
+          nombreProducto={itemNota.nombreProducto}
+          notaActual={itemNota.notas}
+          onCerrar={() => setItemNotaId(null)}
+        />
+      )}
     </aside>
+  );
+}
+
+/** Ícono de libreta/nota en SVG en vez de emoji — igual que IconoPago, un emoji como 📝 se ve
+ *  distinto según la fuente del sistema; el SVG con `currentColor` se ve igual siempre y toma
+ *  el color que le dé el botón (gris cuando no hay nota, azul cuando ya tiene una). */
+function IconoNota() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M6 2.5h9l5 5V20a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 20V4A1.5 1.5 0 0 1 6 2.5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M14.5 2.5V7a1 1 0 0 0 1 1H20" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M8 12.5h8M8 16.5h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
   );
 }
 

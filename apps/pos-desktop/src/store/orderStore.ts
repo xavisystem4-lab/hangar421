@@ -39,6 +39,7 @@ interface OrderState {
   agregarItem: (item: Omit<ItemCarrito, "id">) => void;
   quitarItem: (itemId: string) => void;
   cambiarCantidad: (itemId: string, delta: number) => void;
+  cambiarNotas: (itemId: string, notas: string) => void;
   aplicarDescuento: (d: DescuentoCarrito) => void;
   limpiar: () => void;
   totales: () => ReturnType<typeof calcularTotalesPedido>;
@@ -65,6 +66,14 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       items: s.items
         .map((i) => (i.id === itemId ? { ...i, cantidad: Math.max(1, i.cantidad + delta) } : i))
         .filter((i) => i.cantidad > 0),
+    })),
+
+  // Notas por producto ya en el carrito (ej. "sin hielo", "alergia a nuez") — antes solo se
+  // podían capturar al agregar el producto desde ModalModificadores; esto permite agregarlas o
+  // corregirlas después, sin tener que quitar el item y volver a agregarlo.
+  cambiarNotas: (itemId, notas) =>
+    set((s) => ({
+      items: s.items.map((i) => (i.id === itemId ? { ...i, notas: notas.trim() || undefined } : i)),
     })),
 
   aplicarDescuento: (d) => set((s) => ({ descuentos: [...s.descuentos, d] })),
