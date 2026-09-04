@@ -2,21 +2,27 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import type { RolUsuario } from "@hangar421/shared";
 import { useAuthCrm } from "@/lib/authClient";
 
-const ITEMS = [
+// `roles` refleja los mismos roles que exige el backend en cada @Roles() del controlador
+// correspondiente (sucursales/inventario/usuarios/catalogo .controller.ts) — así el menú no
+// muestra accesos que de todos modos el backend va a rechazar con 403.
+const ITEMS: { href: string; label: string; icon: string; roles?: RolUsuario[] }[] = [
   { href: "/dashboard", label: "Dashboard", icon: "📊" },
-  { href: "/reportes", label: "Reportes", icon: "📈" },
-  { href: "/sucursales", label: "Sucursales", icon: "🏬" },
-  { href: "/catalogo", label: "Catálogo", icon: "☕" },
-  { href: "/inventario", label: "Inventario", icon: "📦" },
-  { href: "/usuarios", label: "Usuarios", icon: "👥" },
+  { href: "/reportes", label: "Reportes", icon: "📈", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL", "SUPERVISOR"] as RolUsuario[] },
+  { href: "/sucursales", label: "Sucursales", icon: "🏬", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL"] as RolUsuario[] },
+  { href: "/catalogo", label: "Catálogo", icon: "☕", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL"] as RolUsuario[] },
+  { href: "/inventario", label: "Inventario", icon: "📦", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL", "SUPERVISOR"] as RolUsuario[] },
+  { href: "/usuarios", label: "Usuarios", icon: "👥", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL"] as RolUsuario[] },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { contexto, logout } = useAuthCrm();
+  const rol = contexto?.rol as RolUsuario | undefined;
+  const items = ITEMS.filter((item) => !item.roles || (rol && item.roles.includes(rol)));
 
   return (
     <aside style={{ width: 220, background: "var(--h421-navy)", color: "#fff", display: "flex", flexDirection: "column", padding: "20px 12px" }}>
@@ -27,7 +33,7 @@ export function Sidebar() {
       </div>
 
       <nav style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>
-        {ITEMS.map((item) => (
+        {items.map((item) => (
           <Link key={item.href} href={item.href}
             style={{
               display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10,
