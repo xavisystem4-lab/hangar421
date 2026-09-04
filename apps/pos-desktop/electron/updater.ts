@@ -48,5 +48,21 @@ export function configurarAutoUpdater(obtenerVentana: () => BrowserWindow | null
     autoUpdater.quitAndInstall();
   });
 
-  ipcMain.handle("app:version", () => app.getVersion());
+  ipcMain.handle("app:version", () => {
+    // `app.getVersion()` solo es confiable en un build EMPAQUETADO (lee el "version" del
+    // package.json que electron-builder incrusta en la app). Sin empaquetar (`npm run dev`)
+    // puede caer en devolver la versión del propio runtime de Electron (ej. "32.3.3", la
+    // versión de Electron instalada, no la de esta app) — un footgun conocido de Electron.
+    // Se lee el package.json de este workspace directo para que el footer muestre la versión
+    // real también en modo desarrollo.
+    if (!app.isPackaged) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        return require("../package.json").version as string;
+      } catch {
+        // sigue al fallback de abajo si por algo no se pudo leer
+      }
+    }
+    return app.getVersion();
+  });
 }
