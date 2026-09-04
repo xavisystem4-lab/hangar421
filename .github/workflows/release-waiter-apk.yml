@@ -2,9 +2,6 @@ name: Release Waiter APK
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "waiter-v*"
 
 permissions:
   contents: write
@@ -31,9 +28,37 @@ jobs:
       - name: Instalar dependencias (waiter-mobile + shared)
         run: npm install --workspace=apps/waiter-mobile --workspace=packages/shared --no-audit --no-fund
 
-      - name: Leer versión de la app
+      # Auto-incrementa versión (patch) y versionCode en cada corrida — así cada .apk que se
+      # publica en GitHub Releases lleva un número distinto SIEMPRE, sin depender de que alguien
+      # se acuerde de editar app.json/package.json a mano antes de disparar el workflow. Antes de
+      # esto quedó publicado un v0.1.0 roto (build debug, sin JS embebido) junto a un v0.1.1 bueno
+      # y no había forma de saber cuál bajar con solo mirar el nombre — con el bump automático
+      # cada release nuevo es, por construcción, más alto que el anterior.
+      - name: Auto-incrementar versión (patch + versionCode)
         id: version
-        run: echo "version=$(node -p "require('./apps/waiter-mobile/package.json').version")" >> "$GITHUB_OUTPUT"
+        working-directory: apps/waiter-mobile
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            const app = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+            const partes = pkg.version.split('.').map(Number);
+            const nueva = partes[0] + '.' + partes[1] + '.' + (partes[2] + 1);
+            pkg.version = nueva;
+            app.expo.version = nueva;
+            app.expo.android.versionCode = (app.expo.android.versionCode || 1) + 1;
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+            fs.writeFileSync('app.json', JSON.stringify(app, null, 2) + '\n');
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'version=' + nueva + '\n');
+          "
+
+      - name: Confirmar el bump de versión en el repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add apps/waiter-mobile/package.json apps/waiter-mobile/app.json
+          git commit -m "chore(waiter-mobile): bump versión a ${{ steps.version.outputs.version }} [skip ci]"
+          git push origin HEAD:main
 
       - name: Generar el proyecto nativo de Android (expo prebuild)
         working-directory: apps/waiter-mobile
@@ -41,12 +66,14 @@ jobs:
 
       # IMPORTANTE: "release" (no "debug"). Un APK debug de Expo/RN nunca empaqueta el JS —
       # siempre intenta conectarse al Metro bundler de una máquina de desarrollo (localhost:8081),
-      # así que en cualquier dispositivo real muestra "Could not connect to development server."
-      # El build type "release" del template de Expo/RN sí empaqueta el JS embebido y viene
-      # firmado por defecto con la keystore de depuración de Gradle (ver signingConfig en
-      # android/app/build.gradle, generado por el prebuild) — es decir, ya es un APK standalone
-      # instalable sin depender de ninguna máquina, sin necesitar todavía una keystore propia.
-      - name: Compilar el .apk (release standalone, JS embebido)
+      # así que en cualquier dispositivo real muestra "Unable to load script"/"Could not connect
+      # to development server". El build type "release" del template de Expo/RN sí empaqueta el
+      # JS embebido (tarea `createBundleReleaseJsAndAssets`) y todos los módulos nativos usados
+      # (async-storage, expo-file-system, etc.) quedan compilados dentro del .apk — es un
+      # standalone instalable sin depender de ninguna máquina ni de instalar nada aparte, firmado
+      # por defecto con la keystore de depuración de Gradle (ver signingConfig en
+      # android/app/build.gradle, generado por el prebuild).
+      - name: Compilar el .apk (release standalone, JS + módulos nativos embebidos)
         working-directory: apps/waiter-mobile/android
         run: |
           chmod +x ./gradlew
@@ -63,9 +90,10 @@ jobs:
           name: HANGAR 421 Meseros v${{ steps.version.outputs.version }}
           body: |
             APK de la app de meseros HANGAR 421 (compilado automáticamente vía GitHub Actions —
-            `expo prebuild` + Gradle, build **release** standalone con el JS embebido — no
-            necesita ninguna máquina de desarrollo corriendo, listo para distribución interna
-            e instalación directa en tablets/celulares Android).
+            `expo prebuild` + Gradle, build **release** standalone: JS y módulos nativos
+            embebidos, no necesita ninguna máquina de desarrollo corriendo ni instalar nada
+            aparte, listo para distribución interna e instalación directa en tablets/celulares
+            Android).
 
             Firmado con la keystore de depuración de Gradle (válido para instalación directa
             fuera de Play Store). Para publicar en Play Store, firmar con una keystore propia

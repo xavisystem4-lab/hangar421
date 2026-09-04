@@ -46,7 +46,14 @@ export default function App() {
     // Antes de poder iniciar sesión hace falta saber a qué Estación (servidor) conectarse —
     // una vez logeado, si la conexión se cae, la app sigue funcionando en modo offline-first
     // (ver syncEngine/outbox) en vez de bloquear la pantalla.
-    if (conexion.estado !== "conectado" || configurandoEstacion) {
+    //
+    // OJO: se compara contra "error" (no contra "!== conectado"). El heartbeat de conexionStore
+    // vuelve a poner estado en "verificando" cada 15s aunque siga todo bien — si aquí se hubiera
+    // seguido tratando "verificando" como desconectado, cada 15s esta pantalla habría cambiado
+    // de LoginScreen a ConexionScreen y de vuelta, desmontando el formulario de login a medio
+    // escribir (el mesero perdía el PIN que estaba tecleando). Con "error" el cambio de pantalla
+    // solo ocurre cuando el heartbeat de verdad confirma que la Estación dejó de responder.
+    if (conexion.estado === "error" || configurandoEstacion) {
       return (
         <SafeAreaView style={{ flex: 1, backgroundColor: colores.navy }}>
           <ConexionScreen
