@@ -5,15 +5,8 @@ import { apiFetch } from "../api/http";
 import * as outbox from "../db/outbox";
 import { useAuthStore } from "../store/authStore";
 import { useOrderStore } from "../store/orderStore";
-import { colores } from "../theme";
+import { usarColores } from "../store/temaStore";
 
-const COLOR: Record<EstadoMesa, string> = {
-  [EstadoMesa.LIBRE]: colores.gray400,
-  [EstadoMesa.OCUPADA]: colores.blue,
-  [EstadoMesa.RESERVADA]: "#8B5CF6",
-  [EstadoMesa.POR_COBRAR]: colores.yellow,
-  [EstadoMesa.PEDIDO_LISTO]: colores.green,
-};
 const ETIQUETA: Record<EstadoMesa, string> = {
   [EstadoMesa.LIBRE]: "Libre",
   [EstadoMesa.OCUPADA]: "Ocupada",
@@ -24,6 +17,15 @@ const ETIQUETA: Record<EstadoMesa, string> = {
 
 export function MesasScreen({ onAbrirMesa, onMostrador }: { onAbrirMesa: (mesa: Mesa) => void; onMostrador: () => void }) {
   const { sucursalId } = useAuthStore();
+  const colores = usarColores();
+  const estilos = crearEstilos(colores);
+  const COLOR: Record<EstadoMesa, string> = {
+    [EstadoMesa.LIBRE]: colores.gray400,
+    [EstadoMesa.OCUPADA]: colores.blue,
+    [EstadoMesa.RESERVADA]: "#8B5CF6",
+    [EstadoMesa.POR_COBRAR]: colores.yellow,
+    [EstadoMesa.PEDIDO_LISTO]: colores.green,
+  };
   const [mesas, setMesas] = useState<Mesa[]>([]);
   const [refrescando, setRefrescando] = useState(false);
 
@@ -45,7 +47,7 @@ export function MesasScreen({ onAbrirMesa, onMostrador }: { onAbrirMesa: (mesa: 
   }, [cargar]);
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: colores.fondo }}>
       <TouchableOpacity style={estilos.mostrador} onPress={onMostrador}>
         <Text style={estilos.mostradorTexto}>＋ Nuevo pedido de mostrador</Text>
       </TouchableOpacity>
@@ -70,10 +72,12 @@ export function MesasScreen({ onAbrirMesa, onMostrador }: { onAbrirMesa: (mesa: 
   );
 }
 
-const estilos = StyleSheet.create({
-  mostrador: { backgroundColor: colores.navy, margin: 12, borderRadius: 12, padding: 16, alignItems: "center" },
-  mostradorTexto: { color: "#fff", fontWeight: "700", fontSize: 15 },
-  mesa: { flex: 1, margin: 6, minHeight: 90, borderWidth: 3, borderRadius: 12, backgroundColor: "#fff", alignItems: "center", justifyContent: "center" },
-  mesaNombre: { fontSize: 16, fontWeight: "800", color: colores.black },
-  mesaEstado: { fontSize: 12, fontWeight: "700", marginTop: 4 },
-});
+function crearEstilos(colores: ReturnType<typeof usarColores>) {
+  return StyleSheet.create({
+    mostrador: { backgroundColor: colores.navy, margin: 12, borderRadius: 12, padding: 16, alignItems: "center" },
+    mostradorTexto: { color: "#fff", fontWeight: "700", fontSize: 15 },
+    mesa: { flex: 1, margin: 6, minHeight: 90, borderWidth: 3, borderRadius: 12, backgroundColor: colores.superficie, alignItems: "center", justifyContent: "center" },
+    mesaNombre: { fontSize: 16, fontWeight: "800", color: colores.texto },
+    mesaEstado: { fontSize: 12, fontWeight: "700", marginTop: 4 },
+  });
+}
