@@ -4,6 +4,7 @@ import { apiFetch } from "../api/http";
 import { useAuthStore } from "../store/authStore";
 import { useConexionStore } from "../store/conexionStore";
 import { useTemaStore, usarColores } from "../store/temaStore";
+import { useDispositivo } from "../hooks/useDispositivo";
 
 interface UsuarioLogin {
   id: string;
@@ -25,7 +26,8 @@ export function LoginScreen({ onConfigurarEstacion }: { onConfigurarEstacion?: (
   const { host, puerto, nombreEstacion } = useConexionStore();
   const tema = useTemaStore();
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const { esTablet } = useDispositivo();
+  const estilos = crearEstilos(colores, esTablet);
   const [meseros, setMeseros] = useState<UsuarioLogin[] | null>(null);
   const [errorMeseros, setErrorMeseros] = useState<string | null>(null);
   const [seleccionado, setSeleccionado] = useState<UsuarioLogin | null>(null);
@@ -85,7 +87,7 @@ export function LoginScreen({ onConfigurarEstacion }: { onConfigurarEstacion?: (
                   <View style={[estilos.avatar, activo && estilos.avatarActivo]}>
                     <Text style={estilos.avatarTexto}>{iniciales(u.nombre)}</Text>
                   </View>
-                  <Text style={[estilos.usuarioNombre, activo && estilos.usuarioNombreActivo]} numberOfLines={1}>
+                  <Text style={[estilos.usuarioNombre, activo && estilos.usuarioNombreActivo]} numberOfLines={2}>
                     {u.nombre}
                   </Text>
                 </TouchableOpacity>
@@ -123,10 +125,10 @@ export function LoginScreen({ onConfigurarEstacion }: { onConfigurarEstacion?: (
   );
 }
 
-function crearEstilos(colores: ReturnType<typeof usarColores>) {
+function crearEstilos(colores: ReturnType<typeof usarColores>, esTablet: boolean) {
   return StyleSheet.create({
     contenedor: { flex: 1, backgroundColor: colores.navy, alignItems: "center", justifyContent: "center", padding: 20 },
-    tarjeta: { backgroundColor: colores.superficie, borderRadius: 20, padding: 28, width: "100%", maxWidth: 380 },
+    tarjeta: { backgroundColor: colores.superficie, borderRadius: 20, padding: 28, width: "100%", maxWidth: esTablet ? 480 : 380 },
     botonTema: {
       position: "absolute", top: 14, right: 14, width: 30, height: 30, borderRadius: 15,
       backgroundColor: colores.fondo, alignItems: "center", justifyContent: "center",
@@ -135,7 +137,9 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     subtitulo: { textAlign: "center", color: colores.textoSecundario, marginBottom: 16 },
     ayuda: { textAlign: "center", color: colores.textoSecundario, fontSize: 13, marginVertical: 12 },
     grilla: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 10, marginBottom: 6 },
-    usuario: { alignItems: "center", width: 78, padding: 8, borderRadius: 12 },
+    // 92 (antes 78) + numberOfLines={2} en el nombre — con un solo renglón, un nombre de dos
+    // palabras (el caso normal: "Carlos Martínez") se cortaba en "Carlo…" ilegible.
+    usuario: { alignItems: "center", width: 92, padding: 8, borderRadius: 12 },
     usuarioActivo: { backgroundColor: colores.navy },
     avatar: {
       width: 46, height: 46, borderRadius: 23, backgroundColor: colores.amber,
@@ -143,7 +147,7 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     },
     avatarActivo: { backgroundColor: colores.amber },
     avatarTexto: { color: colores.navy, fontWeight: "800", fontSize: 16 },
-    usuarioNombre: { marginTop: 6, fontSize: 12, fontWeight: "600", color: colores.texto, textAlign: "center" },
+    usuarioNombre: { marginTop: 6, fontSize: 12, fontWeight: "600", color: colores.texto, textAlign: "center", lineHeight: 15 },
     usuarioNombreActivo: { color: "#fff" },
     input: { borderWidth: 1, borderColor: colores.borde, borderRadius: 10, padding: 14, marginTop: 14, fontSize: 16, color: colores.texto },
     error: { color: colores.red, marginTop: 8, textAlign: "center" },

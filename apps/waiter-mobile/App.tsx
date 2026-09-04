@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { Alert, SafeAreaView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useDispositivo } from "./src/hooks/useDispositivo";
 import type { Mesa } from "@hangar421/shared";
 import { useAuthStore } from "./src/store/authStore";
 import { useSyncStore } from "./src/store/syncStore";
 import { useConexionStore } from "./src/store/conexionStore";
 import { useTemaStore, usarColores } from "./src/store/temaStore";
 import { iniciarSync, detenerSync } from "./src/sync/syncEngine";
+import { conectarSocket, desconectarSocket } from "./src/api/socket";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { ConexionScreen } from "./src/screens/ConexionScreen";
 import { MesasScreen } from "./src/screens/MesasScreen";
@@ -62,7 +64,18 @@ export default function App() {
     return () => detenerSync();
   }, [auth.usuario]);
 
-  const estilos = crearEstilos(colores);
+  // Conexión de socket de TODA la sesión (no solo mientras se ve "Mis pedidos") — así el panel
+  // "Conexión Meseros" del POS (que lista tablets conectadas vía este mismo socket, ver
+  // realtime.gateway.ts) refleja de verdad si el mesero sigue activo, sin importar en qué
+  // pestaña esté parado.
+  useEffect(() => {
+    if (!auth.usuario || !auth.sucursalId || !auth.dispositivoId) return;
+    conectarSocket(auth.sucursalId, auth.usuario.id, auth.usuario.nombre, auth.dispositivoId);
+    return () => desconectarSocket();
+  }, [auth.usuario, auth.sucursalId, auth.dispositivoId]);
+
+  const { esTablet } = useDispositivo();
+  const estilos = crearEstilos(colores, esTablet);
 
   function cerrarSesion() {
     // Confirmación simple — un toque accidental en medio de un pedido perdería lo que el mesero
@@ -174,10 +187,20 @@ function TabBoton({
   onPress: () => void;
   colores: ReturnType<typeof usarColores>;
 }) {
-  const estilos = crearEstilos(colores);
+  const estilos = crearEstilos(colores, false);
   return (
     <TouchableOpacity onPress={onPress} style={[estilos.tabBoton, activo && estilos.tabBotonActivo]}>
-      <Text style={[estilos.tabTexto, activo && estilos.tabTextoActivo]}>{texto}</Text>
+      {/* numberOfLines + adjustsFontSizeToFit — "Mis pedidos" (la etiqueta más larga) se
+          partía en dos renglones ("Mis" / "pedidos") con 4 pestañas en un celular angosto;
+          esto la encoge un poco en vez de partirla. */}
+      <Text
+        style={[estilos.tabTexto, activo && estilos.tabTextoActivo]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.75}
+      >
+        {texto}
+      </Text>
     </TouchableOpacity>
   );
 }
@@ -185,18 +208,19 @@ function TabBoton({
 // StyleSheet dentro de una función (no a nivel de módulo): los colores dependen del tema activo,
 // así que los estilos se recalculan en cada render en vez de fijarse una sola vez al cargar el
 // archivo — el costo es despreciable para una pantalla de este tamaño.
-function crearEstilos(colores: ReturnType<typeof usarColores>) {
+function crearEstilos(colores: ReturnType<typeof usarColores>, esTablet: boolean) {
+  const escala = esTablet ? 1.15 : 1;
   return StyleSheet.create({
     header: { backgroundColor: colores.navy, padding: 14, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-    headerTitulo: { color: colores.amber, fontWeight: "800", fontSize: 16, letterSpacing: 1 },
+    headerTitulo: { color: colores.amber, fontWeight: "800", fontSize: 16 * escala, letterSpacing: 1 },
     headerAcciones: { flexDirection: "row", alignItems: "center", gap: 10 },
-    headerSync: { color: "#fff", fontSize: 12 },
+    headerSync: { color: "#fff", fontSize: 12 * escala },
     botonTema: { width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
     botonTemaTexto: { fontSize: 15 },
     tabBar: { flexDirection: "row", borderTopWidth: 1, borderTopColor: colores.borde, backgroundColor: colores.superficie },
-    tabBoton: { flex: 1, padding: 14, alignItems: "center", minHeight: 56, justifyContent: "center" },
+    tabBoton: { flex: 1, paddingHorizontal: 4, paddingVertical: 10, alignItems: "center", minHeight: 56, justifyContent: "center" },
     tabBotonActivo: { borderTopWidth: 3, borderTopColor: colores.navy },
-    tabTexto: { color: colores.textoSecundario, fontWeight: "600" },
+    tabTexto: { color: colores.textoSecundario, fontWeight: "600", fontSize: 13 * escala },
     tabTextoActivo: { color: colores.navyTexto },
   });
 }
