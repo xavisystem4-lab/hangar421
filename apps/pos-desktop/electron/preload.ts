@@ -29,6 +29,11 @@ contextBridge.exposeInMainWorld("hangar", {
     /** Resuelve cuando el backend (embebido o cloud configurado) está listo — puede tardar
      *  unos segundos la primera vez (crea la base de datos local). null en dev (usa VITE_API_URL). */
     obtenerUrl: (): Promise<string | null> => ipcRenderer.invoke("backend:obtenerUrl"),
+    /** IP LAN de esta PC + puerto del backend embebido — el dato que hay que capturar en el
+     *  módulo de conexión de la app de Meseros. null/null si esta instalación usa backend cloud
+     *  (no aplica un IP:puerto local) — ver Administracion.tsx. */
+    obtenerInfoConexion: (): Promise<{ ip: string | null; puerto: number | null }> =>
+      ipcRenderer.invoke("backend:obtenerInfoConexion"),
     onEstado: (callback: (mensaje: string) => void) => {
       const handler = (_e: unknown, mensaje: string) => callback(mensaje);
       ipcRenderer.on("backend:estado", handler);

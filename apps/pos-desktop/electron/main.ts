@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, Menu } from "electron";
 import * as path from "path";
+import * as os from "os";
 import {
   iniciarBaseDeDatos,
   obtenerDeviceId,
@@ -138,4 +139,30 @@ function registrarIpc() {
     }
     return backendPromise;
   });
+
+  // Dato de conexión para la app de Meseros (ver ConexionScreen.tsx en apps/waiter-mobile): la
+  // IP LAN de esta PC + el puerto del backend embebido. Solo tiene sentido cuando el backend
+  // corre embebido en esta PC (no en modo cloud, donde el mesero se conecta a la URL en la nube
+  // directamente) — por eso se lee `backendEmbebido` recién después de que "backend:obtenerUrl"
+  // resolvió, y se devuelve null si esta instalación usa un backend cloud configurado.
+  ipcMain.handle("backend:obtenerInfoConexion", () => {
+    if (!backendEmbebido) return { ip: null, puerto: null };
+    return { ip: obtenerIpLan(), puerto: backendEmbebido.puerto };
+  });
+}
+
+/** Mejor intento de adivinar la IP de esta PC en la red local (Wi-Fi/Ethernet) — la misma que
+ *  necesita un dispositivo en la misma red (tablet de mesero) para llegar a esta PC. Descarta
+ *  loopback, IPv6 y adaptadores virtuales típicos (VPN, VirtualBox, Docker, Hyper-V) que no son
+ *  la red real del local; si hay varias candidatas válidas, se queda con la primera. */
+function obtenerIpLan(): string | null {
+  const interfaces = os.networkInterfaces();
+  const IGNORAR = /virtual|vmware|virtualbox|docker|hyper-v|vethernet|tailscale|zerotier/i;
+  for (const [nombre, direcciones] of Object.entries(interfaces)) {
+    if (IGNORAR.test(nombre) || !direcciones) continue;
+    for (const dir of direcciones) {
+      if (dir.family === "IPv4" && !dir.internal) return dir.address;
+    }
+  }
+  return null;
 }

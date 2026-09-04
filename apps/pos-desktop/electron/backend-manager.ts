@@ -30,6 +30,10 @@ interface Secretos {
 
 export interface BackendEmbebido {
   url: string;
+  /** Puerto en el que escucha el backend embebido — se usa para armar el dato de conexión que
+   *  se le muestra al admin en pantalla (ver electron/main.ts, IPC "backend:obtenerInfoConexion")
+   *  para que lo capture en el módulo de conexión de la app de Meseros. */
+  puerto: number;
   detener: () => Promise<void>;
 }
 
@@ -108,7 +112,12 @@ export async function iniciarBackendEmbebido(logIn: (msg: string) => void): Prom
     await conTimeout(pg.createDatabase("hangar421"), 30_000, mensajeTimeoutPg);
   }
 
-  const backendPort = await puertoLibre();
+  // Puerto FIJO (3000) siempre que esté libre — antes se elegía uno al azar en cada arranque
+  // (puertoLibre() sin preferencia), lo que dejaba a la app de Meseros sin forma de saber a qué
+  // puerto conectarse sin volver a mirar la PC cada vez que se reiniciaba el POS. Con un puerto
+  // fijo, la IP:puerto que se le muestra al admin (ver "backend:obtenerInfoConexion" en main.ts)
+  // se mantiene estable entre reinicios — solo cambia si 3000 ya estaba ocupado por otra cosa.
+  const backendPort = await puertoPreferidoOLibre(3000);
 
   const env: NodeJS.ProcessEnv = {
     ...process.env,
@@ -142,6 +151,7 @@ export async function iniciarBackendEmbebido(logIn: (msg: string) => void): Prom
 
   return {
     url,
+    puerto: backendPort,
     detener: () => detener(proceso, pg, log),
   };
 }
@@ -208,6 +218,19 @@ async function puertoLibre(): Promise<number> {
       srv.close(() => resolve(port));
     });
   });
+}
+
+/** Igual que `puertoLibre()`, pero intenta primero el puerto `preferido` (sin host — igual que
+ *  `app.listen(port)` en apps/backend/src/main.ts, así que la prueba de disponibilidad es sobre
+ *  todas las interfaces, no solo loopback) y solo cae a uno al azar si ese ya está ocupado. */
+async function puertoPreferidoOLibre(preferido: number): Promise<number> {
+  const libre = await new Promise<boolean>((resolve) => {
+    const srv = net.createServer();
+    srv.unref();
+    srv.on("error", () => resolve(false));
+    srv.listen(preferido, () => srv.close(() => resolve(true)));
+  });
+  return libre ? preferido : puertoLibre();
 }
 
 function conTimeout<T>(promesa: Promise<T>, ms: number, mensaje: string): Promise<T> {
