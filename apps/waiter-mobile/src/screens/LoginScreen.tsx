@@ -22,7 +22,7 @@ function iniciales(nombre: string): string {
 
 export function LoginScreen({ onConfigurarEstacion }: { onConfigurarEstacion?: () => void }) {
   const { loginPin, error } = useAuthStore();
-  const { host, puerto } = useConexionStore();
+  const { host, puerto, nombreEstacion } = useConexionStore();
   const tema = useTemaStore();
   const colores = usarColores();
   const estilos = crearEstilos(colores);
@@ -116,7 +116,7 @@ export function LoginScreen({ onConfigurarEstacion }: { onConfigurarEstacion?: (
         </TouchableOpacity>
 
         <TouchableOpacity style={estilos.estacion} onPress={onConfigurarEstacion}>
-          <Text style={estilos.estacionTexto}>⚙ Estación: {host}:{puerto}</Text>
+          <Text style={estilos.estacionTexto}>⚙ {nombreEstacion ?? "Estación"}: {host}:{puerto}</Text>
         </TouchableOpacity>
       </View>
     </View>

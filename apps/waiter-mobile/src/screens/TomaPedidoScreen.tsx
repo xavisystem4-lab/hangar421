@@ -87,6 +87,7 @@ export function TomaPedidoScreen({ mesaNombre, onEnviado }: { mesaNombre: string
       </View>
 
       <FlatList
+        style={estilos.listaProductos}
         data={filtrados}
         keyExtractor={(p) => p.id}
         numColumns={2}
@@ -224,13 +225,19 @@ function ModalModificadores({
 
 function crearEstilos(colores: ReturnType<typeof usarColores>) {
   return StyleSheet.create({
-    encabezado: { fontSize: 18, fontWeight: "800", padding: 12, color: colores.texto },
-    tabsCategoria: { maxHeight: 50 },
+    // flexShrink: 0 en encabezado/categorías/buscador — en horizontal (landscape) la tablet
+    // tiene mucha menos altura disponible; sin esto, Yoga podía encoger la fila de categorías
+    // hasta 0px para hacerle espacio al resto (el buscador terminaba pintado donde deberían
+    // estar las categorías). Con height fijo (no maxHeight) + flexShrink:0 esa fila SIEMPRE
+    // reserva su espacio real, y la lista de productos (flex:1 más abajo) es la única que cede.
+    encabezado: { fontSize: 18, fontWeight: "800", padding: 12, color: colores.texto, flexShrink: 0 },
+    tabsCategoria: { height: 50, flexShrink: 0 },
     tab: { paddingHorizontal: 16, paddingVertical: 10, backgroundColor: colores.gray50, borderRadius: 10, marginRight: 8, justifyContent: "center" },
     tabActivo: { backgroundColor: colores.navy },
     tabTexto: { color: colores.texto },
     tabTextoActivo: { color: "#fff" },
-    buscadorContenedor: { paddingHorizontal: 12, paddingBottom: 10 },
+    buscadorContenedor: { paddingHorizontal: 12, paddingBottom: 10, flexShrink: 0 },
+    listaProductos: { flex: 1 },
     buscadorInput: { borderWidth: 1, borderColor: colores.borde, borderRadius: 10, padding: 12, fontSize: 15, backgroundColor: colores.superficie, color: colores.texto },
     filaProductos: { gap: 10 },
     sinResultados: { textAlign: "center", color: colores.textoSecundario, marginTop: 30, fontSize: 13 },
@@ -249,7 +256,7 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     productoInfo: { padding: 10 },
     productoNombre: { fontSize: 13, fontWeight: "700", color: colores.texto, minHeight: 34 },
     productoPrecio: { fontWeight: "800", color: colores.navyTexto, marginTop: 4, fontSize: 15 },
-    resumen: { backgroundColor: colores.superficie, padding: 12, borderTopWidth: 1, borderTopColor: colores.borde },
+    resumen: { backgroundColor: colores.superficie, padding: 12, borderTopWidth: 1, borderTopColor: colores.borde, flexShrink: 0 },
     filaItem: { flexDirection: "row", alignItems: "center", paddingVertical: 4, gap: 10 },
     controlCantidad: { fontSize: 18, paddingHorizontal: 8, color: colores.texto },
     total: { fontSize: 16, fontWeight: "800", marginTop: 6, color: colores.navyTexto },
