@@ -127,9 +127,13 @@ function registrarIpc() {
     if (!backendPromise) {
       const enviarEstado = (msg: string) => event.sender.send("backend:estado", msg);
       backendPromise = resolverBackend(enviarEstado).catch((e) => {
-        enviarEstado(`Error: ${e.message}`);
+        // Algunas dependencias (embedded-postgres) rechazan sin un Error real (p. ej. `reject()`
+        // a secas si Postgres se cierra apenas arranca) — sin este resguardo, `e.message` explota
+        // con un TypeError que tapa el error real y deja la pantalla de arranque sin explicación.
+        const error = e instanceof Error ? e : new Error(String(e ?? "Error desconocido al iniciar el backend local"));
+        enviarEstado(`Error: ${error.message}`);
         backendPromise = null; // permitir reintentar
-        throw e;
+        throw error;
       });
     }
     return backendPromise;
