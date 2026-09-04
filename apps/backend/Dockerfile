@@ -4,6 +4,11 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 
+# Prisma detecta el binary target (incluyendo si hay libssl) en el momento de `prisma generate`.
+# Sin openssl aquí, genera el motor para "linux-musl" (sin ssl); el stage final SÍ tiene openssl,
+# así que en runtime busca "linux-musl-openssl-3.0.x" y no lo encuentra. Deben coincidir.
+RUN apk add --no-cache openssl
+
 # Todo el código fuente de los dos workspaces que hacen falta para el backend (nada de
 # crm-web/pos-desktop/kitchen-display/waiter-mobile) — el `postinstall` de la raíz compila
 # @hangar421/shared automáticamente en cuanto corre `npm install`, así que su código fuente
