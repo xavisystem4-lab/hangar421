@@ -4,6 +4,7 @@ import type { Mesa } from "@hangar421/shared";
 import { useAuthStore } from "./src/store/authStore";
 import { useSyncStore } from "./src/store/syncStore";
 import { useConexionStore } from "./src/store/conexionStore";
+import { useTemaStore, usarColores } from "./src/store/temaStore";
 import { iniciarSync, detenerSync } from "./src/sync/syncEngine";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { ConexionScreen } from "./src/screens/ConexionScreen";
@@ -12,7 +13,6 @@ import { TomaPedidoScreen } from "./src/screens/TomaPedidoScreen";
 import { MisPedidosScreen } from "./src/screens/MisPedidosScreen";
 import { useOrderStore } from "./src/store/orderStore";
 import { BarraActualizacion } from "./src/components/BarraActualizacion";
-import { colores } from "./src/theme";
 
 type Pantalla = "mesas" | "pedido" | "mispedidos";
 
@@ -20,6 +20,8 @@ export default function App() {
   const auth = useAuthStore();
   const sync = useSyncStore();
   const conexion = useConexionStore();
+  const tema = useTemaStore();
+  const colores = usarColores();
   const [pantalla, setPantalla] = useState<Pantalla>("mesas");
   const [mesaActiva, setMesaActiva] = useState<Mesa | null>(null);
   const [configurandoEstacion, setConfigurandoEstacion] = useState(false);
@@ -35,12 +37,18 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    tema.cargar();
+  }, []);
+
+  useEffect(() => {
     if (!auth.usuario) return;
     iniciarSync();
     return () => detenerSync();
   }, [auth.usuario]);
 
-  if (auth.cargando || conexion.cargando) return null;
+  const estilos = crearEstilos(colores);
+
+  if (auth.cargando || conexion.cargando || tema.cargando) return null;
 
   if (!auth.usuario) {
     // Antes de poder iniciar sesión hace falta saber a qué Estación (servidor) conectarse —
@@ -64,7 +72,7 @@ export default function App() {
       );
     }
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colores.gray50 }}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: colores.fondo }}>
         <View style={{ flex: 1 }}>
           <LoginScreen onConfigurarEstacion={() => setConfigurandoEstacion(true)} />
         </View>
@@ -74,11 +82,16 @@ export default function App() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colores.gray50 }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colores.fondo }}>
       <StatusBar barStyle="light-content" backgroundColor={colores.navy} />
       <View style={estilos.header}>
         <Text style={estilos.headerTitulo}>HANGAR 421</Text>
-        <Text style={estilos.headerSync}>{sync.estado === "SYNCED" ? "● Sincronizado" : sync.estado === "SYNCING" ? "● Sincronizando…" : `○ Sin conexión (${sync.pendientes})`}</Text>
+        <View style={estilos.headerAcciones}>
+          <Text style={estilos.headerSync}>{sync.estado === "SYNCED" ? "● Sincronizado" : sync.estado === "SYNCING" ? "● Sincronizando…" : `○ Sin conexión (${sync.pendientes})`}</Text>
+          <TouchableOpacity onPress={tema.alternar} style={estilos.botonTema}>
+            <Text style={estilos.botonTemaTexto}>{tema.tema === "oscuro" ? "☀️" : "🌙"}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={{ flex: 1 }}>
@@ -95,16 +108,27 @@ export default function App() {
       </View>
 
       <View style={estilos.tabBar}>
-        <TabBoton texto="Mesas" activo={pantalla === "mesas"} onPress={() => setPantalla("mesas")} />
-        <TabBoton texto="Pedido" activo={pantalla === "pedido"} onPress={() => setPantalla("pedido")} />
-        <TabBoton texto="Mis pedidos" activo={pantalla === "mispedidos"} onPress={() => setPantalla("mispedidos")} />
+        <TabBoton texto="Mesas" activo={pantalla === "mesas"} onPress={() => setPantalla("mesas")} colores={colores} />
+        <TabBoton texto="Pedido" activo={pantalla === "pedido"} onPress={() => setPantalla("pedido")} colores={colores} />
+        <TabBoton texto="Mis pedidos" activo={pantalla === "mispedidos"} onPress={() => setPantalla("mispedidos")} colores={colores} />
       </View>
       <BarraActualizacion />
     </SafeAreaView>
   );
 }
 
-function TabBoton({ texto, activo, onPress }: { texto: string; activo: boolean; onPress: () => void }) {
+function TabBoton({
+  texto,
+  activo,
+  onPress,
+  colores,
+}: {
+  texto: string;
+  activo: boolean;
+  onPress: () => void;
+  colores: ReturnType<typeof usarColores>;
+}) {
+  const estilos = crearEstilos(colores);
   return (
     <TouchableOpacity onPress={onPress} style={[estilos.tabBoton, activo && estilos.tabBotonActivo]}>
       <Text style={[estilos.tabTexto, activo && estilos.tabTextoActivo]}>{texto}</Text>
@@ -112,13 +136,21 @@ function TabBoton({ texto, activo, onPress }: { texto: string; activo: boolean; 
   );
 }
 
-const estilos = StyleSheet.create({
-  header: { backgroundColor: colores.navy, padding: 14, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  headerTitulo: { color: colores.amber, fontWeight: "800", fontSize: 16, letterSpacing: 1 },
-  headerSync: { color: "#fff", fontSize: 12 },
-  tabBar: { flexDirection: "row", borderTopWidth: 1, borderTopColor: colores.gray200, backgroundColor: "#fff" },
-  tabBoton: { flex: 1, padding: 14, alignItems: "center", minHeight: 56, justifyContent: "center" },
-  tabBotonActivo: { borderTopWidth: 3, borderTopColor: colores.navy },
-  tabTexto: { color: colores.gray400, fontWeight: "600" },
-  tabTextoActivo: { color: colores.navy },
-});
+// StyleSheet dentro de una función (no a nivel de módulo): los colores dependen del tema activo,
+// así que los estilos se recalculan en cada render en vez de fijarse una sola vez al cargar el
+// archivo — el costo es despreciable para una pantalla de este tamaño.
+function crearEstilos(colores: ReturnType<typeof usarColores>) {
+  return StyleSheet.create({
+    header: { backgroundColor: colores.navy, padding: 14, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+    headerTitulo: { color: colores.amber, fontWeight: "800", fontSize: 16, letterSpacing: 1 },
+    headerAcciones: { flexDirection: "row", alignItems: "center", gap: 10 },
+    headerSync: { color: "#fff", fontSize: 12 },
+    botonTema: { width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
+    botonTemaTexto: { fontSize: 15 },
+    tabBar: { flexDirection: "row", borderTopWidth: 1, borderTopColor: colores.borde, backgroundColor: colores.superficie },
+    tabBoton: { flex: 1, padding: 14, alignItems: "center", minHeight: 56, justifyContent: "center" },
+    tabBotonActivo: { borderTopWidth: 3, borderTopColor: colores.navy },
+    tabTexto: { color: colores.textoSecundario, fontWeight: "600" },
+    tabTextoActivo: { color: colores.navyTexto },
+  });
+}

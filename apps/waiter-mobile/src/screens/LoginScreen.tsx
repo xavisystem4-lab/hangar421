@@ -3,7 +3,7 @@ import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View 
 import { apiFetch } from "../api/http";
 import { useAuthStore } from "../store/authStore";
 import { useConexionStore } from "../store/conexionStore";
-import { colores } from "../theme";
+import { useTemaStore, usarColores } from "../store/temaStore";
 
 interface UsuarioLogin {
   id: string;
@@ -23,6 +23,9 @@ function iniciales(nombre: string): string {
 export function LoginScreen({ onConfigurarEstacion }: { onConfigurarEstacion?: () => void }) {
   const { loginPin, error } = useAuthStore();
   const { host, puerto } = useConexionStore();
+  const tema = useTemaStore();
+  const colores = usarColores();
+  const estilos = crearEstilos(colores);
   const [meseros, setMeseros] = useState<UsuarioLogin[] | null>(null);
   const [errorMeseros, setErrorMeseros] = useState<string | null>(null);
   const [seleccionado, setSeleccionado] = useState<UsuarioLogin | null>(null);
@@ -58,10 +61,18 @@ export function LoginScreen({ onConfigurarEstacion }: { onConfigurarEstacion?: (
   return (
     <View style={estilos.contenedor}>
       <View style={estilos.tarjeta}>
+        <TouchableOpacity
+          onPress={tema.alternar}
+          style={estilos.botonTema}
+          accessibilityLabel={tema.tema === "oscuro" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+        >
+          <Text style={{ fontSize: 16 }}>{tema.tema === "oscuro" ? "☀️" : "🌙"}</Text>
+        </TouchableOpacity>
+
         <Text style={estilos.titulo}>HANGAR 421</Text>
         <Text style={estilos.subtitulo}>Meseros</Text>
 
-        {!meseros && !errorMeseros && <ActivityIndicator color={colores.navy} style={{ marginVertical: 16 }} />}
+        {!meseros && !errorMeseros && <ActivityIndicator color={colores.navyTexto} style={{ marginVertical: 16 }} />}
         {errorMeseros && <Text style={estilos.error}>{errorMeseros}</Text>}
         {meseros && meseros.length === 0 && <Text style={estilos.ayuda}>No hay meseros dados de alta todavía.</Text>}
 
@@ -85,6 +96,7 @@ export function LoginScreen({ onConfigurarEstacion }: { onConfigurarEstacion?: (
 
         <TextInput
           placeholder={seleccionado ? `PIN de ${seleccionado.nombre}` : "Elige tu nombre arriba"}
+          placeholderTextColor={colores.textoSecundario}
           value={pin}
           onChangeText={setPin}
           editable={!!seleccionado}
@@ -111,28 +123,34 @@ export function LoginScreen({ onConfigurarEstacion }: { onConfigurarEstacion?: (
   );
 }
 
-const estilos = StyleSheet.create({
-  contenedor: { flex: 1, backgroundColor: colores.navy, alignItems: "center", justifyContent: "center", padding: 20 },
-  tarjeta: { backgroundColor: "#fff", borderRadius: 20, padding: 28, width: "100%", maxWidth: 380 },
-  titulo: { fontSize: 26, fontWeight: "800", color: colores.navy, textAlign: "center" },
-  subtitulo: { textAlign: "center", color: colores.gray400, marginBottom: 16 },
-  ayuda: { textAlign: "center", color: colores.gray400, fontSize: 13, marginVertical: 12 },
-  grilla: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 10, marginBottom: 6 },
-  usuario: { alignItems: "center", width: 78, padding: 8, borderRadius: 12 },
-  usuarioActivo: { backgroundColor: colores.navy },
-  avatar: {
-    width: 46, height: 46, borderRadius: 23, backgroundColor: colores.amber,
-    alignItems: "center", justifyContent: "center",
-  },
-  avatarActivo: { backgroundColor: colores.amber },
-  avatarTexto: { color: colores.navy, fontWeight: "800", fontSize: 16 },
-  usuarioNombre: { marginTop: 6, fontSize: 12, fontWeight: "600", color: colores.black, textAlign: "center" },
-  usuarioNombreActivo: { color: "#fff" },
-  input: { borderWidth: 1, borderColor: colores.gray200, borderRadius: 10, padding: 14, marginTop: 14, fontSize: 16 },
-  error: { color: colores.red, marginTop: 8, textAlign: "center" },
-  boton: { backgroundColor: colores.green, borderRadius: 12, padding: 16, marginTop: 18, minHeight: 56, alignItems: "center", justifyContent: "center" },
-  botonDeshabilitado: { opacity: 0.5 },
-  botonTexto: { color: "#fff", fontWeight: "700", fontSize: 16 },
-  estacion: { marginTop: 16, alignItems: "center", padding: 6 },
-  estacionTexto: { color: colores.gray400, fontSize: 12 },
-});
+function crearEstilos(colores: ReturnType<typeof usarColores>) {
+  return StyleSheet.create({
+    contenedor: { flex: 1, backgroundColor: colores.navy, alignItems: "center", justifyContent: "center", padding: 20 },
+    tarjeta: { backgroundColor: colores.superficie, borderRadius: 20, padding: 28, width: "100%", maxWidth: 380 },
+    botonTema: {
+      position: "absolute", top: 14, right: 14, width: 30, height: 30, borderRadius: 15,
+      backgroundColor: colores.fondo, alignItems: "center", justifyContent: "center",
+    },
+    titulo: { fontSize: 26, fontWeight: "800", color: colores.navyTexto, textAlign: "center" },
+    subtitulo: { textAlign: "center", color: colores.textoSecundario, marginBottom: 16 },
+    ayuda: { textAlign: "center", color: colores.textoSecundario, fontSize: 13, marginVertical: 12 },
+    grilla: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 10, marginBottom: 6 },
+    usuario: { alignItems: "center", width: 78, padding: 8, borderRadius: 12 },
+    usuarioActivo: { backgroundColor: colores.navy },
+    avatar: {
+      width: 46, height: 46, borderRadius: 23, backgroundColor: colores.amber,
+      alignItems: "center", justifyContent: "center",
+    },
+    avatarActivo: { backgroundColor: colores.amber },
+    avatarTexto: { color: colores.navy, fontWeight: "800", fontSize: 16 },
+    usuarioNombre: { marginTop: 6, fontSize: 12, fontWeight: "600", color: colores.texto, textAlign: "center" },
+    usuarioNombreActivo: { color: "#fff" },
+    input: { borderWidth: 1, borderColor: colores.borde, borderRadius: 10, padding: 14, marginTop: 14, fontSize: 16, color: colores.texto },
+    error: { color: colores.red, marginTop: 8, textAlign: "center" },
+    boton: { backgroundColor: colores.green, borderRadius: 12, padding: 16, marginTop: 18, minHeight: 56, alignItems: "center", justifyContent: "center" },
+    botonDeshabilitado: { opacity: 0.5 },
+    botonTexto: { color: "#fff", fontWeight: "700", fontSize: 16 },
+    estacion: { marginTop: 16, alignItems: "center", padding: 6 },
+    estacionTexto: { color: colores.textoSecundario, fontSize: 12 },
+  });
+}

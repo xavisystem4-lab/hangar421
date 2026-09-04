@@ -4,21 +4,22 @@ import { EstadoPedido, WS_EVENTS, type Pedido } from "@hangar421/shared";
 import { apiFetch } from "../api/http";
 import { conectarSocket } from "../api/socket";
 import { useAuthStore } from "../store/authStore";
-import { colores } from "../theme";
-
-const ETIQUETA: Record<EstadoPedido, { texto: string; color: string }> = {
-  [EstadoPedido.ABIERTO]: { texto: "Abierto", color: colores.gray400 },
-  [EstadoPedido.ENVIADO]: { texto: "Enviado", color: colores.blue },
-  [EstadoPedido.EN_PREPARACION]: { texto: "En preparación", color: colores.yellow },
-  [EstadoPedido.LISTO]: { texto: "Listo — entregar", color: colores.green },
-  [EstadoPedido.ENTREGADO]: { texto: "Entregado", color: colores.gray400 },
-  [EstadoPedido.POR_COBRAR]: { texto: "Por cobrar", color: colores.yellow },
-  [EstadoPedido.COBRADO]: { texto: "Cobrado", color: colores.green },
-  [EstadoPedido.CANCELADO]: { texto: "Cancelado", color: colores.red },
-};
+import { usarColores } from "../store/temaStore";
 
 export function MisPedidosScreen() {
   const { usuario, sucursalId } = useAuthStore();
+  const colores = usarColores();
+  const estilos = crearEstilos(colores);
+  const ETIQUETA: Record<EstadoPedido, { texto: string; color: string }> = {
+    [EstadoPedido.ABIERTO]: { texto: "Abierto", color: colores.gray400 },
+    [EstadoPedido.ENVIADO]: { texto: "Enviado", color: colores.blue },
+    [EstadoPedido.EN_PREPARACION]: { texto: "En preparación", color: colores.yellow },
+    [EstadoPedido.LISTO]: { texto: "Listo — entregar", color: colores.green },
+    [EstadoPedido.ENTREGADO]: { texto: "Entregado", color: colores.gray400 },
+    [EstadoPedido.POR_COBRAR]: { texto: "Por cobrar", color: colores.yellow },
+    [EstadoPedido.COBRADO]: { texto: "Cobrado", color: colores.green },
+    [EstadoPedido.CANCELADO]: { texto: "Cancelado", color: colores.red },
+  };
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [refrescando, setRefrescando] = useState(false);
   const [notificacion, setNotificacion] = useState<string | null>(null);
@@ -50,7 +51,7 @@ export function MisPedidosScreen() {
   }, [sucursalId, usuario, cargar]);
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: colores.fondo }}>
       {notificacion && (
         <View style={estilos.banner}><Text style={estilos.bannerTexto}>{notificacion}</Text></View>
       )}
@@ -70,17 +71,19 @@ export function MisPedidosScreen() {
             </View>
           );
         }}
-        ListEmptyComponent={<Text style={{ textAlign: "center", color: colores.gray400, marginTop: 40 }}>No tienes pedidos activos</Text>}
+        ListEmptyComponent={<Text style={{ textAlign: "center", color: colores.textoSecundario, marginTop: 40 }}>No tienes pedidos activos</Text>}
       />
     </View>
   );
 }
 
-const estilos = StyleSheet.create({
-  banner: { backgroundColor: colores.green, padding: 12 },
-  bannerTexto: { color: "#fff", fontWeight: "700", textAlign: "center" },
-  tarjeta: { backgroundColor: "#fff", borderRadius: 12, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: colores.gray200 },
-  folio: { fontWeight: "700", fontSize: 15 },
-  estado: { fontWeight: "700", marginTop: 4 },
-  total: { marginTop: 4, color: colores.navy, fontWeight: "700" },
-});
+function crearEstilos(colores: ReturnType<typeof usarColores>) {
+  return StyleSheet.create({
+    banner: { backgroundColor: colores.green, padding: 12 },
+    bannerTexto: { color: "#fff", fontWeight: "700", textAlign: "center" },
+    tarjeta: { backgroundColor: colores.superficie, borderRadius: 12, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: colores.borde },
+    folio: { fontWeight: "700", fontSize: 15, color: colores.texto },
+    estado: { fontWeight: "700", marginTop: 4 },
+    total: { marginTop: 4, color: colores.navyTexto, fontWeight: "700" },
+  });
+}
