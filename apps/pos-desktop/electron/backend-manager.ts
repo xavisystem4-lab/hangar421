@@ -90,7 +90,19 @@ export async function iniciarBackendEmbebido(logIn: (msg: string) => void): Prom
     await conTimeout(pg.initialise(), 90_000, mensajeTimeoutPg);
   }
   log("Arrancando PostgreSQL…");
-  await conTimeout(pg.start(), 45_000, mensajeTimeoutPg);
+  // embedded-postgres rechaza esta promesa sin ningún Error (`reject()` a secas) si el proceso
+  // de Postgres se cierra antes de terminar de arrancar — normalizamos acá para no propagar un
+  // rechazo `undefined` que rompería el `.catch` de más arriba con un TypeError críptico. El
+  // motivo real de por qué Postgres se cerró queda igual en el log, arriba de este mensaje
+  // (viene del `onLog`/`onError` de embedded-postgres con la salida de postgres.exe).
+  await conTimeout(pg.start(), 45_000, mensajeTimeoutPg).catch((e) => {
+    if (e instanceof Error) throw e;
+    throw new Error(
+      "PostgreSQL local se cerró inesperadamente al arrancar. Revisa las líneas [postgres] " +
+        "justo arriba de esta en local-data/arranque.log para ver el motivo exacto (puerto " +
+        "ocupado, datos corruptos, antivirus bloqueando postgres.exe, etc.).",
+    );
+  });
   if (!yaInicializado) {
     log("Creando base de datos hangar421…");
     await conTimeout(pg.createDatabase("hangar421"), 30_000, mensajeTimeoutPg);
