@@ -6,6 +6,7 @@ import * as outbox from "../db/outbox";
 import { useAuthStore } from "../store/authStore";
 import { useOrderStore } from "../store/orderStore";
 import { usarColores } from "../store/temaStore";
+import { columnasMesas, useDispositivo } from "../hooks/useDispositivo";
 
 const ETIQUETA: Record<EstadoMesa, string> = {
   [EstadoMesa.LIBRE]: "Libre",
@@ -18,7 +19,9 @@ const ETIQUETA: Record<EstadoMesa, string> = {
 export function MesasScreen({ onAbrirMesa, onMostrador }: { onAbrirMesa: (mesa: Mesa) => void; onMostrador: () => void }) {
   const { sucursalId } = useAuthStore();
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const { ancho, esTablet } = useDispositivo();
+  const columnas = columnasMesas(ancho);
+  const estilos = crearEstilos(colores, esTablet);
   const COLOR: Record<EstadoMesa, string> = {
     [EstadoMesa.LIBRE]: colores.gray400,
     [EstadoMesa.OCUPADA]: colores.blue,
@@ -53,8 +56,9 @@ export function MesasScreen({ onAbrirMesa, onMostrador }: { onAbrirMesa: (mesa: 
       </TouchableOpacity>
 
       <FlatList
+        key={`mesas-${columnas}`}
         data={mesas}
-        numColumns={3}
+        numColumns={columnas}
         keyExtractor={(m) => m.id}
         contentContainerStyle={{ padding: 12 }}
         refreshControl={<RefreshControl refreshing={refrescando} onRefresh={async () => { setRefrescando(true); await cargar(); setRefrescando(false); }} />}
@@ -72,12 +76,13 @@ export function MesasScreen({ onAbrirMesa, onMostrador }: { onAbrirMesa: (mesa: 
   );
 }
 
-function crearEstilos(colores: ReturnType<typeof usarColores>) {
+function crearEstilos(colores: ReturnType<typeof usarColores>, esTablet: boolean) {
+  const escala = esTablet ? 1.2 : 1;
   return StyleSheet.create({
     mostrador: { backgroundColor: colores.navy, margin: 12, borderRadius: 12, padding: 16, alignItems: "center" },
-    mostradorTexto: { color: "#fff", fontWeight: "700", fontSize: 15 },
-    mesa: { flex: 1, margin: 6, minHeight: 90, borderWidth: 3, borderRadius: 12, backgroundColor: colores.superficie, alignItems: "center", justifyContent: "center" },
-    mesaNombre: { fontSize: 16, fontWeight: "800", color: colores.texto },
-    mesaEstado: { fontSize: 12, fontWeight: "700", marginTop: 4 },
+    mostradorTexto: { color: "#fff", fontWeight: "700", fontSize: 15 * escala },
+    mesa: { flex: 1, margin: 6, minHeight: 90 * escala, borderWidth: 3, borderRadius: 12, backgroundColor: colores.superficie, alignItems: "center", justifyContent: "center" },
+    mesaNombre: { fontSize: 16 * escala, fontWeight: "800", color: colores.texto },
+    mesaEstado: { fontSize: 12 * escala, fontWeight: "700", marginTop: 4 },
   });
 }

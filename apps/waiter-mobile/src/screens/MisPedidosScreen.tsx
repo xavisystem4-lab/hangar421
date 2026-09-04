@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { FlatList, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { EstadoPedido, WS_EVENTS, type Pedido } from "@hangar421/shared";
 import { apiFetch } from "../api/http";
-import { conectarSocket } from "../api/socket";
+import { obtenerSocket } from "../api/socket";
 import { useAuthStore } from "../store/authStore";
 import { usarColores } from "../store/temaStore";
 
@@ -37,17 +37,24 @@ export function MisPedidosScreen() {
   useEffect(() => {
     cargar();
     if (!sucursalId || !usuario) return;
-    const socket = conectarSocket(sucursalId, usuario.id);
-    socket.on(WS_EVENTS.COMANDA_LISTA, (pedido: Pedido) => {
+    // El socket ya está conectado a nivel de App.tsx (toda la sesión) — esta pantalla solo se
+    // suma a escuchar, no es dueña del ciclo de vida de la conexión (no lo desconecta al salir).
+    const socket = obtenerSocket();
+    const manejarComandaLista = (pedido: Pedido) => {
       if (pedido.meseroId === usuario.id) {
         setNotificacion(`🔔 Pedido ${pedido.folio} listo para entregar`);
         setTimeout(() => setNotificacion(null), 6000);
       }
       cargar();
-    });
-    socket.on(WS_EVENTS.PEDIDO_ACTUALIZADO, cargar);
+    };
+    socket?.on(WS_EVENTS.COMANDA_LISTA, manejarComandaLista);
+    socket?.on(WS_EVENTS.PEDIDO_ACTUALIZADO, cargar);
     const t = setInterval(cargar, 20_000);
-    return () => { clearInterval(t); socket.disconnect(); };
+    return () => {
+      clearInterval(t);
+      socket?.off(WS_EVENTS.COMANDA_LISTA, manejarComandaLista);
+      socket?.off(WS_EVENTS.PEDIDO_ACTUALIZADO, cargar);
+    };
   }, [sucursalId, usuario, cargar]);
 
   return (
