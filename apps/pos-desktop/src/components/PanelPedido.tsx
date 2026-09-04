@@ -34,7 +34,10 @@ export function PanelPedido({ mesaNombre, onCobrar }: { mesaNombre: string | nul
               {item.modificadores.length > 0 && (
                 <div style={{ fontSize: 12, color: "var(--h421-gray-400)" }}>{item.modificadores.map((m) => m.nombreOpcion).join(", ")}</div>
               )}
-              {item.notas && <div style={{ fontSize: 12, color: "var(--h421-gray-400)" }}>Nota: {item.notas}</div>}
+              {/* La nota es una instrucción operativa (alergia, "sin hielo", etc.) — necesita
+                  notarse de un vistazo, no perderse con el mismo gris apagado que los
+                  modificadores informativos. Mismo azul que el ícono de nota cuando hay una. */}
+              {item.notas && <div style={{ fontSize: 14, fontWeight: 700, color: "var(--h421-blue)" }}>Nota: {item.notas}</div>}
               <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                 <button onClick={() => cambiarCantidad(item.id, -1)} style={{ width: 36, height: 36, minHeight: 0, fontSize: 18, fontWeight: 700, background: "var(--h421-gray-50)", borderRadius: 8 }}>−</button>
                 <button onClick={() => cambiarCantidad(item.id, 1)} style={{ width: 36, height: 36, minHeight: 0, fontSize: 18, fontWeight: 700, background: "var(--h421-gray-50)", borderRadius: 8 }}>+</button>

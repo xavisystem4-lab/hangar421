@@ -87,3 +87,12 @@ input, textarea, select {
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--h421-gray-200); border-radius: 6px; }
+
+/* Tarjeta genérica (mismo estilo que usa apps/crm-web) — usada por la pantalla de
+   Administración (Reportes/Inventario/Usuarios), que reutiliza esos módulos del CRM. */
+.card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
