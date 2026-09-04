@@ -3,8 +3,10 @@ import { SafeAreaView, StatusBar, StyleSheet, Text, TouchableOpacity, View } fro
 import type { Mesa } from "@hangar421/shared";
 import { useAuthStore } from "./src/store/authStore";
 import { useSyncStore } from "./src/store/syncStore";
+import { useConexionStore } from "./src/store/conexionStore";
 import { iniciarSync, detenerSync } from "./src/sync/syncEngine";
 import { LoginScreen } from "./src/screens/LoginScreen";
+import { ConexionScreen } from "./src/screens/ConexionScreen";
 import { MesasScreen } from "./src/screens/MesasScreen";
 import { TomaPedidoScreen } from "./src/screens/TomaPedidoScreen";
 import { MisPedidosScreen } from "./src/screens/MisPedidosScreen";
@@ -17,8 +19,16 @@ type Pantalla = "mesas" | "pedido" | "mispedidos";
 export default function App() {
   const auth = useAuthStore();
   const sync = useSyncStore();
+  const conexion = useConexionStore();
   const [pantalla, setPantalla] = useState<Pantalla>("mesas");
   const [mesaActiva, setMesaActiva] = useState<Mesa | null>(null);
+  const [configurandoEstacion, setConfigurandoEstacion] = useState(false);
+
+  useEffect(() => {
+    conexion.cargar();
+    conexion.iniciarHeartbeat();
+    return () => conexion.detenerHeartbeat();
+  }, []);
 
   useEffect(() => {
     auth.inicializar();
@@ -30,12 +40,26 @@ export default function App() {
     return () => detenerSync();
   }, [auth.usuario]);
 
-  if (auth.cargando) return null;
+  if (auth.cargando || conexion.cargando) return null;
+
   if (!auth.usuario) {
+    // Antes de poder iniciar sesión hace falta saber a qué Estación (servidor) conectarse —
+    // una vez logeado, si la conexión se cae, la app sigue funcionando en modo offline-first
+    // (ver syncEngine/outbox) en vez de bloquear la pantalla.
+    if (conexion.estado !== "conectado" || configurandoEstacion) {
+      return (
+        <SafeAreaView style={{ flex: 1, backgroundColor: colores.navy }}>
+          <ConexionScreen
+            onConectado={() => setConfigurandoEstacion(false)}
+            onCancelar={configurandoEstacion && conexion.estado === "conectado" ? () => setConfigurandoEstacion(false) : undefined}
+          />
+        </SafeAreaView>
+      );
+    }
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: colores.gray50 }}>
         <View style={{ flex: 1 }}>
-          <LoginScreen />
+          <LoginScreen onConfigurarEstacion={() => setConfigurandoEstacion(true)} />
         </View>
         <BarraActualizacion />
       </SafeAreaView>
