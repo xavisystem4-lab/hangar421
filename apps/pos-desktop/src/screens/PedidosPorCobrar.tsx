@@ -4,9 +4,16 @@ import { apiFetch } from "../api/http";
 import { useOrderStore } from "../store/orderStore";
 import { ModalCobro } from "../components/ModalCobro";
 
-const ESTADOS_PENDIENTES = [EstadoPedido.ENVIADO, EstadoPedido.EN_PREPARACION, EstadoPedido.LISTO].join(",");
+// Incluye ABIERTO como red de seguridad: el POS de escritorio nunca persiste un pedido en
+// ABIERTO antes de cobrar/enviar (el carrito vive solo en memoria, ver orderStore.ts), así que
+// el único origen real de un pedido ABIERTO en el backend es la app de Meseros — y ahí solo
+// debería pasar si un bug futuro similar al de sync.service.ts (perder `enviarInmediato` al
+// reconstruir un pedido desde la cola offline) vuelve a colarse. Sin esta entrada, ese pedido
+// quedaría invisible para siempre porque ya no hay flujo de cocina que lo transicione.
+const ESTADOS_PENDIENTES = [EstadoPedido.ABIERTO, EstadoPedido.ENVIADO, EstadoPedido.EN_PREPARACION, EstadoPedido.LISTO].join(",");
 
 const ETIQUETA_ESTADO: Record<string, { texto: string; color: string }> = {
+  ABIERTO: { texto: "Pendiente de enviar", color: "var(--h421-gray-400)" },
   ENVIADO: { texto: "Enviado a cocina", color: "var(--h421-blue)" },
   EN_PREPARACION: { texto: "En preparación", color: "var(--h421-yellow)" },
   LISTO: { texto: "Listo", color: "var(--h421-green)" },

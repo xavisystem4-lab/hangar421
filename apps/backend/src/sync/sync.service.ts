@@ -117,6 +117,13 @@ export class SyncService {
             notasGenerales: p.notasGenerales,
             idempotencyKey: item.idempotencyKey,
             items: p.items,
+            // Se perdía este campo al reconstruir el pedido desde la cola offline (outbox), así
+            // que un pedido que se cae por corte de red y se reintenta luego por /sync/push
+            // nacía en EstadoPedido.ABIERTO en vez de ENVIADO — invisible para siempre en "Por
+            // cobrar" (que solo filtra ENVIADO/EN_PREPARACION/LISTO) porque ya no hay flujo de
+            // cocina que lo transicione. `?? true`: todo PEDIDO/CREATE que llega por el outbox
+            // de un mesero es una orden que el mesero ya dio por enviada.
+            enviarInmediato: p.enviarInmediato ?? true,
           });
         }
         break;
