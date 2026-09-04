@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../api/http";
 import { useAuthStore } from "../store/authStore";
-import logo from "../assets/logo-dark.png";
+import { useThemeStore } from "../store/themeStore";
+import logoOscuro from "../assets/logo-dark.png";
+import logoClaro from "../assets/logo-light.png";
 import fondo from "../assets/login-fondo.jpg";
 
 interface UsuarioLogin {
@@ -28,6 +30,10 @@ function iniciales(nombre: string): string {
 
 export function Login() {
   const { loginCredenciales, error } = useAuthStore();
+  const { tema, alternar } = useThemeStore();
+  // Vela el fondo con blanco en modo claro (aclara la foto) y con navy en modo oscuro
+  // (la oscurece) — así la pantalla de login se siente coherente con el tema elegido.
+  const velo = tema === "oscuro" ? "rgba(11,30,51,0.65)" : "rgba(255,255,255,0.45)";
   const [usuarios, setUsuarios] = useState<UsuarioLogin[] | null>(null);
   const [errorUsuarios, setErrorUsuarios] = useState<string | null>(null);
   const [seleccionado, setSeleccionado] = useState<UsuarioLogin | null>(null);
@@ -56,11 +62,23 @@ export function Login() {
     <div
       style={{
         height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
-        background: `linear-gradient(rgba(255,255,255,0.45), rgba(255,255,255,0.45)), url(${fondo}) center/cover no-repeat`,
+        position: "relative",
+        background: `linear-gradient(${velo}, ${velo}), url(${fondo}) center/cover no-repeat`,
       }}
     >
-      <div style={{ width: "100%", maxWidth: 920, background: "#fff", borderRadius: 24, boxShadow: "0 20px 60px rgba(11,30,51,0.18)", padding: "36px 44px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-        <img src={logo} alt="HANGAR 421" style={{ height: 44, width: "auto", marginBottom: 6 }} />
+      <button
+        onClick={alternar}
+        title={tema === "oscuro" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+        style={{
+          position: "absolute", top: 20, right: 24, width: 44, height: 44, minHeight: 0, padding: 0,
+          borderRadius: 22, background: "var(--h421-white)", color: "var(--h421-black)", fontSize: 20,
+          display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 14px rgba(11,30,51,0.18)",
+        }}
+      >
+        {tema === "oscuro" ? "☀️" : "🌙"}
+      </button>
+      <div style={{ width: "100%", maxWidth: 920, background: "var(--h421-white)", borderRadius: 24, boxShadow: "0 20px 60px rgba(11,30,51,0.18)", padding: "36px 44px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+        <img src={tema === "oscuro" ? logoClaro : logoOscuro} alt="HANGAR 421" style={{ height: 44, width: "auto", marginBottom: 6 }} />
         <p style={{ color: "var(--h421-gray-400)", margin: 0, fontSize: 14 }}>Elige tu usuario para entrar</p>
 
         {errorUsuarios && <p style={{ color: "var(--h421-red)" }}>{errorUsuarios}</p>}

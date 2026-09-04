@@ -64,15 +64,15 @@ export function ModalDescuento({ sucursalId, onCerrar }: { sucursalId: string; o
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
-      <div style={{ background: "#fff", borderRadius: 16, padding: 24, width: 380, maxHeight: "90vh", overflowY: "auto" }}>
+      <div style={{ background: "var(--h421-white)", borderRadius: 16, padding: 24, width: 380, maxHeight: "90vh", overflowY: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
           <h2 style={{ margin: 0 }}>Aplicar descuento</h2>
           <button onClick={onCerrar} style={{ background: "none", fontSize: 20 }}>✕</button>
         </div>
 
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <button onClick={() => setTipo(TipoDescuento.PORCENTAJE)} style={{ flex: 1, background: tipo === TipoDescuento.PORCENTAJE ? "var(--h421-navy)" : "var(--h421-gray-50)", color: tipo === TipoDescuento.PORCENTAJE ? "#fff" : "#000" }}>%</button>
-          <button onClick={() => setTipo(TipoDescuento.MONTO)} style={{ flex: 1, background: tipo === TipoDescuento.MONTO ? "var(--h421-navy)" : "var(--h421-gray-50)", color: tipo === TipoDescuento.MONTO ? "#fff" : "#000" }}>$</button>
+          <button onClick={() => setTipo(TipoDescuento.PORCENTAJE)} style={{ flex: 1, background: tipo === TipoDescuento.PORCENTAJE ? "var(--h421-navy)" : "var(--h421-gray-50)", color: tipo === TipoDescuento.PORCENTAJE ? "#fff" : "var(--h421-black)" }}>%</button>
+          <button onClick={() => setTipo(TipoDescuento.MONTO)} style={{ flex: 1, background: tipo === TipoDescuento.MONTO ? "var(--h421-navy)" : "var(--h421-gray-50)", color: tipo === TipoDescuento.MONTO ? "#fff" : "var(--h421-black)" }}>$</button>
           <input type="number" value={valor} onChange={(e) => setValor(e.target.value)} style={{ flex: 2, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
         </div>
 
@@ -95,7 +95,7 @@ export function ModalDescuento({ sucursalId, onCerrar }: { sucursalId: string; o
                     onClick={() => setUsuarioAutorizaId(u.id)}
                     style={{
                       padding: "8px 12px", fontSize: 13, minHeight: 40,
-                      background: activo ? "var(--h421-navy)" : "#fff",
+                      background: activo ? "var(--h421-navy)" : "var(--h421-white)",
                       color: activo ? "#fff" : "var(--h421-black)",
                       border: "1px solid var(--h421-gray-200)",
                     }}

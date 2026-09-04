@@ -148,7 +148,7 @@ export function AdminUsuarios() {
         </select>
       </div>
 
-      {mensaje && <p style={{ color: "var(--h421-navy)" }}>{mensaje}</p>}
+      {mensaje && <p style={{ color: "var(--h421-navy-texto)" }}>{mensaje}</p>}
 
       <div style={{ display: "grid", gridTemplateColumns: usuarioEditando ? "1.4fr 1fr" : "1fr", gap: 16, marginTop: 12 }}>
         <div>

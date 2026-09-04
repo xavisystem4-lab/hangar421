@@ -91,7 +91,7 @@ function vecinoEnFila(inputs: HTMLInputElement[], actual: HTMLInputElement, dire
   return mejor;
 }
 
-const tarjeta: CSSProperties = { background: "#fff", padding: 20, borderRadius: 16, display: "flex", flexDirection: "column", gap: 4 };
+const tarjeta: CSSProperties = { background: "var(--h421-white)", padding: 20, borderRadius: 16, display: "flex", flexDirection: "column", gap: 4 };
 
 export function Caja({ sucursalId }: { sucursalId: string }) {
   const { usuario } = useAuthStore();
@@ -268,7 +268,7 @@ export function Caja({ sucursalId }: { sucursalId: string }) {
                   <tr><td style={{ padding: "4px 0" }}>Egresos de caja</td><td style={{ textAlign: "right", color: "var(--h421-red)" }}>−${resumen.totalEgresos.toFixed(2)}</td></tr>
                   <tr style={{ fontWeight: 800, borderTop: "1px solid var(--h421-gray-200)" }}>
                     <td style={{ paddingTop: 8 }}>Efectivo esperado</td>
-                    <td style={{ textAlign: "right", paddingTop: 8, color: "var(--h421-navy)" }}>${resumen.montoEsperado.toFixed(2)}</td>
+                    <td style={{ textAlign: "right", paddingTop: 8, color: "var(--h421-navy-texto)" }}>${resumen.montoEsperado.toFixed(2)}</td>
                   </tr>
                 </tbody>
               </table>
@@ -279,8 +279,8 @@ export function Caja({ sucursalId }: { sucursalId: string }) {
           <div style={tarjeta}>
             <h3 style={{ margin: 0 }}>Registrar ingreso / egreso</h3>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 4 }}>
-              <button onClick={() => setTipoMov("INGRESO")} style={{ padding: "10px 16px", background: tipoMov === "INGRESO" ? "var(--h421-esmeralda)" : "var(--h421-gray-50)", color: tipoMov === "INGRESO" ? "#fff" : "#000" }}>Ingreso</button>
-              <button onClick={() => setTipoMov("EGRESO")} style={{ padding: "10px 16px", background: tipoMov === "EGRESO" ? "var(--h421-red)" : "var(--h421-gray-50)", color: tipoMov === "EGRESO" ? "#fff" : "#000" }}>Egreso</button>
+              <button onClick={() => setTipoMov("INGRESO")} style={{ padding: "10px 16px", background: tipoMov === "INGRESO" ? "var(--h421-esmeralda)" : "var(--h421-gray-50)", color: tipoMov === "INGRESO" ? "#fff" : "var(--h421-black)" }}>Ingreso</button>
+              <button onClick={() => setTipoMov("EGRESO")} style={{ padding: "10px 16px", background: tipoMov === "EGRESO" ? "var(--h421-red)" : "var(--h421-gray-50)", color: tipoMov === "EGRESO" ? "#fff" : "var(--h421-black)" }}>Egreso</button>
             </div>
             <input type="number" placeholder="Monto" value={montoMov} onChange={(e) => setMontoMov(e.target.value)}
               style={{ width: "100%", padding: 12, borderRadius: 8, border: "1px solid var(--h421-gray-200)", marginTop: 8 }} />
@@ -317,7 +317,7 @@ export function Caja({ sucursalId }: { sucursalId: string }) {
               <span style={{ fontSize: 14, fontWeight: 700 }}>
                 Total del desglose{totalUSDContado > 0 ? " (MXN + USD informativo)" : ""}
               </span>
-              <span style={{ fontSize: 18, fontWeight: 800, color: "var(--h421-navy)" }}>
+              <span style={{ fontSize: 18, fontWeight: 800, color: "var(--h421-navy-texto)" }}>
                 ${totalMXNContado.toFixed(2)}{totalUSDContado > 0 ? ` + US$${totalUSDContado.toFixed(2)}` : ""}
               </span>
             </div>

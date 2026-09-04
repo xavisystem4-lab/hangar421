@@ -126,5 +126,5 @@ const overlay: CSSProperties = {
   display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50,
 };
 const modal: CSSProperties = {
-  background: "#fff", borderRadius: 16, padding: 24, maxHeight: "85vh", overflowY: "auto",
+  background: "var(--h421-white)", borderRadius: 16, padding: 24, maxHeight: "85vh", overflowY: "auto",
 };

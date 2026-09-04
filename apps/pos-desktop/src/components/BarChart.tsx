@@ -15,7 +15,7 @@ export function BarChart({ data, alto = 160 }: { data: { etiqueta: string; valor
               y={alto - 20 - h}
               width={anchoBarra * 0.7}
               height={h}
-              fill={d.valor > 0 ? "var(--h421-navy)" : "var(--h421-gray-200)"}
+              fill={d.valor > 0 ? "var(--h421-navy-texto)" : "var(--h421-gray-200)"}
               rx={1}
             />
             {i % 3 === 0 && (

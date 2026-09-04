@@ -121,7 +121,7 @@ export function AdminInventario() {
         </select>
       </div>
 
-      {mensaje && <p style={{ color: "var(--h421-navy)" }}>{mensaje}</p>}
+      {mensaje && <p style={{ color: "var(--h421-navy-texto)" }}>{mensaje}</p>}
 
       {alertas.length > 0 && (
         <div className="card" style={{ borderLeft: "4px solid var(--h421-yellow)", marginBottom: 16, marginTop: 12 }}>

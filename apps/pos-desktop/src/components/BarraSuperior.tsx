@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuthStore } from "../store/authStore";
 import { useSyncStore } from "../store/syncStore";
+import { useThemeStore } from "../store/themeStore";
 import logo from "../assets/logo-light.png";
 
 const ETIQUETAS_SYNC: Record<string, { texto: string; color: string }> = {
@@ -35,6 +36,7 @@ export function BarraSuperior({
 }) {
   const { usuario, rol, logout } = useAuthStore();
   const sync = useSyncStore();
+  const { tema, alternar } = useThemeStore();
   const [ahora, setAhora] = useState(new Date());
 
   useEffect(() => {
@@ -89,6 +91,13 @@ export function BarraSuperior({
           {estadoInfo.texto}{sync.pendientes > 0 ? ` (${sync.pendientes})` : ""}
         </span>
         <span style={{ opacity: 0.6 }}>|</span>
+        <button
+          onClick={alternar}
+          title={tema === "oscuro" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+          style={{ background: "rgba(255,255,255,0.12)", color: "#fff", border: "none", borderRadius: 8, minHeight: 0, width: 34, height: 34, padding: 0, fontSize: 15 }}
+        >
+          {tema === "oscuro" ? "☀️" : "🌙"}
+        </button>
         <button
           onClick={() => logout()}
           title="Vuelve a la pantalla de inicio para que otro usuario entre con su contraseña"

@@ -19,7 +19,7 @@ export function Administracion() {
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <div style={{ display: "flex", gap: 10, padding: "14px 16px", background: "#fff", borderBottom: "1px solid var(--h421-gray-200)" }}>
+      <div style={{ display: "flex", gap: 10, padding: "14px 16px", background: "var(--h421-white)", borderBottom: "1px solid var(--h421-gray-200)" }}>
         {MODULOS.map((m) => {
           const activo = modulo === m.id;
           return (

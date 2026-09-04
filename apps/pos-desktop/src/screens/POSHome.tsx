@@ -80,7 +80,7 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
     <div style={{ display: "flex", height: "100%" }}>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {/* Categorías — píldoras de color, una por categoría */}
-        <div style={{ display: "flex", gap: 10, padding: "14px 16px", overflowX: "auto", background: "#fff", borderBottom: "1px solid var(--h421-gray-200)", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 10, padding: "14px 16px", overflowX: "auto", background: "var(--h421-white)", borderBottom: "1px solid var(--h421-gray-200)", alignItems: "center" }}>
           <button onClick={() => setCategoriaActiva(null)} className="pildora-categoria"
             style={{ background: !categoriaActiva ? "var(--h421-navy)" : "var(--h421-gray-50)", color: !categoriaActiva ? "#fff" : "var(--h421-black)" }}>
             Todas
@@ -110,7 +110,7 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
             de sugerencias se recalcula en cada letra tecleada y busca en TODO el catálogo
             (no solo la categoría activa). Elegir una sugerencia agrega el producto directo,
             igual que tocar su tarjeta en la cuadrícula. */}
-        <div style={{ position: "relative", padding: "0 16px 14px", background: "#fff", borderBottom: "1px solid var(--h421-gray-200)" }}>
+        <div style={{ position: "relative", padding: "0 16px 14px", background: "var(--h421-white)", borderBottom: "1px solid var(--h421-gray-200)" }}>
           <input
             ref={inputBusquedaRef}
             placeholder="🔍 Buscar producto…"
@@ -127,7 +127,7 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
           {sugerenciasAbiertas && sugerencias.length > 0 && (
             <div style={{
               position: "absolute", left: 16, right: 16, top: "100%", zIndex: 10,
-              background: "#fff", borderRadius: 12, boxShadow: "0 8px 24px rgba(11,30,51,0.18)",
+              background: "var(--h421-white)", borderRadius: 12, boxShadow: "0 8px 24px rgba(11,30,51,0.18)",
               border: "1px solid var(--h421-gray-200)", overflow: "hidden",
             }}>
               {sugerencias.map((p) => (
@@ -142,7 +142,7 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
                   }}
                 >
                   <span style={{ color: "var(--h421-black)", fontWeight: 600 }}>{p.nombre}</span>
-                  <span style={{ color: "var(--h421-navy)", fontWeight: 700 }}>${(p.precioSucursal ?? p.precioBase).toFixed(2)}</span>
+                  <span style={{ color: "var(--h421-navy-texto)", fontWeight: 700 }}>${(p.precioSucursal ?? p.precioBase).toFixed(2)}</span>
                 </button>
               ))}
             </div>
@@ -182,7 +182,7 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
             cocina/estación de preparación separada: el cliente pide y paga en el momento, así
             que no hay un paso de "enviar a cocina" — "Pagar" en el panel de la derecha crea el
             pedido y lo cobra en una sola acción. */}
-        <div style={{ display: "flex", alignItems: "center", gap: 18, padding: "12px 20px", background: "#fff", borderTop: "1px solid var(--h421-gray-200)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 18, padding: "12px 20px", background: "var(--h421-white)", borderTop: "1px solid var(--h421-gray-200)" }}>
           <AccionCircular icono="🔍" etiqueta="Buscar" color="var(--h421-blue)" onClick={() => inputBusquedaRef.current?.focus()} />
           <AccionCircular icono="🍽" etiqueta="Mesas" color="var(--h421-blue)" />
           <AccionCircular icono="👤" etiqueta="Clientes" color="var(--h421-blue)" />
@@ -239,7 +239,7 @@ function GrupoDeProductos({
   return (
     <div style={{ marginTop }}>
       {grupo.titulo && (
-        <h3 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 700, color: "var(--h421-navy)", textTransform: "uppercase", letterSpacing: 0.4 }}>
+        <h3 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 700, color: "var(--h421-navy-texto)", textTransform: "uppercase", letterSpacing: 0.4 }}>
           {grupo.titulo}
         </h3>
       )}

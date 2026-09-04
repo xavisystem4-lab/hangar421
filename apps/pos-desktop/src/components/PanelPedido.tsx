@@ -10,7 +10,7 @@ export function PanelPedido({ mesaNombre, onCobrar }: { mesaNombre: string | nul
   const itemNota = items.find((i) => i.id === itemNotaId);
 
   return (
-    <aside style={{ width: 340, background: "#fff", borderLeft: "1px solid var(--h421-gray-200)", display: "flex", flexDirection: "column", height: "100%" }}>
+    <aside style={{ width: 340, background: "var(--h421-white)", borderLeft: "1px solid var(--h421-gray-200)", display: "flex", flexDirection: "column", height: "100%" }}>
       <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--h421-gray-200)" }}>
         <strong style={{ fontSize: 16 }}>{mesaNombre ? `Pedido — ${mesaNombre}` : "Pedido — Mostrador"}</strong>
         {mesaNombre && <div style={{ fontSize: 13, color: "var(--h421-gray-400)" }}>{numComensales} comensal(es)</div>}
@@ -61,7 +61,7 @@ export function PanelPedido({ mesaNombre, onCobrar }: { mesaNombre: string | nul
       <div style={{ padding: "14px 16px", borderTop: "1px solid var(--h421-gray-200)", fontSize: 14 }}>
         <FilaTotal label="Subtotal" valor={t.subtotal} />
         <FilaTotal label="Descuento" valor={-t.descuentoTotal} />
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 20, fontWeight: 800, marginTop: 8, marginBottom: 12, color: "var(--h421-navy)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 20, fontWeight: 800, marginTop: 8, marginBottom: 12, color: "var(--h421-navy-texto)" }}>
           <span>Total</span>
           <span>${t.total.toFixed(2)}</span>
         </div>

@@ -44,7 +44,7 @@ export function Mesas({ sucursalId, onAbrirMesa }: { sucursalId: string; onAbrir
             key={mesa.id}
             onClick={() => { useOrderStore.getState().iniciar(mesa.id, comensales); onAbrirMesa(mesa.id, mesa.nombre); }}
             className="btn-grande"
-            style={{ background: "#fff", border: `3px solid ${COLOR[mesa.estado]}`, padding: 16, display: "flex", flexDirection: "column", gap: 6 }}
+            style={{ background: "var(--h421-white)", border: `3px solid ${COLOR[mesa.estado]}`, padding: 16, display: "flex", flexDirection: "column", gap: 6 }}
           >
             <strong style={{ fontSize: 18 }}>{mesa.nombre}</strong>
             <span style={{ fontSize: 12, color: COLOR[mesa.estado], fontWeight: 700 }}>{ETIQUETA[mesa.estado]}</span>

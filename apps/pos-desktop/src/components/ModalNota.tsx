@@ -26,7 +26,7 @@ export function ModalNota({
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
-      <div style={{ background: "#fff", borderRadius: 16, padding: 24, width: 380 }}>
+      <div style={{ background: "var(--h421-white)", borderRadius: 16, padding: 24, width: 380 }}>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
           <h2 style={{ margin: 0, fontSize: 18 }}>Nota — {nombreProducto}</h2>
           <button onClick={onCerrar} style={{ background: "none", fontSize: 20 }}>✕</button>
