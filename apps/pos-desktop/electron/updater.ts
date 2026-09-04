@@ -26,6 +26,17 @@ export function configurarAutoUpdater(obtenerVentana: () => BrowserWindow | null
   autoUpdater.on("error", (err) => emitir("error", { mensaje: err.message }));
 
   ipcMain.handle("updater:verificar", async () => {
+    // electron-updater necesita un build EMPAQUETADO (app.isPackaged) — el feed de GitHub
+    // Releases solo trae artefactos de Windows (NSIS), así que en una app sin empaquetar
+    // corriendo en cualquier plataforma (`npm run dev`, incluida una Mac de prueba)
+    // `checkForUpdates()` no dispara ningún evento y el footer se queda pegado en "Buscando
+    // actualizaciones…" para siempre. Se corta acá con un mensaje claro en vez de dejarlo
+    // colgado — en producción (PC Windows con el .exe instalado) `isPackaged` siempre es true,
+    // así que este guard nunca aplica ahí.
+    if (!app.isPackaged) {
+      emitir("error", { mensaje: "La auto-actualización no está disponible en modo desarrollo." });
+      return;
+    }
     try {
       await autoUpdater.checkForUpdates();
     } catch (e: any) {
