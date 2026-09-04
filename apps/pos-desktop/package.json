@@ -70,7 +70,8 @@
     "publish": {
       "provider": "github",
       "owner": "xavisystem4-lab",
-      "repo": "hangar421"
+      "repo": "hangar421",
+      "draft": false
     }
   }
 }
