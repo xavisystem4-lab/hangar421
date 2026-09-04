@@ -1,10 +1,12 @@
 import { create } from "zustand";
 import {
   CanalOrigen,
+  EstadoPedidoItem,
   TipoDescuento,
   TipoPedido,
   calcularTotalesPedido,
   uuid7,
+  type Pedido,
 } from "@hangar421/shared";
 import { apiFetch } from "../api/http";
 import { useAuthStore } from "./authStore";
@@ -36,6 +38,7 @@ interface OrderState {
   enviado: boolean;
 
   iniciar: (mesaId: string | null, numComensales?: number) => void;
+  cargarPedidoExistente: (pedido: Pedido) => void;
   agregarItem: (item: Omit<ItemCarrito, "id">) => void;
   quitarItem: (itemId: string) => void;
   cambiarCantidad: (itemId: string, delta: number) => void;
@@ -56,6 +59,37 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   enviado: false,
 
   iniciar: (mesaId, numComensales = 1) => set({ pedidoId: null, mesaId, numComensales, items: [], descuentos: [], enviado: false }),
+
+  /** Carga en el carrito un pedido que YA EXISTE en el servidor — típicamente uno enviado desde
+   *  la app de Meseros — para poder cobrarlo con el mismo ModalCobro que usan los pedidos
+   *  creados aquí mismo. Sin esto no había forma de ver ni cobrar esos pedidos desde el POS:
+   *  Mesas.tsx solo abría un carrito en blanco (`iniciar`) sin importar si la mesa ya tenía un
+   *  pedido enviado por una tablet. `descuentos` arranca vacío — cualquier descuento ya aplicado
+   *  queda en el historial del pedido en el servidor; si el cajero quiere aplicar uno nuevo al
+   *  cobrar, usa el mismo botón "% Descuento" de siempre (ModalCobro → aplicarDescuento). */
+  cargarPedidoExistente: (pedido) =>
+    set({
+      pedidoId: pedido.id,
+      mesaId: pedido.mesaId ?? null,
+      numComensales: pedido.numComensales ?? 1,
+      items: pedido.items
+        .filter((i) => i.estado !== EstadoPedidoItem.CANCELADO)
+        .map((i) => ({
+          id: i.id,
+          productoId: i.productoId,
+          nombreProducto: i.nombreProducto ?? "",
+          cantidad: i.cantidad,
+          precioUnitario: i.precioUnitario,
+          notas: i.notas ?? undefined,
+          modificadores: i.modificadores.map((m) => ({
+            opcionModificadorId: m.opcionModificadorId,
+            nombreOpcion: m.nombreOpcion ?? "",
+            precioExtra: m.precioExtra,
+          })),
+        })),
+      descuentos: [],
+      enviado: true,
+    }),
 
   agregarItem: (item) => set((s) => ({ items: [...s.items, { ...item, id: uuid7() }] })),
 

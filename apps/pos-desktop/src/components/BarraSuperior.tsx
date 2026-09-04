@@ -12,11 +12,12 @@ const ETIQUETAS_SYNC: Record<string, { texto: string; color: string }> = {
   OFFLINE: { texto: "Sin conexión", color: "var(--h421-gray-400)" },
 };
 
-export type Pantalla = "venta" | "mesas" | "caja" | "administracion";
+export type Pantalla = "venta" | "mesas" | "cobros" | "caja" | "administracion";
 
 const OPCIONES_NAV: { id: Pantalla; etiqueta: string }[] = [
   { id: "venta", etiqueta: "Venta" },
   { id: "mesas", etiqueta: "Mesas" },
+  { id: "cobros", etiqueta: "Por cobrar" },
   { id: "caja", etiqueta: "Caja" },
 ];
 

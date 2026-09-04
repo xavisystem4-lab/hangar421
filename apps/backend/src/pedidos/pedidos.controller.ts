@@ -21,8 +21,15 @@ export class PedidosController {
   constructor(private pedidos: PedidosService) {}
 
   @Get()
-  listar(@Query("sucursalId") sucursalId: string, @Query("estado") estado?: EstadoPedido) {
-    return this.pedidos.listar(sucursalId, estado);
+  listar(
+    @Query("sucursalId") sucursalId: string,
+    @Query("estado") estado?: EstadoPedido,
+    /** Lista separada por comas, ej. "ENVIADO,EN_PREPARACION,LISTO" — la usa el POS para la
+     *  cola de "Pedidos por cobrar" (ver pedidos.service.ts `listar`). */
+    @Query("estados") estadosCsv?: string,
+  ) {
+    const estados = estadosCsv ? (estadosCsv.split(",") as EstadoPedido[]) : undefined;
+    return this.pedidos.listar(sucursalId, estado, estados);
   }
 
   @Get(":id")

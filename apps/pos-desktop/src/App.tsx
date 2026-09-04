@@ -8,6 +8,7 @@ import { iniciarMotorDeSincronizacion, detenerMotorDeSincronizacion, procesarCol
 import { apiFetch, configurarApiUrl } from "./api/http";
 import { Login } from "./screens/Login";
 import { Mesas } from "./screens/Mesas";
+import { PedidosPorCobrar } from "./screens/PedidosPorCobrar";
 import { POSHome } from "./screens/POSHome";
 import { Caja } from "./screens/Caja";
 import { Administracion } from "./screens/Administracion";
@@ -120,6 +121,7 @@ export default function App() {
             }}
           />
         )}
+        {pantalla === "cobros" && <PedidosPorCobrar sucursalId={auth.sucursalId!} />}
         {pantalla === "caja" && <Caja sucursalId={auth.sucursalId!} />}
         {pantalla === "administracion" && <Administracion />}
       </div>
