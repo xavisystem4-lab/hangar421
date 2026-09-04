@@ -29,11 +29,18 @@ contextBridge.exposeInMainWorld("hangar", {
     /** Resuelve cuando el backend (embebido o cloud configurado) está listo — puede tardar
      *  unos segundos la primera vez (crea la base de datos local). null en dev (usa VITE_API_URL). */
     obtenerUrl: (): Promise<string | null> => ipcRenderer.invoke("backend:obtenerUrl"),
-    /** IP LAN de esta PC + puerto del backend embebido — el dato que hay que capturar en el
-     *  módulo de conexión de la app de Meseros. null/null si esta instalación usa backend cloud
-     *  (no aplica un IP:puerto local) — ver Administracion.tsx. */
-    obtenerInfoConexion: (): Promise<{ ip: string | null; puerto: number | null }> =>
+    /** IP LAN de esta PC (o la que el admin haya guardado a mano) + puerto REAL en el que el
+     *  backend ya está escuchando + puerto preferido guardado (puede diferir del real si ese
+     *  puerto ya estaba ocupado al arrancar) — el dato que hay que capturar en el módulo de
+     *  conexión de la app de Meseros. Todo null si esta instalación usa backend cloud (no aplica
+     *  un IP:puerto local) — ver AdminConexion.tsx. */
+    obtenerInfoConexion: (): Promise<{ ip: string | null; puerto: number | null; puertoPreferido: number | null }> =>
       ipcRenderer.invoke("backend:obtenerInfoConexion"),
+    /** Guarda un override manual de IP y/o del puerto preferido — ip vacía o puertoPreferido<=0
+     *  borra ese override (vuelve a automático/3000). El puerto preferido solo aplica en el
+     *  próximo arranque del backend (no se puede recolocar un puerto ya bindeado). */
+    guardarInfoConexion: (ip: string, puertoPreferido: number): Promise<void> =>
+      ipcRenderer.invoke("backend:guardarInfoConexion", ip, puertoPreferido),
     onEstado: (callback: (mensaje: string) => void) => {
       const handler = (_e: unknown, mensaje: string) => callback(mensaje);
       ipcRenderer.on("backend:estado", handler);

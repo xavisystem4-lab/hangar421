@@ -21,6 +21,14 @@ const isDev = process.env.NODE_ENV === "development";
 let ventanaPrincipal: BrowserWindow | null = null;
 let backendEmbebido: BackendEmbebido | null = null;
 
+// Overrides guardados desde Administración → "Conexión Meseros" (config local, ver db.ts) —
+// mismo mecanismo genérico que ya usa "config:guardar"/"config:obtener" para otras preferencias.
+// Se agregaron porque la detección automática de IP puede equivocarse (ver obtenerIpLan) y el
+// puerto real puede no ser 3000 si algo más ya lo ocupaba al arrancar — sin esto, el admin no
+// tenía forma de corregirlo a mano cuando eso pasaba.
+const CLAVE_IP = "conexion_meseros_ip_manual";
+const CLAVE_PUERTO = "conexion_meseros_puerto_preferido";
+
 // El backend embebido (electron/backend-manager.ts) tiene su propio watchdog interno de
 // unhandled rejections en Node; embedded-postgres además dispara alguna advertencia interna
 // al detenerse dos veces seguidas — se registra sin tumbar la app (nunca es un error del
@@ -42,7 +50,13 @@ async function resolverBackend(log: (msg: string) => void): Promise<string | nul
   }
   if (isDev) return null;
 
-  backendEmbebido = await iniciarBackendEmbebido(log);
+  // Puerto preferido: el que se haya guardado desde Administración → "Conexión Meseros" (ver
+  // CLAVE_PUERTO más abajo), o 3000 si nunca se tocó ese campo. Solo aplica en el PRÓXIMO
+  // arranque del backend — no se puede recolocar un puerto ya bindeado mientras la app corre.
+  const guardado = Number(obtenerConfig(CLAVE_PUERTO));
+  const puertoPreferido = Number.isInteger(guardado) && guardado > 0 && guardado <= 65535 ? guardado : 3000;
+
+  backendEmbebido = await iniciarBackendEmbebido(log, puertoPreferido);
   return backendEmbebido.url;
 }
 
@@ -145,9 +159,26 @@ function registrarIpc() {
   // corre embebido en esta PC (no en modo cloud, donde el mesero se conecta a la URL en la nube
   // directamente) — por eso se lee `backendEmbebido` recién después de que "backend:obtenerUrl"
   // resolvió, y se devuelve null si esta instalación usa un backend cloud configurado.
+  //
+  // `ip`: si el admin guardó una manual (porque la detección automática se equivocó — ver
+  // obtenerIpLan), esa gana; si no, se usa la detectada. `puerto`: siempre el REAL en el que el
+  // backend ya está escuchando ahora mismo (`backendEmbebido.puerto`) — nunca un valor inventado,
+  // aunque haya un "puerto preferido" guardado (ese solo aplica en el próximo arranque, ver
+  // resolverBackend). `puertoPreferido` viaja aparte para que la pantalla pueda mostrar/editar
+  // la preferencia sin confundirla con el puerto real actual.
   ipcMain.handle("backend:obtenerInfoConexion", () => {
-    if (!backendEmbebido) return { ip: null, puerto: null };
-    return { ip: obtenerIpLan(), puerto: backendEmbebido.puerto };
+    if (!backendEmbebido) return { ip: null, puerto: null, puertoPreferido: null };
+    const ipManual = obtenerConfig(CLAVE_IP);
+    const puertoPreferido = Number(obtenerConfig(CLAVE_PUERTO)) || 3000;
+    return { ip: ipManual || obtenerIpLan(), puerto: backendEmbebido.puerto, puertoPreferido };
+  });
+
+  // Guarda los overrides manuales — ip vacía o puerto <=0 borra ese override (vuelve a
+  // automático/3000). El puerto preferido solo toma efecto en el próximo arranque del backend;
+  // se lo advierte al admin en la propia pantalla (AdminConexion.tsx).
+  ipcMain.handle("backend:guardarInfoConexion", (_e, ip: string, puertoPreferido: number) => {
+    guardarConfig(CLAVE_IP, ip?.trim() ?? "");
+    guardarConfig(CLAVE_PUERTO, puertoPreferido > 0 ? String(puertoPreferido) : "");
   });
 }
 
