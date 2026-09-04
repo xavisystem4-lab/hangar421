@@ -9,6 +9,7 @@ import { MesasScreen } from "./src/screens/MesasScreen";
 import { TomaPedidoScreen } from "./src/screens/TomaPedidoScreen";
 import { MisPedidosScreen } from "./src/screens/MisPedidosScreen";
 import { useOrderStore } from "./src/store/orderStore";
+import { BarraActualizacion } from "./src/components/BarraActualizacion";
 import { colores } from "./src/theme";
 
 type Pantalla = "mesas" | "pedido" | "mispedidos";
@@ -30,7 +31,16 @@ export default function App() {
   }, [auth.usuario]);
 
   if (auth.cargando) return null;
-  if (!auth.usuario) return <LoginScreen />;
+  if (!auth.usuario) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: colores.gray50 }}>
+        <View style={{ flex: 1 }}>
+          <LoginScreen />
+        </View>
+        <BarraActualizacion />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colores.gray50 }}>
@@ -58,6 +68,7 @@ export default function App() {
         <TabBoton texto="Pedido" activo={pantalla === "pedido"} onPress={() => setPantalla("pedido")} />
         <TabBoton texto="Mis pedidos" activo={pantalla === "mispedidos"} onPress={() => setPantalla("mispedidos")} />
       </View>
+      <BarraActualizacion />
     </SafeAreaView>
   );
 }

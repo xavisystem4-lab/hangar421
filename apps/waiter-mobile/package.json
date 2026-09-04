@@ -1,15 +1,16 @@
 {
   "name": "@hangar421/waiter-mobile",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
-  "main": "expo/AppEntry.js",
+  "main": "index.js",
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
     "android:prebuild": "expo prebuild --platform android --non-interactive",
     "build:apk": "npm run android:prebuild && cd android && ./gradlew assembleDebug",
     "build:apk:eas": "eas build --platform android --profile preview --local",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "@hangar421/shared": "*",

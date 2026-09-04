@@ -39,15 +39,22 @@ jobs:
         working-directory: apps/waiter-mobile
         run: npx expo prebuild --platform android --non-interactive
 
-      - name: Compilar el .apk (debug, firmado con la keystore de depuración de Gradle)
+      # IMPORTANTE: "release" (no "debug"). Un APK debug de Expo/RN nunca empaqueta el JS —
+      # siempre intenta conectarse al Metro bundler de una máquina de desarrollo (localhost:8081),
+      # así que en cualquier dispositivo real muestra "Could not connect to development server."
+      # El build type "release" del template de Expo/RN sí empaqueta el JS embebido y viene
+      # firmado por defecto con la keystore de depuración de Gradle (ver signingConfig en
+      # android/app/build.gradle, generado por el prebuild) — es decir, ya es un APK standalone
+      # instalable sin depender de ninguna máquina, sin necesitar todavía una keystore propia.
+      - name: Compilar el .apk (release standalone, JS embebido)
         working-directory: apps/waiter-mobile/android
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleRelease --no-daemon
 
       - name: Renombrar el .apk con la versión
-        working-directory: apps/waiter-mobile/android/app/build/outputs/apk/debug
-        run: mv app-debug.apk HANGAR-421-Meseros-${{ steps.version.outputs.version }}.apk
+        working-directory: apps/waiter-mobile/android/app/build/outputs/apk/release
+        run: mv app-release.apk HANGAR-421-Meseros-${{ steps.version.outputs.version }}.apk
 
       - name: Publicar como GitHub Release
         uses: softprops/action-gh-release@v2
@@ -56,9 +63,12 @@ jobs:
           name: HANGAR 421 Meseros v${{ steps.version.outputs.version }}
           body: |
             APK de la app de meseros HANGAR 421 (compilado automáticamente vía GitHub Actions —
-            `expo prebuild` + Gradle, firmado con la keystore de depuración; listo para
-            distribución interna e instalación directa en tablets/celulares Android).
+            `expo prebuild` + Gradle, build **release** standalone con el JS embebido — no
+            necesita ninguna máquina de desarrollo corriendo, listo para distribución interna
+            e instalación directa en tablets/celulares Android).
 
-            Para producción, firmar con una keystore propia — ver `docs/installation.md` §9.
-          files: apps/waiter-mobile/android/app/build/outputs/apk/debug/HANGAR-421-Meseros-${{ steps.version.outputs.version }}.apk
+            Firmado con la keystore de depuración de Gradle (válido para instalación directa
+            fuera de Play Store). Para publicar en Play Store, firmar con una keystore propia
+            — ver `docs/installation.md` §9.
+          files: apps/waiter-mobile/android/app/build/outputs/apk/release/HANGAR-421-Meseros-${{ steps.version.outputs.version }}.apk
           draft: false
