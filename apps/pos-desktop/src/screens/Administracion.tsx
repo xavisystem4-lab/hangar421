@@ -2,13 +2,15 @@ import { useState } from "react";
 import { AdminReportes } from "./admin/AdminReportes";
 import { AdminInventario } from "./admin/AdminInventario";
 import { AdminUsuarios } from "./admin/AdminUsuarios";
+import { AdminConexion } from "./admin/AdminConexion";
 
-type Modulo = "reportes" | "inventario" | "usuarios";
+type Modulo = "reportes" | "inventario" | "usuarios" | "conexion";
 
 const MODULOS: { id: Modulo; etiqueta: string }[] = [
   { id: "reportes", etiqueta: "Reportes" },
   { id: "inventario", etiqueta: "Inventario" },
   { id: "usuarios", etiqueta: "Usuarios" },
+  { id: "conexion", etiqueta: "Conexión Meseros" },
 ];
 
 /** Reportes/Inventario/Usuarios, con todos sus filtros, sin salir del POS — mismos módulos
@@ -44,6 +46,7 @@ export function Administracion() {
         {modulo === "reportes" && <AdminReportes />}
         {modulo === "inventario" && <AdminInventario />}
         {modulo === "usuarios" && <AdminUsuarios />}
+        {modulo === "conexion" && <AdminConexion />}
       </div>
     </div>
   );
