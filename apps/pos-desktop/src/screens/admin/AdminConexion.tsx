@@ -1,9 +1,26 @@
 import { useEffect, useState } from "react";
+import { apiFetch } from "../../api/http";
+import { useAuthStore } from "../../store/authStore";
 
 interface InfoConexion {
   ip: string | null;
   puerto: number | null;
   puertoPreferido: number | null;
+}
+
+interface TabletConectada {
+  dispositivoId?: string;
+  usuarioNombre?: string;
+  ip: string;
+  conectadoDesde: string;
+}
+
+function tiempoTranscurrido(iso: string): string {
+  const minutos = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (minutos < 1) return "hace segundos";
+  if (minutos < 60) return `hace ${minutos} min`;
+  const horas = Math.floor(minutos / 60);
+  return `hace ${horas}h ${minutos % 60}min`;
 }
 
 /** IP LAN de esta PC + puerto del backend embebido — el dato exacto que hay que capturar en el
@@ -13,12 +30,14 @@ interface InfoConexion {
  *  producción) — por eso ambos campos son editables: si algo no cuadra, el admin los corrige a
  *  mano y quedan guardados (ver electron/main.ts, IPC "backend:guardarInfoConexion"). */
 export function AdminConexion() {
+  const sucursalId = useAuthStore((s) => s.sucursalId);
   const [info, setInfo] = useState<InfoConexion | null>(null);
   const [copiado, setCopiado] = useState(false);
   const [ipManual, setIpManual] = useState("");
   const [puertoManual, setPuertoManual] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [mensaje, setMensaje] = useState<string | null>(null);
+  const [tablets, setTablets] = useState<TabletConectada[] | null>(null);
 
   function cargar() {
     window.hangar?.backend
@@ -32,6 +51,22 @@ export function AdminConexion() {
   }
 
   useEffect(cargar, []);
+
+  // Tablets de meseros conectadas ahora mismo (ver realtime.gateway.ts) — se refresca sola cada
+  // 10s para que el admin no tenga que ir y venir de la pantalla para saber si de verdad todas
+  // las tablets del local están enlazadas a esta Estación.
+  useEffect(() => {
+    if (!sucursalId) return;
+    let vivo = true;
+    const cargarTablets = () => {
+      apiFetch<TabletConectada[]>(`/realtime/conectados?sucursalId=${sucursalId}`)
+        .then((r) => vivo && setTablets(r))
+        .catch(() => vivo && setTablets([]));
+    };
+    cargarTablets();
+    const t = setInterval(cargarTablets, 10_000);
+    return () => { vivo = false; clearInterval(t); };
+  }, [sucursalId]);
 
   const texto = info?.ip && info.puerto ? `${info.ip}:${info.puerto}` : null;
 
@@ -148,6 +183,39 @@ export function AdminConexion() {
         {" "}{info?.puerto ?? 3000} — si cambiaste el "puerto preferido" arriba, se toma en cuenta hasta el
         próximo reinicio del POS.
       </p>
+
+      <div style={{ marginTop: 28, paddingTop: 20, borderTop: "1px solid var(--h421-gray-200)" }}>
+        <h3 style={{ margin: "0 0 4px", fontSize: 14 }}>Tablets conectadas ahora mismo</h3>
+        <p style={{ color: "var(--h421-gray-400)", fontSize: 12, marginTop: 0, marginBottom: 12, lineHeight: 1.5 }}>
+          Se actualiza sola cada 10s. Si un mesero no aparece aquí, revisa que su app tenga sesión iniciada y esté
+          conectada a esta misma Estación.
+        </p>
+
+        {tablets === null && <p style={{ color: "var(--h421-gray-400)", fontSize: 13 }}>Buscando…</p>}
+        {tablets && tablets.length === 0 && (
+          <p style={{ color: "var(--h421-gray-400)", fontSize: 13 }}>Ninguna tablet de mesero conectada ahora mismo.</p>
+        )}
+        {tablets && tablets.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {tablets.map((t, i) => (
+              <div
+                key={t.dispositivoId ?? i}
+                style={{
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                  background: "var(--h421-gray-50)", borderRadius: 10, padding: "10px 14px",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 4, background: "var(--h421-green)", display: "inline-block" }} />
+                  <strong style={{ fontSize: 14 }}>{t.usuarioNombre ?? "Mesero"}</strong>
+                </div>
+                <span style={{ fontFamily: "monospace", fontSize: 13, color: "var(--h421-gray-400)" }}>{t.ip}</span>
+                <span style={{ fontSize: 12, color: "var(--h421-gray-400)" }}>{tiempoTranscurrido(t.conectadoDesde)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

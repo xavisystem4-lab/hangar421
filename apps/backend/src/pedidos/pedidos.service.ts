@@ -115,7 +115,9 @@ export class PedidosService {
             })),
           },
         },
-        include: { items: { include: { modificadores: true } } },
+        // `mesa` incluida — el POS la usa para la notificación nativa de "nuevo pedido de
+        // mesero" (mostrar "Mesa 3" en vez de solo el folio, ver App.tsx del POS).
+        include: { items: { include: { modificadores: true } }, mesa: true },
       });
 
       if (dto.mesaId) {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { WS_EVENTS } from "@hangar421/shared";
+import { CanalOrigen, WS_EVENTS, type Pedido } from "@hangar421/shared";
 import { useAuthStore } from "./store/authStore";
 import { useCatalogoStore } from "./store/catalogStore";
 import { useOrderStore } from "./store/orderStore";
@@ -65,6 +65,19 @@ export default function App() {
     const socket = conectarSocket(auth.sucursalId);
     socket.on(WS_EVENTS.MESA_ACTUALIZADA, () => catalogo.refrescarMesas(auth.sucursalId!));
     socket.on(WS_EVENTS.PEDIDO_ITEM_ACTUALIZADO, () => { /* podría resaltar "pedido listo" en Mesas */ });
+    // Notificación nativa del sistema operativo cuando llega un pedido enviado desde la app de
+    // Meseros (no uno creado aquí mismo en el POS) — el cajero puede tener la ventana minimizada
+    // o en otra pantalla y de otro modo no se entera de que hay algo nuevo que cobrar. La API
+    // Notification es estándar del navegador; Electron la implementa mostrando una notificación
+    // real del sistema (Windows: Centro de actividades) sin necesitar pasar por el proceso
+    // principal ni pedir permiso — un renderer de Electron ya cuenta como "otorgado".
+    socket.on(WS_EVENTS.PEDIDO_CREADO, (pedido: Pedido) => {
+      if (pedido.canalOrigen !== CanalOrigen.APP_MESERO) return;
+      const lugar = pedido.mesa?.nombre ?? (pedido.mesaId ? "una mesa" : "mostrador");
+      new Notification("🔔 Nuevo pedido de mesero", {
+        body: `Folio ${pedido.folio} — ${lugar} — $${Number(pedido.total).toFixed(2)}`,
+      });
+    });
 
     return () => {
       detenerMotorDeSincronizacion();
