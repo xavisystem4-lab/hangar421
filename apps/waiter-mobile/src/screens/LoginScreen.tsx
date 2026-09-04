@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useAuthStore } from "../store/authStore";
+import { useConexionStore } from "../store/conexionStore";
 import { colores } from "../theme";
 
-export function LoginScreen() {
+export function LoginScreen({ onConfigurarEstacion }: { onConfigurarEstacion?: () => void }) {
   const { loginPin, error } = useAuthStore();
+  const { host, puerto } = useConexionStore();
   const [usuarioId, setUsuarioId] = useState("");
   const [pin, setPin] = useState("");
   const [sucursalId, setSucursalId] = useState("");
@@ -36,6 +38,10 @@ export function LoginScreen() {
         <TouchableOpacity style={estilos.boton} onPress={entrar} disabled={cargando}>
           <Text style={estilos.botonTexto}>{cargando ? "Ingresando…" : "Entrar"}</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity style={estilos.estacion} onPress={onConfigurarEstacion}>
+          <Text style={estilos.estacionTexto}>⚙ Estación: {host}:{puerto}</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -50,4 +56,6 @@ const estilos = StyleSheet.create({
   error: { color: colores.red, marginTop: 8 },
   boton: { backgroundColor: colores.green, borderRadius: 12, padding: 16, marginTop: 18, minHeight: 56, alignItems: "center", justifyContent: "center" },
   botonTexto: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  estacion: { marginTop: 16, alignItems: "center", padding: 6 },
+  estacionTexto: { color: colores.gray400, fontSize: 12 },
 });

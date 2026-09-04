@@ -1,7 +1,5 @@
-import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-
-const API_URL: string = Constants.expoConfig?.extra?.apiUrl ?? "http://localhost:3000/api/v1";
+import { obtenerApiUrl } from "../store/conexionStore";
 
 interface Tokens {
   accessToken: string;
@@ -25,7 +23,7 @@ export async function setTokens(t: Tokens | null) {
 
 export async function apiFetch<T>(path: string, options: RequestInit = {}, reintentar = true): Promise<T> {
   const tokens = await cargarTokens();
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${obtenerApiUrl()}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -49,7 +47,7 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}, reint
 
 async function intentarRefrescar(tokens: Tokens): Promise<boolean> {
   try {
-    const res = await fetch(`${API_URL}/auth/refresh`, {
+    const res = await fetch(`${obtenerApiUrl()}/auth/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refreshToken: tokens.refreshToken }),
@@ -63,5 +61,3 @@ async function intentarRefrescar(tokens: Tokens): Promise<boolean> {
     return false;
   }
 }
-
-export { API_URL };

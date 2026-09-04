@@ -2,7 +2,7 @@
   "expo": {
     "name": "HANGAR 421 Meseros",
     "slug": "hangar421-waiter",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -11,7 +11,7 @@
     },
     "android": {
       "package": "com.hangar421.waiter",
-      "versionCode": 1,
+      "versionCode": 2,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0B1E33"
@@ -19,8 +19,8 @@
       "permissions": ["INTERNET", "ACCESS_NETWORK_STATE"]
     },
     "extra": {
-      "apiUrl": "http://localhost:3000/api/v1",
-      "wsUrl": "http://localhost:3000"
+      "apiUrl": "https://hangar421backend-production.up.railway.app/api/v1",
+      "wsUrl": "https://hangar421backend-production.up.railway.app"
     }
   }
 }
