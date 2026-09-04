@@ -15,7 +15,7 @@ export function PantallaArranque({
 }) {
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "var(--h421-gray-50)", gap: 24, padding: 24 }}>
-      <img src={logo} alt="HANGAR 421" style={{ height: 56, width: "auto" }} />
+      <img src={logo} alt="HANGAR 421" style={{ width: "50vw", maxWidth: 640, height: "auto" }} />
 
       {!error && (
         <>
