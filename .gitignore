@@ -35,6 +35,9 @@ apps/waiter-mobile/ios/
 # Next.js
 apps/crm-web/.next/
 
+# Netlify CLI (estado local de despliegue)
+.netlify/
+
 # IDE
 .vscode/
 .idea/
