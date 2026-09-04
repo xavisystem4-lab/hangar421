@@ -57,6 +57,10 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
     if (grupo) grupo.productos.push(p);
     else gruposProductos.push({ titulo, productos: [p] });
   }
+  // Separado aparte: el grupo sin subcategoría (si existe) siempre va a todo lo ancho — solo
+  // las subcategorías con nombre se acomodan en columnas (ver el layout más abajo).
+  const grupoSinTitulo = gruposProductos.find((g) => g.titulo === null) ?? null;
+  const gruposConTitulo = gruposProductos.filter((g) => g.titulo !== null);
 
   function seleccionarProducto(producto: Producto) {
     if (producto.requierePersonalizacion) {
@@ -145,38 +149,33 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
           )}
         </div>
 
-        {/* Cuadrícula de productos, agrupada por subcategoría cuando aplica. alignContent/
-            alignItems "start" evita que las tarjetas se estiren para llenar el alto disponible
-            cuando hay pocos productos (el default de grid es "stretch", que infla las filas
-            hasta ocupar todo el contenedor). */}
+        {/* Cuadrícula de productos, agrupada por subcategoría cuando aplica. El grupo sin
+            subcategoría (ej. viendo "Todas" — combos, bebidas, etc. que no pertenecen a
+            ninguna) siempre va a todo lo ancho, como cualquier categoría normal.
+
+            Cuando hay MÁS DE UNA subcategoría con nombre (ej. "Postres": Galletas by Domingo /
+            Roles de Canela by Törtchen / Chunky Cookies), cada una arrancaba antes en su propia
+            fila a todo lo ancho — con solo 2-3 productos, eso dejaba media pantalla vacía a la
+            derecha de cada subcategoría en vez de aprovecharla. Con `columns` (layout de
+            columnas tipo periódico) el navegador las acomoda una junto a otra, llenando cada
+            columna de arriba hacia abajo antes de pasar a la siguiente. */}
         <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
-          {gruposProductos.map((grupo, i) => (
-            <div key={grupo.titulo ?? `_${i}`} style={{ marginTop: i > 0 ? 20 : 0 }}>
-              {grupo.titulo && (
-                <h3 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 700, color: "var(--h421-navy)", textTransform: "uppercase", letterSpacing: 0.4 }}>
-                  {grupo.titulo}
-                </h3>
-              )}
-              <div
-                style={{
-                  display: "grid",
-                  // "auto-fill" con un máximo (210px): las tarjetas mantienen siempre el mismo
-                  // tamaño que en una categoría con muchos productos (ej. Bebidas frías) — antes,
-                  // con "auto-fit" y sin tope, una subcategoría con pocos productos (ej. 2) las
-                  // estiraba mucho más grandes para llenar la fila, y no coincidían con el resto.
-                  gridTemplateColumns: "repeat(auto-fill, minmax(170px, 210px))",
-                  gridAutoRows: "min-content",
-                  alignContent: "start",
-                  alignItems: "start",
-                  gap: 16,
-                }}
-              >
-                {grupo.productos.map((p) => (
-                  <ProductoCard key={p.id} producto={p} onSeleccionar={seleccionarProducto} />
-                ))}
-              </div>
-            </div>
-          ))}
+          {gruposConTitulo.length <= 1
+            ? gruposProductos.map((grupo, i) => <GrupoDeProductos key={grupo.titulo ?? `_${i}`} grupo={grupo} marginTop={i > 0 ? 20 : 0} onSeleccionar={seleccionarProducto} />)
+            : (
+              <>
+                {grupoSinTitulo && <GrupoDeProductos grupo={grupoSinTitulo} marginTop={0} onSeleccionar={seleccionarProducto} />}
+                <div style={{ marginTop: grupoSinTitulo ? 20 : 0, columnWidth: 440, columnGap: 24 }}>
+                  {gruposConTitulo.map((grupo) => (
+                    // Electron corre sobre Chromium, que ya soporta `break-inside` sin prefijo —
+                    // no hace falta el `-webkit-column-break-inside` viejo que sí necesitaría Safari.
+                    <div key={grupo.titulo} style={{ breakInside: "avoid", marginBottom: 20 }}>
+                      <GrupoDeProductos grupo={grupo} marginTop={0} onSeleccionar={seleccionarProducto} />
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
         </div>
 
         {/* Barra inferior — acciones rápidas como íconos circulares. Este negocio no tiene
@@ -220,6 +219,48 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
       {mostrarDescuento && (
         <ModalDescuento sucursalId={sucursalId} onCerrar={() => setMostrarDescuento(false)} />
       )}
+    </div>
+  );
+}
+
+/** Un grupo de productos (subcategoría o el catch-all sin subcategoría): título opcional +
+ *  cuadrícula. alignContent/alignItems "start" evita que las tarjetas se estiren para llenar
+ *  el alto disponible cuando hay pocos productos (el default de grid es "stretch", que infla
+ *  las filas hasta ocupar todo el contenedor). */
+function GrupoDeProductos({
+  grupo,
+  marginTop,
+  onSeleccionar,
+}: {
+  grupo: { titulo: string | null; productos: Producto[] };
+  marginTop: number;
+  onSeleccionar: (p: Producto) => void;
+}) {
+  return (
+    <div style={{ marginTop }}>
+      {grupo.titulo && (
+        <h3 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 700, color: "var(--h421-navy)", textTransform: "uppercase", letterSpacing: 0.4 }}>
+          {grupo.titulo}
+        </h3>
+      )}
+      <div
+        style={{
+          display: "grid",
+          // "auto-fill" con un máximo (210px): las tarjetas mantienen siempre el mismo tamaño
+          // que en una categoría con muchos productos (ej. Bebidas frías) — antes, con
+          // "auto-fit" y sin tope, una subcategoría con pocos productos (ej. 2) las estiraba
+          // mucho más grandes para llenar la fila, y no coincidían con el resto.
+          gridTemplateColumns: "repeat(auto-fill, minmax(170px, 210px))",
+          gridAutoRows: "min-content",
+          alignContent: "start",
+          alignItems: "start",
+          gap: 16,
+        }}
+      >
+        {grupo.productos.map((p) => (
+          <ProductoCard key={p.id} producto={p} onSeleccionar={onSeleccionar} />
+        ))}
+      </div>
     </div>
   );
 }
