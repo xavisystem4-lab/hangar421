@@ -100,3 +100,13 @@ jobs:
             — ver `docs/installation.md` §9.
           files: apps/waiter-mobile/android/app/build/outputs/apk/release/HANGAR-421-Meseros-${{ steps.version.outputs.version }}.apk
           draft: false
+          # IMPORTANTE: prerelease: true — el POS Windows (release-pos.yml) publica SUS releases
+          # en este mismo repo de GitHub, y su auto-actualizador (electron-updater) resuelve "la
+          # última versión" contra GET /releases/latest, que la API de GitHub siempre responde
+          # con el release NO-prerelease más reciente del repo entero, sea de la app que sea. Sin
+          # esto, publicar un APK de meseros DESPUÉS de un release del POS hacía que el POS
+          # intentara actualizar contra el release del APK (sin latest.yml) y fallara con 404 —
+          # pasó exactamente eso el 2026-09-04. El checker propio de la app de Meseros
+          # (src/updates.ts) NO se ve afectado: usa GET /releases (lista completa, incluye
+          # prereleases) filtrando por el prefijo de tag "waiter-v", nunca "la última del repo".
+          prerelease: true
