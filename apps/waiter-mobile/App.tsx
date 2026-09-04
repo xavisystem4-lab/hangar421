@@ -14,7 +14,7 @@ import { MisPedidosScreen } from "./src/screens/MisPedidosScreen";
 import { useOrderStore } from "./src/store/orderStore";
 import { BarraActualizacion } from "./src/components/BarraActualizacion";
 
-type Pantalla = "mesas" | "pedido" | "mispedidos";
+type Pantalla = "mesas" | "pedido" | "mispedidos" | "conexion";
 
 export default function App() {
   const auth = useAuthStore();
@@ -83,10 +83,17 @@ export default function App() {
     if (conexion.estado === "error" || configurandoEstacion) {
       return (
         <SafeAreaView style={{ flex: 1, backgroundColor: colores.navy }}>
-          <ConexionScreen
-            onConectado={() => setConfigurandoEstacion(false)}
-            onCancelar={configurandoEstacion && conexion.estado === "conectado" ? () => setConfigurandoEstacion(false) : undefined}
-          />
+          <View style={{ flex: 1 }}>
+            <ConexionScreen
+              onConectado={() => setConfigurandoEstacion(false)}
+              onCancelar={configurandoEstacion && conexion.estado === "conectado" ? () => setConfigurandoEstacion(false) : undefined}
+            />
+          </View>
+          {/* También visible ANTES de lograr conectar por primera vez — si el problema es un bug
+              del propio APK (ej. una versión vieja que ni siquiera podía intentar la conexión),
+              el mesero necesita poder bajar una versión nueva sin quedar atrapado en una
+              pantalla que nunca deja pasar. */}
+          <BarraActualizacion />
         </SafeAreaView>
       );
     }
@@ -127,12 +134,14 @@ export default function App() {
           <TomaPedidoScreen mesaNombre={mesaActiva?.nombre ?? null} onEnviado={() => setPantalla("mesas")} />
         )}
         {pantalla === "mispedidos" && <MisPedidosScreen />}
+        {pantalla === "conexion" && <ConexionScreen />}
       </View>
 
       <View style={estilos.tabBar}>
         <TabBoton texto="Mesas" activo={pantalla === "mesas"} onPress={() => setPantalla("mesas")} colores={colores} />
         <TabBoton texto="Pedido" activo={pantalla === "pedido"} onPress={() => setPantalla("pedido")} colores={colores} />
         <TabBoton texto="Mis pedidos" activo={pantalla === "mispedidos"} onPress={() => setPantalla("mispedidos")} colores={colores} />
+        <TabBoton texto="Conexión" activo={pantalla === "conexion"} onPress={() => setPantalla("conexion")} colores={colores} />
       </View>
       <BarraActualizacion />
     </SafeAreaView>
