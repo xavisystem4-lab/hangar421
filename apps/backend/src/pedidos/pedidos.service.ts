@@ -24,10 +24,22 @@ import {
 export class PedidosService {
   constructor(private prisma: PrismaService, private realtime: RealtimeGateway) {}
 
-  async listar(sucursalId: string, estado?: EstadoPedido) {
+  /** `estados` (plural) filtra por una LISTA de estados — lo usa el POS para la cola de
+   *  "Pedidos por cobrar" (ENVIADO/EN_PREPARACION/LISTO a la vez; no existe un único valor de
+   *  `estado` que cubra "todavía no se cobra ni se canceló"). `estado` (singular) se mantiene
+   *  para los llamados existentes que sí filtran por uno solo. Se incluyen `mesero`/`cliente`
+   *  además de `mesa` para que esa pantalla pueda mostrar quién tomó el pedido y en qué mesa
+   *  sin resolver cada ID aparte. */
+  async listar(sucursalId: string, estado?: EstadoPedido, estados?: EstadoPedido[]) {
     return this.prisma.pedido.findMany({
-      where: { sucursalId, ...(estado ? { estado } : {}) },
-      include: { items: { include: { modificadores: true, producto: true } }, pagos: true, mesa: true },
+      where: { sucursalId, ...(estado ? { estado } : {}), ...(estados?.length ? { estado: { in: estados } } : {}) },
+      include: {
+        items: { include: { modificadores: true, producto: true } },
+        pagos: true,
+        mesa: true,
+        mesero: { select: { id: true, nombre: true } },
+        cliente: { select: { id: true, nombre: true } },
+      },
       orderBy: { createdAt: "desc" },
     });
   }
@@ -40,6 +52,8 @@ export class PedidosService {
         pagos: true,
         descuentos: true,
         mesa: true,
+        mesero: { select: { id: true, nombre: true } },
+        cliente: { select: { id: true, nombre: true } },
       },
     });
     if (!pedido) throw new NotFoundException("Pedido no encontrado");

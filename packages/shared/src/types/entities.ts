@@ -201,6 +201,12 @@ export interface Pedido {
   items: PedidoItem[];
   pagos: Pago[];
   descuentos: Descuento[];
+  // Relaciones resueltas — solo presentes cuando el endpoint las incluyó explícitamente
+  // (ver pedidos.service.ts `listar`/`obtener`). Le permiten al POS mostrar "quién" y "dónde"
+  // sin tener que resolver cada ID por separado (ej. la lista de pedidos por cobrar).
+  mesa?: { id: string; nombre: string } | null;
+  mesero?: { id: string; nombre: string } | null;
+  cliente?: { id: string; nombre: string } | null;
 }
 
 export interface Turno {
