@@ -23,17 +23,17 @@ export function PanelPedido({ mesaNombre, onCobrar }: { mesaNombre: string | nul
             </span>
             <div style={{ flex: 1 }}>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontWeight: 600 }}>{item.cantidad}x {item.nombreProducto}</span>
-                <span style={{ fontWeight: 700 }}>${((item.precioUnitario + item.modificadores.reduce((s, m) => s + m.precioExtra, 0)) * item.cantidad).toFixed(2)}</span>
+                <span style={{ fontSize: 17, fontWeight: 600 }}>{item.cantidad}x {item.nombreProducto}</span>
+                <span style={{ fontSize: 18, fontWeight: 700 }}>${((item.precioUnitario + item.modificadores.reduce((s, m) => s + m.precioExtra, 0)) * item.cantidad).toFixed(2)}</span>
               </div>
               {item.modificadores.length > 0 && (
                 <div style={{ fontSize: 12, color: "var(--h421-gray-400)" }}>{item.modificadores.map((m) => m.nombreOpcion).join(", ")}</div>
               )}
               {item.notas && <div style={{ fontSize: 12, color: "var(--h421-gray-400)" }}>Nota: {item.notas}</div>}
-              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                <button onClick={() => cambiarCantidad(item.id, -1)} style={{ width: 28, height: 28, minHeight: 0, background: "var(--h421-gray-50)", borderRadius: 8 }}>−</button>
-                <button onClick={() => cambiarCantidad(item.id, 1)} style={{ width: 28, height: 28, minHeight: 0, background: "var(--h421-gray-50)", borderRadius: 8 }}>+</button>
-                <button onClick={() => quitarItem(item.id)} style={{ marginLeft: "auto", width: 28, height: 28, minHeight: 0, background: "#fee2e2", color: "var(--h421-red)", borderRadius: 8 }}>🗑</button>
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <button onClick={() => cambiarCantidad(item.id, -1)} style={{ width: 36, height: 36, minHeight: 0, fontSize: 18, fontWeight: 700, background: "var(--h421-gray-50)", borderRadius: 8 }}>−</button>
+                <button onClick={() => cambiarCantidad(item.id, 1)} style={{ width: 36, height: 36, minHeight: 0, fontSize: 18, fontWeight: 700, background: "var(--h421-gray-50)", borderRadius: 8 }}>+</button>
+                <button onClick={() => quitarItem(item.id)} style={{ marginLeft: "auto", width: 36, height: 36, minHeight: 0, fontSize: 17, background: "#fee2e2", color: "var(--h421-red)", borderRadius: 8 }}>🗑</button>
               </div>
             </div>
           </div>
@@ -77,7 +77,7 @@ function IconoPago() {
 
 function FilaTotal({ label, valor }: { label: string; valor: number }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", color: "var(--h421-gray-400)" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", color: "var(--h421-gray-600)" }}>
       <span>{label}</span>
       <span>${valor.toFixed(2)}</span>
     </div>
