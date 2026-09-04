@@ -11,11 +11,18 @@ const ETIQUETAS_SYNC: Record<string, { texto: string; color: string }> = {
   OFFLINE: { texto: "Sin conexión", color: "var(--h421-gray-400)" },
 };
 
-const OPCIONES_NAV: { id: "venta" | "mesas" | "caja"; etiqueta: string }[] = [
+export type Pantalla = "venta" | "mesas" | "caja" | "administracion";
+
+const OPCIONES_NAV: { id: Pantalla; etiqueta: string }[] = [
   { id: "venta", etiqueta: "Venta" },
   { id: "mesas", etiqueta: "Mesas" },
   { id: "caja", etiqueta: "Caja" },
 ];
+
+// Mismos roles que ya dejan pasar los endpoints de reportes/inventario/usuarios en el backend
+// (ver @Roles() en sus respectivos .controller.ts) y el mismo criterio que usa el Sidebar del
+// CRM — así el botón no aparece para cajeros/meseros/cocina, que igual recibirían 403.
+const ROLES_ADMINISTRACION = new Set(["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL"]);
 
 export function BarraSuperior({
   sucursalNombre,
@@ -23,10 +30,10 @@ export function BarraSuperior({
   onCambiarPantalla,
 }: {
   sucursalNombre: string;
-  pantallaActual: "venta" | "mesas" | "caja";
-  onCambiarPantalla: (p: "venta" | "mesas" | "caja") => void;
+  pantallaActual: Pantalla;
+  onCambiarPantalla: (p: Pantalla) => void;
 }) {
-  const { usuario, logout } = useAuthStore();
+  const { usuario, rol, logout } = useAuthStore();
   const sync = useSyncStore();
   const [ahora, setAhora] = useState(new Date());
 
@@ -36,6 +43,9 @@ export function BarraSuperior({
   }, []);
 
   const estadoInfo = ETIQUETAS_SYNC[sync.estado];
+  const opciones = rol && ROLES_ADMINISTRACION.has(rol)
+    ? [...OPCIONES_NAV, { id: "administracion" as const, etiqueta: "Administración" }]
+    : OPCIONES_NAV;
 
   return (
     <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 20px", background: "var(--h421-navy)", color: "#fff" }}>
@@ -48,7 +58,7 @@ export function BarraSuperior({
       </div>
 
       <nav style={{ display: "flex", gap: 8 }}>
-        {OPCIONES_NAV.map((opcion) => {
+        {opciones.map((opcion) => {
           const activa = pantallaActual === opcion.id;
           return (
             <button

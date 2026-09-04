@@ -10,12 +10,11 @@ import { Login } from "./screens/Login";
 import { Mesas } from "./screens/Mesas";
 import { POSHome } from "./screens/POSHome";
 import { Caja } from "./screens/Caja";
+import { Administracion } from "./screens/Administracion";
 import { PantallaArranque } from "./screens/PantallaArranque";
-import { BarraSuperior } from "./components/BarraSuperior";
+import { BarraSuperior, type Pantalla } from "./components/BarraSuperior";
 import { BarraActualizacion } from "./components/BarraActualizacion";
 import "./theme.css";
-
-type Pantalla = "venta" | "mesas" | "caja";
 
 export default function App() {
   const auth = useAuthStore();
@@ -122,6 +121,7 @@ export default function App() {
           />
         )}
         {pantalla === "caja" && <Caja sucursalId={auth.sucursalId!} />}
+        {pantalla === "administracion" && <Administracion />}
       </div>
       <BarraActualizacion />
     </div>
