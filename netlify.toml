@@ -1,0 +1,10 @@
+# Despliegue del CRM (apps/crm-web) en Netlify. Es un monorepo con npm workspaces: Netlify
+# detecta el workspace root desde `base` y corre `npm install` en la raíz del repo (resuelve
+# @hangar421/shared) antes de entrar a `base` para el build — ver docs/deployment.md.
+[build]
+  base = "apps/crm-web"
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
