@@ -22,8 +22,7 @@
       ]
     },
     "extra": {
-      "apiUrl": "https://hangar421backend-production.up.railway.app/api/v1",
-      "wsUrl": "https://hangar421backend-production.up.railway.app"
+      "apiUrl": "http://localhost:3000/api/v1"
     }
   }
 }

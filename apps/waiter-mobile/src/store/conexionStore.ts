@@ -27,9 +27,14 @@ interface ConexionState {
 
 let temporizador: ReturnType<typeof setInterval> | null = null;
 
-/** Estación por defecto: el backend de producción (Railway) configurado en app.json,
- *  para que la app funcione "de fábrica" sin obligar a nadie a configurar nada — el módulo de
- *  conexión sirve para apuntar a un servidor propio (p.ej. la PC del local en la misma red Wi-Fi). */
+/** Estación por defecto: "localhost", un valor que a propósito NUNCA responde en un
+ *  celular/tablet real — así, en la primera apertura (sin ninguna Estación guardada todavía),
+ *  `cargar()` falla la verificación y `App.tsx` manda directo a ConexionScreen. La app de
+ *  meseros SIEMPRE debe apuntar al sistema de la PC del local (el backend embebido del POS, en
+ *  la misma red Wi-Fi) — no hay fallback silencioso a ningún backend en la nube: si algún local
+ *  sí quisiera usar un backend remoto, lo escribe a mano aquí igual (host:puerto es cualquier
+ *  servidor HTTP/HTTPS que responda `/api/v1/health`), pero nunca es el comportamiento de
+ *  fábrica. */
 function estacionPorDefecto(): { host: string; puerto: string } {
   const apiUrl: string = Constants.expoConfig?.extra?.apiUrl ?? "http://localhost:3000/api/v1";
   try {
