@@ -141,7 +141,18 @@ export default function App() {
       <View style={estilos.header}>
         <Text style={estilos.headerTitulo}>HANGAR 421</Text>
         <View style={estilos.headerAcciones}>
-          <Text style={estilos.headerSync}>{sync.estado === "SYNCED" ? "● Sincronizado" : sync.estado === "SYNCING" ? "● Sincronizando…" : `○ Sin conexión (${sync.pendientes})`}</Text>
+          <Text
+            style={[
+              estilos.headerSync,
+              { color: sync.estado === "SYNCED" ? colores.green : sync.estado === "SYNCING" ? colores.amber : colores.red },
+            ]}
+          >
+            {sync.estado === "SYNCED"
+              ? "● Conectado"
+              : sync.estado === "SYNCING"
+                ? "● Sincronizando…"
+                : `● Desconectado (${sync.pendientes})`}
+          </Text>
           <TouchableOpacity onPress={tema.alternar} style={estilos.botonTema}>
             <Text style={estilos.botonTemaTexto}>{tema.tema === "oscuro" ? "☀️" : "🌙"}</Text>
           </TouchableOpacity>
