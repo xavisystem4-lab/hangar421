@@ -151,18 +151,33 @@ function registrarIpc() {
   });
 }
 
+/** true si `ip` cae en un rango privado RFC1918 (192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12) —
+ *  el rango que de verdad usa una red Wi-Fi/Ethernet doméstica u ofimática. */
+function esPrivadaRfc1918(ip: string): boolean {
+  const partes = ip.split(".").map(Number);
+  if (partes.length !== 4 || partes.some((p) => Number.isNaN(p))) return false;
+  const [a, b] = partes;
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
+
 /** Mejor intento de adivinar la IP de esta PC en la red local (Wi-Fi/Ethernet) — la misma que
  *  necesita un dispositivo en la misma red (tablet de mesero) para llegar a esta PC. Descarta
- *  loopback, IPv6 y adaptadores virtuales típicos (VPN, VirtualBox, Docker, Hyper-V) que no son
- *  la red real del local; si hay varias candidatas válidas, se queda con la primera. */
+ *  loopback e IPv6, y filtra nombres de adaptador virtuales típicos (VPN, VirtualBox, Docker,
+ *  Hyper-V) — pero ese filtro por NOMBRE no es suficiente: en producción un adaptador de VPN
+ *  (Radmin VPN, Hamachi, etc.) con un nombre "normal" que no matcheaba el filtro devolvió una IP
+ *  tipo 26.x.x.x en vez de la 192.168.x.x real, y la tablet nunca pudo conectar con eso. Por eso
+ *  ahora se PREFIERE explícitamente cualquier candidata que sea una IP privada real (RFC1918) —
+ *  casi siempre es la única forma correcta de saber cuál de varios adaptadores es "la red del
+ *  local" — y solo se cae a la primera candidata cualquiera si ninguna lo es. */
 function obtenerIpLan(): string | null {
   const interfaces = os.networkInterfaces();
-  const IGNORAR = /virtual|vmware|virtualbox|docker|hyper-v|vethernet|tailscale|zerotier/i;
+  const IGNORAR = /virtual|vmware|virtualbox|docker|hyper-v|vethernet|tailscale|zerotier|radmin|hamachi|vpn|tun\d|tap\d/i;
+  const candidatas: string[] = [];
   for (const [nombre, direcciones] of Object.entries(interfaces)) {
     if (IGNORAR.test(nombre) || !direcciones) continue;
     for (const dir of direcciones) {
-      if (dir.family === "IPv4" && !dir.internal) return dir.address;
+      if (dir.family === "IPv4" && !dir.internal) candidatas.push(dir.address);
     }
   }
-  return null;
+  return candidatas.find(esPrivadaRfc1918) ?? candidatas[0] ?? null;
 }
