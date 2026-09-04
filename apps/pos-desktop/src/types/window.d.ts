@@ -27,7 +27,8 @@ declare global {
       };
       backend: {
         obtenerUrl(): Promise<string | null>;
-        obtenerInfoConexion(): Promise<{ ip: string | null; puerto: number | null }>;
+        obtenerInfoConexion(): Promise<{ ip: string | null; puerto: number | null; puertoPreferido: number | null }>;
+        guardarInfoConexion(ip: string, puertoPreferido: number): Promise<void>;
         onEstado(callback: (mensaje: string) => void): () => void;
       };
     };

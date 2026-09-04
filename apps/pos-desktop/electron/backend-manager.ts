@@ -37,7 +37,7 @@ export interface BackendEmbebido {
   detener: () => Promise<void>;
 }
 
-export async function iniciarBackendEmbebido(logIn: (msg: string) => void): Promise<BackendEmbebido> {
+export async function iniciarBackendEmbebido(logIn: (msg: string) => void, puertoPreferido = 3000): Promise<BackendEmbebido> {
   const dataDir = path.join(app.getPath("userData"), "local-data");
   fs.mkdirSync(dataDir, { recursive: true });
   const logPath = path.join(dataDir, "arranque.log");
@@ -112,12 +112,13 @@ export async function iniciarBackendEmbebido(logIn: (msg: string) => void): Prom
     await conTimeout(pg.createDatabase("hangar421"), 30_000, mensajeTimeoutPg);
   }
 
-  // Puerto FIJO (3000) siempre que esté libre — antes se elegía uno al azar en cada arranque
-  // (puertoLibre() sin preferencia), lo que dejaba a la app de Meseros sin forma de saber a qué
-  // puerto conectarse sin volver a mirar la PC cada vez que se reiniciaba el POS. Con un puerto
-  // fijo, la IP:puerto que se le muestra al admin (ver "backend:obtenerInfoConexion" en main.ts)
-  // se mantiene estable entre reinicios — solo cambia si 3000 ya estaba ocupado por otra cosa.
-  const backendPort = await puertoPreferidoOLibre(3000);
+  // Puerto FIJO (3000 salvo que el admin haya guardado otra preferencia — ver
+  // "Conexión Meseros"/main.ts) siempre que esté libre — antes se elegía uno al azar en cada
+  // arranque, lo que dejaba a la app de Meseros sin forma de saber a qué puerto conectarse sin
+  // volver a mirar la PC cada vez que se reiniciaba el POS. Con un puerto fijo, la IP:puerto que
+  // se le muestra al admin se mantiene estable entre reinicios — solo cambia si ese puerto ya
+  // estaba ocupado por otra cosa (cae a uno al azar) o si el admin guardó uno distinto a mano.
+  const backendPort = await puertoPreferidoOLibre(puertoPreferido);
 
   const env: NodeJS.ProcessEnv = {
     ...process.env,
