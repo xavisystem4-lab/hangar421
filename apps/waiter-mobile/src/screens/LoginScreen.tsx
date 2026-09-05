@@ -5,6 +5,7 @@ import { useAuthStore } from "../store/authStore";
 import { useConexionStore } from "../store/conexionStore";
 import { useTemaStore, usarColores } from "../store/temaStore";
 import { useDispositivo } from "../hooks/useDispositivo";
+import { confirmarCerrarApp } from "../utils/cerrarApp";
 
 interface UsuarioLogin {
   id: string;
@@ -120,6 +121,10 @@ export function LoginScreen({ onConfigurarEstacion }: { onConfigurarEstacion?: (
         <TouchableOpacity style={estilos.estacion} onPress={onConfigurarEstacion}>
           <Text style={estilos.estacionTexto}>⚙ {nombreEstacion ?? "Estación"}: {host}:{puerto}</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity style={estilos.cerrarApp} onPress={confirmarCerrarApp}>
+          <Text style={estilos.cerrarAppTexto}>✕ Cerrar aplicación</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -156,5 +161,7 @@ function crearEstilos(colores: ReturnType<typeof usarColores>, esTablet: boolean
     botonTexto: { color: "#fff", fontWeight: "700", fontSize: 16 },
     estacion: { marginTop: 16, alignItems: "center", padding: 6 },
     estacionTexto: { color: colores.textoSecundario, fontSize: 12 },
+    cerrarApp: { marginTop: 4, alignItems: "center", padding: 6 },
+    cerrarAppTexto: { color: colores.red, fontSize: 12, fontWeight: "600" },
   });
 }
