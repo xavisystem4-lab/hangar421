@@ -8,6 +8,15 @@ interface Tokens {
 
 let tokensCache: Tokens | null = null;
 
+// Sin esto, un `fetch` contra una IP mal escrita o inalcanzable (no un rechazo activo de
+// conexión, sino un simple "nadie responde" — la Estación apagada, la tablet en otra red,
+// un firewall que dropea el paquete) puede quedarse colgado 60s o más sin resolver ni
+// rechazar la promesa: ni error, ni éxito, nada — el pedido nunca cae en encolarSyncSiFalla()
+// (syncEngine.ts) porque esa función solo reacciona a una excepción, y aquí no había ninguna
+// hasta que el OS decidiera rendirse. El mesero veía el botón "Enviar pedido" pegado sin
+// ninguna señal de qué pasó. Mismo criterio de timeout que ya usa conexionStore.verificar().
+const TIMEOUT_MS = 8_000;
+
 export async function cargarTokens(): Promise<Tokens | null> {
   if (tokensCache) return tokensCache;
   const raw = await AsyncStorage.getItem("hangar421_tokens");
@@ -23,14 +32,28 @@ export async function setTokens(t: Tokens | null) {
 
 export async function apiFetch<T>(path: string, options: RequestInit = {}, reintentar = true): Promise<T> {
   const tokens = await cargarTokens();
-  const res = await fetch(`${obtenerApiUrl()}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(tokens ? { Authorization: `Bearer ${tokens.accessToken}` } : {}),
-      ...options.headers,
-    },
-  });
+  const controlador = new AbortController();
+  const limite = setTimeout(() => controlador.abort(), TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(`${obtenerApiUrl()}${path}`, {
+      ...options,
+      signal: controlador.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...(tokens ? { Authorization: `Bearer ${tokens.accessToken}` } : {}),
+        ...options.headers,
+      },
+    });
+  } catch (e: any) {
+    // Un abort por timeout llega como AbortError, no como TypeError — se normaliza el mensaje
+    // para que encolarSyncSiFalla() (syncEngine.ts) lo reconozca como error de red y encole el
+    // pedido en vez de perderlo.
+    if (e?.name === "AbortError") throw new Error("network timeout: la Estación no respondió a tiempo");
+    throw e;
+  } finally {
+    clearTimeout(limite);
+  }
 
   if (res.status === 401 && reintentar && tokens) {
     const ok = await intentarRefrescar(tokens);

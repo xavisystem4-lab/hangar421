@@ -20,7 +20,7 @@ export async function encolarSyncSiFalla<T>(intentoOnline: () => Promise<T>, ite
   try {
     return await intentoOnline();
   } catch (e: any) {
-    const esErrorDeRed = e instanceof TypeError || /network|fetch/i.test(e?.message ?? "");
+    const esErrorDeRed = e instanceof TypeError || e?.name === "AbortError" || /network|fetch|timeout/i.test(e?.message ?? "");
     if (!esErrorDeRed) throw e;
 
     await outbox.encolar({
