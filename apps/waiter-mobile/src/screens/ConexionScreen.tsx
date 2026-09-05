@@ -4,6 +4,7 @@ import { baseUrl, useConexionStore, validarHost, validarPuerto } from "../store/
 import { useAuthStore } from "../store/authStore";
 import { useTemaStore, usarColores } from "../store/temaStore";
 import { actualizarMenu } from "../sync/actualizarMenu";
+import { confirmarCerrarApp } from "../utils/cerrarApp";
 
 // Misma foto de fondo que usa el login del POS Windows (apps/pos-desktop/src/assets/login-fondo.jpg)
 // — pedido explícito para que la app de mesero se sienta parte del mismo sistema.
@@ -175,6 +176,14 @@ export function ConexionScreen({ onConectado, onCancelar }: { onConectado?: () =
               <Text style={estilos.cancelarTexto}>Cancelar</Text>
             </TouchableOpacity>
           )}
+
+          {/* Siempre visible, incluso sin `onCancelar` (ej. la primera apertura, o después de
+              cerrar sesión, sin conexión lograda todavía) — antes, si la tablet no lograba
+              conectar, esta pantalla no tenía ninguna salida más que arreglar la IP/puerto o
+              forzar el cierre desde el sistema operativo. */}
+          <TouchableOpacity style={estilos.cerrarApp} onPress={confirmarCerrarApp}>
+            <Text style={estilos.cerrarAppTexto}>✕ Cerrar aplicación</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </ImageBackground>
@@ -226,5 +235,7 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     botonTexto: { color: "#fff", fontWeight: "700", fontSize: 16 },
     cancelar: { marginTop: 12, alignItems: "center", padding: 6 },
     cancelarTexto: { color: colores.textoSecundario, fontSize: 13 },
+    cerrarApp: { marginTop: 4, alignItems: "center", padding: 6 },
+    cerrarAppTexto: { color: colores.red, fontSize: 12, fontWeight: "600" },
   });
 }
