@@ -149,7 +149,20 @@ export async function iniciarBackendEmbebido(logIn: (msg: string) => void, puert
   proceso.on("error", (e) => log(`[backend] error al lanzar el proceso: ${e.message}`));
 
   const url = `http://127.0.0.1:${backendPort}`;
-  await esperarSalud(url, proceso, log);
+  try {
+    await esperarSalud(url, proceso, log);
+  } catch (e) {
+    // Sin esto, si esperarSalud() falla (Postgres y el backend Node ya están arriba y
+    // corriendo, solo esta verificación de salud no los alcanzó a confirmar), ambos procesos
+    // quedaban huérfanos en segundo plano — nada los mataba. Cada "Reintentar" fallido dejaba
+    // más procesos zombie acumulándose (y, de paso, ocupando el puerto 3000, forzando al
+    // siguiente intento a caer a uno aleatorio en vez de reutilizar el fijo).
+    log("Arranque fallido — limpiando el backend/Postgres que ya se habían levantado…");
+    await detener(proceso, pg, pgCtlPath, pgDataDir, log).catch((e2: Error) =>
+      log(`[backend] error al limpiar tras un arranque fallido: ${e2.message}`),
+    );
+    throw e;
+  }
   log(`Backend local listo en ${url}`);
 
   return {
@@ -370,9 +383,18 @@ function conTimeout<T>(promesa: Promise<T>, ms: number, mensaje: string): Promis
   ]);
 }
 
+/** Antes, si esta espera agotaba los 60 intentos, el único mensaje era genérico ("no respondió a
+ *  tiempo") sin decir POR QUÉ cada intento fallaba — visto en producción: el backend sí llega a
+ *  loguear "Nest application successfully started" y "escuchando en http://localhost:<puerto>",
+ *  pero el `GET /api/v1/health` de esta misma función igual agota los 60 intentos, así que el
+ *  problema está en la conexión entre este proceso (Electron) y el puerto, no en que el backend
+ *  tarde en arrancar — sin el error real (¿ECONNREFUSED? ¿timeout? ¿un status distinto de 200?)
+ *  cada caso de esto exige pedirle el log completo al usuario para poder avanzar. Ahora se
+ *  guarda el último error visto y se incluye tanto en el log como en el mensaje final. */
 function esperarSalud(url: string, proceso: ChildProcess, log: (msg: string) => void, intentos = 60): Promise<void> {
   return new Promise((resolve, reject) => {
     let restantes = intentos;
+    let ultimoError: string | null = null;
     const intentar = () => {
       if (proceso.exitCode !== null) {
         reject(new Error(`El backend local terminó antes de iniciar (código ${proceso.exitCode})`));
@@ -380,15 +402,30 @@ function esperarSalud(url: string, proceso: ChildProcess, log: (msg: string) => 
       }
       http
         .get(`${url}/api/v1/health`, (res) => {
-          if (res.statusCode === 200) resolve();
-          else reintentar();
+          if (res.statusCode === 200) {
+            resolve();
+            return;
+          }
+          ultimoError = `respuesta HTTP ${res.statusCode}`;
+          res.resume(); // drenar el body — si no, el socket queda colgado hasta que el OS lo recicle
+          reintentar();
         })
-        .on("error", reintentar);
+        .on("error", (err: NodeJS.ErrnoException) => {
+          ultimoError = `${err.code ?? err.name ?? "Error"}: ${err.message}`;
+          reintentar();
+        });
     };
     const reintentar = () => {
       restantes -= 1;
+      // Cada 5s (10 intentos de 500ms) deja una miga en el log — así, si el usuario cierra la
+      // app antes de que esto termine de fallar del todo, igual queda registro de qué pasaba.
+      if (restantes > 0 && restantes % 10 === 0) {
+        log(`[backend] esperando salud… último intento: ${ultimoError ?? "sin respuesta"} (quedan ${restantes} intentos)`);
+      }
       if (restantes <= 0) {
-        reject(new Error("El backend local no respondió a tiempo (30s) — revisa el log en local-data/arranque.log"));
+        const detalle = ultimoError ?? "ningún intento llegó a dar una respuesta ni un error — muy raro";
+        log(`[backend] esperarSalud agotó los 60 intentos — último error: ${detalle}`);
+        reject(new Error(`El backend local no respondió a tiempo (30s) — último error: ${detalle}. Revisa el log en local-data/arranque.log`));
         return;
       }
       setTimeout(intentar, 500);
