@@ -9,7 +9,13 @@ let socket: Socket | null = null;
  *  qué pestaña esté parado dentro de la app. Antes se conectaba/desconectaba con el montaje de
  *  MisPedidosScreen — un mesero parado en "Mesas" o "Pedido" aparecía como desconectado aunque
  *  la app siguiera abierta y funcionando. */
-export function conectarSocket(sucursalId: string, usuarioId: string, usuarioNombre: string, dispositivoId: string): Socket {
+export function conectarSocket(
+  sucursalId: string,
+  usuarioId: string,
+  usuarioNombre: string,
+  dispositivoId: string,
+  tipoDispositivo?: "tablet" | "celular",
+): Socket {
   if (socket) socket.disconnect();
   socket = io(obtenerWsUrl(), { path: "/realtime", transports: ["websocket"] });
   socket.on("connect", () =>
@@ -20,6 +26,7 @@ export function conectarSocket(sucursalId: string, usuarioId: string, usuarioNom
       dispositivoId,
       nombreDispositivo: usuarioNombre, // no hay nombre de equipo real en un celular/tablet — se usa el del mesero, es lo que identifica al admin de todos modos
       tipo: "mesero",
+      tipoDispositivo, // ver useDispositivo().esTablet — puramente informativo para el panel de Administración
     }),
   );
   return socket;

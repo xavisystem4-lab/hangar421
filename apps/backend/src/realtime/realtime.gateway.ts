@@ -22,6 +22,10 @@ export interface ClienteConectado {
    *  de Administración para filtrar solo tablets de meseros, no cada backend/kiosco que se
    *  conecta al mismo canal. */
   tipo?: string;
+  /** "tablet" | "celular" — lo manda la app de Meseros según `useDispositivo().esTablet` (ver
+   *  App.tsx del waiter-mobile). Puramente informativo para el panel de Administración; no se
+   *  usa para ninguna lógica de negocio. */
+  tipoDispositivo?: string;
   ip: string;
   conectadoDesde: string;
 }
@@ -71,6 +75,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       nombreDispositivo?: string;
       usuarioNombre?: string;
       tipo?: string;
+      tipoDispositivo?: string;
     },
   ) {
     if (body.sucursalId) client.join(`sucursal:${body.sucursalId}`);
@@ -86,6 +91,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       existente.dispositivoId = body.dispositivoId ?? existente.dispositivoId;
       existente.nombreDispositivo = body.nombreDispositivo ?? existente.nombreDispositivo;
       existente.tipo = body.tipo ?? existente.tipo;
+      existente.tipoDispositivo = body.tipoDispositivo ?? existente.tipoDispositivo;
     }
 
     return { ok: true, rooms: Array.from(client.rooms) };
