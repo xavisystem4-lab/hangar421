@@ -63,8 +63,9 @@ export async function iniciarBackendEmbebido(logIn: (msg: string) => void, puert
   // que quede como un import() nativo de verdad (Node sí puede cargar ESM así desde CJS).
   const importDinamico = new Function("especificador", "return import(especificador)") as (
     especificador: string,
-  ) => Promise<{ default: new (opciones: Record<string, unknown>) => any }>;
+  ) => Promise<any>;
   const { default: EmbeddedPostgres } = await importDinamico("embedded-postgres");
+  const pgCtlPath = await resolverPgCtl(importDinamico, log);
 
   const pgDataDir = path.join(dataDir, "pgdata");
   const secretos = obtenerOCrearSecretos(path.join(dataDir, "secrets.json"));
@@ -154,11 +155,17 @@ export async function iniciarBackendEmbebido(logIn: (msg: string) => void, puert
   return {
     url,
     puerto: backendPort,
-    detener: () => detener(proceso, pg, log),
+    detener: () => detener(proceso, pg, pgCtlPath, pgDataDir, log),
   };
 }
 
-async function detener(proceso: ChildProcess, pg: any, log: (msg: string) => void): Promise<void> {
+async function detener(
+  proceso: ChildProcess,
+  pg: any,
+  pgCtlPath: string | null,
+  pgDataDir: string,
+  log: (msg: string) => void,
+): Promise<void> {
   log("Deteniendo backend local…");
   await new Promise<void>((resolve) => {
     if (!proceso.pid || proceso.exitCode !== null) return resolve();
@@ -166,7 +173,91 @@ async function detener(proceso: ChildProcess, pg: any, log: (msg: string) => voi
     proceso.kill();
     setTimeout(resolve, 5000); // no bloquear el cierre de la app indefinidamente
   });
-  await pg.stop().catch((e: Error) => log(`[postgres] error al detener: ${e.message}`));
+
+  // embedded-postgres, en Windows, detiene Postgres con `taskkill /pid <pid> /f /t` — un
+  // TerminateProcess forzado de TODO el árbol de procesos (postmaster + checkpointer +
+  // background writer + WAL writer), sin darle a Postgres oportunidad de un apagado limpio.
+  // Confirmado en producción vía local-data/arranque.log: el checkpointer termina con código de
+  // error (no 0) en vez de salir limpio, y el siguiente arranque encuentra un bloque de memoria
+  // compartida de Windows "todavía en uso" (FATAL: pre-existing shared memory block is still in
+  // use) aunque el proceso dueño ya no exista — Windows no siempre libera esa memoria de
+  // inmediato tras un TerminateProcess de todo el árbol. `pg_ctl stop -m fast` es el mecanismo
+  // correcto y soportado por Postgres para un apagado limpio en cualquier plataforma (internamente
+  // sabe cómo pedirle a Postgres que cierre bien en Windows, a diferencia de un taskkill crudo).
+  // Si no se pudo resolver `pg_ctl` o no respondió a tiempo, se cae al método de la librería como
+  // último recurso — nunca debe dejar el cierre de la app colgado indefinidamente.
+  const detenidoLimpio = pgCtlPath ? await detenerConPgCtl(pgCtlPath, pgDataDir, log) : false;
+  if (!detenidoLimpio) {
+    await pg.stop().catch((e: Error) => log(`[postgres] error al detener: ${e.message}`));
+  }
+}
+
+function detenerConPgCtl(pgCtlPath: string, pgDataDir: string, log: (msg: string) => void): Promise<boolean> {
+  return new Promise((resolve) => {
+    const proc = spawn(pgCtlPath, ["stop", "-D", pgDataDir, "-m", "fast", "-w", "-t", "20"], { windowsHide: true });
+    let salida = "";
+    proc.stdout?.on("data", (d) => (salida += String(d)));
+    proc.stderr?.on("data", (d) => (salida += String(d)));
+    const limite = setTimeout(() => {
+      log("[postgres] pg_ctl stop no respondió en 22s — se cae al método de respaldo");
+      resolve(false);
+    }, 22_000);
+    proc.on("exit", (code) => {
+      clearTimeout(limite);
+      if (salida.trim()) log(`[postgres] pg_ctl stop: ${salida.trim()}`);
+      resolve(code === 0);
+    });
+    proc.on("error", (e) => {
+      clearTimeout(limite);
+      log(`[postgres] no se pudo ejecutar pg_ctl stop (${e.message}) — se cae al método de respaldo`);
+      resolve(false);
+    });
+  });
+}
+
+/** Resuelve el binario `pg_ctl` del mismo paquete de binarios (`@embedded-postgres/<plataforma>`)
+ *  que ya usa la librería internamente — cada paquete de plataforma lo exporta directo (ver, en
+ *  node_modules, el archivo "dist/index.js" de cualquier paquete @embedded-postgres: contiene
+ *  `export const pg_ctl = ...`), así que no hace falta adivinar la ruta a mano. Devuelve `null`
+ *  si la plataforma no tiene un paquete de binarios conocido (no debería pasar en producción —
+ *  el POS solo se distribuye para Windows). */
+async function resolverPgCtl(
+  importDinamico: (especificador: string) => Promise<any>,
+  log: (msg: string) => void,
+): Promise<string | null> {
+  const paquete = paqueteDeBinariosPg();
+  if (!paquete) {
+    log("[postgres] plataforma sin paquete de binarios conocido para pg_ctl — se usará el método de respaldo al detener");
+    return null;
+  }
+  try {
+    const mod = await importDinamico(paquete);
+    return typeof mod.pg_ctl === "string" ? mod.pg_ctl : null;
+  } catch (e: any) {
+    log(`[postgres] no se pudo resolver pg_ctl (${e.message}) — se usará el método de respaldo al detener`);
+    return null;
+  }
+}
+
+function paqueteDeBinariosPg(): string | null {
+  const arch = process.arch;
+  switch (process.platform) {
+    case "darwin":
+      return arch === "arm64" ? "@embedded-postgres/darwin-arm64" : arch === "x64" ? "@embedded-postgres/darwin-x64" : null;
+    case "win32":
+      return arch === "x64" ? "@embedded-postgres/windows-x64" : null;
+    case "linux":
+      switch (arch) {
+        case "arm64": return "@embedded-postgres/linux-arm64";
+        case "arm": return "@embedded-postgres/linux-arm";
+        case "ia32": return "@embedded-postgres/linux-ia32";
+        case "ppc64": return "@embedded-postgres/linux-ppc64";
+        case "x64": return "@embedded-postgres/linux-x64";
+        default: return null;
+      }
+    default:
+      return null;
+  }
 }
 
 function obtenerDirectorioBackend(): string {
