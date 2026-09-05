@@ -68,13 +68,14 @@ export default function App() {
   // "Conexión Meseros" del POS (que lista tablets conectadas vía este mismo socket, ver
   // realtime.gateway.ts) refleja de verdad si el mesero sigue activo, sin importar en qué
   // pestaña esté parado.
+  const { esTablet } = useDispositivo();
+
   useEffect(() => {
     if (!auth.usuario || !auth.sucursalId || !auth.dispositivoId) return;
-    conectarSocket(auth.sucursalId, auth.usuario.id, auth.usuario.nombre, auth.dispositivoId);
+    conectarSocket(auth.sucursalId, auth.usuario.id, auth.usuario.nombre, auth.dispositivoId, esTablet ? "tablet" : "celular");
     return () => desconectarSocket();
-  }, [auth.usuario, auth.sucursalId, auth.dispositivoId]);
+  }, [auth.usuario, auth.sucursalId, auth.dispositivoId, esTablet]);
 
-  const { esTablet } = useDispositivo();
   const estilos = crearEstilos(colores, esTablet);
 
   function cerrarSesion() {

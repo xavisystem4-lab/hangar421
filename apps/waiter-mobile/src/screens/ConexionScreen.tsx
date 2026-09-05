@@ -1,9 +1,13 @@
 import { useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, ImageBackground, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { baseUrl, useConexionStore, validarHost, validarPuerto } from "../store/conexionStore";
 import { useAuthStore } from "../store/authStore";
-import { usarColores } from "../store/temaStore";
+import { useTemaStore, usarColores } from "../store/temaStore";
 import { actualizarMenu } from "../sync/actualizarMenu";
+
+// Misma foto de fondo que usa el login del POS Windows (apps/pos-desktop/src/assets/login-fondo.jpg)
+// — pedido explícito para que la app de mesero se sienta parte del mismo sistema.
+const fondoLogin = require("../../assets/login-fondo.jpg");
 
 type ResultadoPrueba = { ok: true; nombre: string | null } | { ok: false; mensaje: string } | null;
 
@@ -26,8 +30,12 @@ export function ConexionScreen({ onConectado, onCancelar }: { onConectado?: () =
   const conexion = useConexionStore();
   const { host, puerto, estado, nombreEstacion, ultimaActualizacionMenu, productosSincronizados, sincronizandoMenu, probarYGuardar } = conexion;
   const usuario = useAuthStore((s) => s.usuario);
+  const tema = useTemaStore((s) => s.tema);
   const colores = usarColores();
   const estilos = crearEstilos(colores);
+  // Mismo criterio de velo que el login del POS (Login.tsx): oscurece/aclara la foto según el
+  // tema para que la tarjeta blanca/oscura de encima siga siendo legible.
+  const velo = tema === "oscuro" ? "rgba(11,30,51,0.72)" : "rgba(255,255,255,0.55)";
 
   const [ip, setIp] = useState(host);
   const [pto, setPto] = useState(puerto);
@@ -93,81 +101,83 @@ export function ConexionScreen({ onConectado, onCancelar }: { onConectado?: () =
   const estadoTexto = estado === "conectado" ? "🟢 Conectado" : estado === "verificando" ? "🟡 Verificando…" : "🔴 Desconectado";
 
   return (
-    <View style={estilos.contenedor}>
-      <View style={estilos.tarjeta}>
-        <Text style={estilos.titulo}>CONEXIÓN</Text>
-        <Text style={estilos.subtitulo}>Estación (PC del local)</Text>
+    <ImageBackground source={fondoLogin} resizeMode="cover" style={estilos.fondo}>
+      <View style={[estilos.contenedor, { backgroundColor: velo }]}>
+        <View style={estilos.tarjeta}>
+          <Text style={estilos.titulo}>CONEXIÓN</Text>
+          <Text style={estilos.subtitulo}>Estación (PC del local)</Text>
 
-        {/* Estado actual — lo que YA está guardado y activo, no lo que se esté escribiendo abajo */}
-        <View style={estilos.estadoBloque}>
-          <FilaEstado etiqueta="Servidor" valor={nombreEstacion ?? "No conectado"} colores={colores} />
-          <FilaEstado etiqueta="IP" valor={host || "—"} colores={colores} />
-          <FilaEstado etiqueta="Puerto" valor={puerto || "—"} colores={colores} />
-          <FilaEstado etiqueta="Estado" valor={estadoTexto} colores={colores} valorColor={estadoColor} />
-        </View>
+          {/* Estado actual — lo que YA está guardado y activo, no lo que se esté escribiendo abajo */}
+          <View style={estilos.estadoBloque}>
+            <FilaEstado etiqueta="Servidor" valor={nombreEstacion ?? "No conectado"} colores={colores} />
+            <FilaEstado etiqueta="IP" valor={host || "—"} colores={colores} />
+            <FilaEstado etiqueta="Puerto" valor={puerto || "—"} colores={colores} />
+            <FilaEstado etiqueta="Estado" valor={estadoTexto} colores={colores} valorColor={estadoColor} />
+          </View>
 
-        <Text style={estilos.seccion}>Datos de conexión</Text>
-        <TextInput
-          placeholder="IP del servidor (p.ej. 192.168.1.100)"
-          placeholderTextColor={colores.textoSecundario}
-          value={ip}
-          onChangeText={(t) => { setIp(t); setResultadoPrueba(null); }}
-          autoCapitalize="none"
-          keyboardType="numbers-and-punctuation"
-          style={estilos.input}
-        />
-        <TextInput
-          placeholder="Puerto (p.ej. 3000)"
-          placeholderTextColor={colores.textoSecundario}
-          value={pto}
-          onChangeText={(t) => { setPto(t); setResultadoPrueba(null); }}
-          keyboardType="number-pad"
-          style={estilos.input}
-        />
+          <Text style={estilos.seccion}>Datos de conexión</Text>
+          <TextInput
+            placeholder="IP del servidor (p.ej. 192.168.1.100)"
+            placeholderTextColor={colores.textoSecundario}
+            value={ip}
+            onChangeText={(t) => { setIp(t); setResultadoPrueba(null); }}
+            autoCapitalize="none"
+            keyboardType="numbers-and-punctuation"
+            style={estilos.input}
+          />
+          <TextInput
+            placeholder="Puerto (p.ej. 3000)"
+            placeholderTextColor={colores.textoSecundario}
+            value={pto}
+            onChangeText={(t) => { setPto(t); setResultadoPrueba(null); }}
+            keyboardType="number-pad"
+            style={estilos.input}
+          />
 
-        {resultadoPrueba?.ok === true && (
-          <Text style={estilos.ok}>✓ Conexión exitosa{resultadoPrueba.nombre ? ` — ${resultadoPrueba.nombre}` : ""}</Text>
-        )}
-        {resultadoPrueba?.ok === false && <Text style={estilos.error}>✕ No se pudo establecer la conexión{"\n"}{resultadoPrueba.mensaje}</Text>}
-        {mensajeGuardado && <Text style={estilos.ok}>{mensajeGuardado}</Text>}
+          {resultadoPrueba?.ok === true && (
+            <Text style={estilos.ok}>✓ Conexión exitosa{resultadoPrueba.nombre ? ` — ${resultadoPrueba.nombre}` : ""}</Text>
+          )}
+          {resultadoPrueba?.ok === false && <Text style={estilos.error}>✕ No se pudo establecer la conexión{"\n"}{resultadoPrueba.mensaje}</Text>}
+          {mensajeGuardado && <Text style={estilos.ok}>{mensajeGuardado}</Text>}
 
-        <TouchableOpacity style={estilos.botonSecundario} onPress={probarConexion} disabled={probando || !ip.trim() || !pto.trim()}>
-          {probando ? <ActivityIndicator color={colores.navyTexto} /> : <Text style={estilos.botonSecundarioTexto}>Probar conexión</Text>}
-        </TouchableOpacity>
-
-        {usuario && (
-          <>
-            <Text style={estilos.seccion}>Menú / catálogo</Text>
-            <TouchableOpacity style={estilos.botonSecundario} onPress={actualizarMenuUI} disabled={sincronizandoMenu}>
-              {sincronizandoMenu ? <ActivityIndicator color={colores.navyTexto} /> : <Text style={estilos.botonSecundarioTexto}>Actualizar menú</Text>}
-            </TouchableOpacity>
-            {mensajeMenu && <Text style={mensajeMenu.ok ? estilos.ok : estilos.error}>{mensajeMenu.texto}</Text>}
-            <View style={estilos.metaMenu}>
-              <Text style={estilos.metaMenuTexto}>
-                Última actualización: {ultimaActualizacionMenu ? formatearFecha(ultimaActualizacionMenu) : "Nunca"}
-              </Text>
-              <Text style={estilos.metaMenuTexto}>
-                Productos sincronizados: {productosSincronizados ?? "—"}
-              </Text>
-            </View>
-          </>
-        )}
-
-        <TouchableOpacity
-          style={[estilos.boton, (guardando || !ip.trim() || !pto.trim()) && estilos.botonDeshabilitado]}
-          onPress={guardar}
-          disabled={guardando || !ip.trim() || !pto.trim()}
-        >
-          {guardando ? <ActivityIndicator color="#fff" /> : <Text style={estilos.botonTexto}>Guardar</Text>}
-        </TouchableOpacity>
-
-        {onCancelar && (
-          <TouchableOpacity style={estilos.cancelar} onPress={onCancelar}>
-            <Text style={estilos.cancelarTexto}>Cancelar</Text>
+          <TouchableOpacity style={estilos.botonSecundario} onPress={probarConexion} disabled={probando || !ip.trim() || !pto.trim()}>
+            {probando ? <ActivityIndicator color={colores.navyTexto} /> : <Text style={estilos.botonSecundarioTexto}>Probar conexión</Text>}
           </TouchableOpacity>
-        )}
+
+          {usuario && (
+            <>
+              <Text style={estilos.seccion}>Menú / catálogo</Text>
+              <TouchableOpacity style={estilos.botonSecundario} onPress={actualizarMenuUI} disabled={sincronizandoMenu}>
+                {sincronizandoMenu ? <ActivityIndicator color={colores.navyTexto} /> : <Text style={estilos.botonSecundarioTexto}>Actualizar menú</Text>}
+              </TouchableOpacity>
+              {mensajeMenu && <Text style={mensajeMenu.ok ? estilos.ok : estilos.error}>{mensajeMenu.texto}</Text>}
+              <View style={estilos.metaMenu}>
+                <Text style={estilos.metaMenuTexto}>
+                  Última actualización: {ultimaActualizacionMenu ? formatearFecha(ultimaActualizacionMenu) : "Nunca"}
+                </Text>
+                <Text style={estilos.metaMenuTexto}>
+                  Productos sincronizados: {productosSincronizados ?? "—"}
+                </Text>
+              </View>
+            </>
+          )}
+
+          <TouchableOpacity
+            style={[estilos.boton, (guardando || !ip.trim() || !pto.trim()) && estilos.botonDeshabilitado]}
+            onPress={guardar}
+            disabled={guardando || !ip.trim() || !pto.trim()}
+          >
+            {guardando ? <ActivityIndicator color="#fff" /> : <Text style={estilos.botonTexto}>Guardar</Text>}
+          </TouchableOpacity>
+
+          {onCancelar && (
+            <TouchableOpacity style={estilos.cancelar} onPress={onCancelar}>
+              <Text style={estilos.cancelarTexto}>Cancelar</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
-    </View>
+    </ImageBackground>
   );
 }
 
@@ -192,7 +202,10 @@ function FilaEstado({
 
 function crearEstilos(colores: ReturnType<typeof usarColores>) {
   return StyleSheet.create({
-    contenedor: { flex: 1, backgroundColor: colores.navy, alignItems: "center", justifyContent: "center", padding: 20 },
+    fondo: { flex: 1 },
+    // El color de fondo real lo pone el `velo` (inline, según tema) sobre esta misma vista —
+    // así la tarjeta de encima sigue siendo legible sobre la foto en cualquiera de los dos temas.
+    contenedor: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
     tarjeta: { backgroundColor: colores.superficie, borderRadius: 20, padding: 24, width: "100%", maxWidth: 420 },
     titulo: { fontSize: 24, fontWeight: "800", color: colores.navyTexto, textAlign: "center", letterSpacing: 1 },
     subtitulo: { textAlign: "center", color: colores.textoSecundario, marginBottom: 14, fontWeight: "600" },

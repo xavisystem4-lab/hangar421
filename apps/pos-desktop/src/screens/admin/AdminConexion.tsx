@@ -11,8 +11,18 @@ interface InfoConexion {
 interface TabletConectada {
   dispositivoId?: string;
   usuarioNombre?: string;
+  tipoDispositivo?: string;
   ip: string;
   conectadoDesde: string;
+}
+
+/** Ícono + etiqueta del tipo de dispositivo — lo manda la app de Meseros según
+ *  `useDispositivo().esTablet` (ver App.tsx del waiter-mobile). "otro" cubre versiones viejas
+ *  de la app que todavía no mandan este dato. */
+function etiquetaDispositivo(tipo?: string): { icono: string; texto: string } {
+  if (tipo === "tablet") return { icono: "📟", texto: "Tablet" };
+  if (tipo === "celular") return { icono: "📱", texto: "Celular" };
+  return { icono: "❔", texto: "Dispositivo" };
 }
 
 function tiempoTranscurrido(iso: string): string {
@@ -197,22 +207,26 @@ export function AdminConexion() {
         )}
         {tablets && tablets.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {tablets.map((t, i) => (
-              <div
-                key={t.dispositivoId ?? i}
-                style={{
-                  display: "flex", justifyContent: "space-between", alignItems: "center",
-                  background: "var(--h421-gray-50)", borderRadius: 10, padding: "10px 14px",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 4, background: "var(--h421-green)", display: "inline-block" }} />
-                  <strong style={{ fontSize: 14 }}>{t.usuarioNombre ?? "Mesero"}</strong>
+            {tablets.map((t, i) => {
+              const dispositivo = etiquetaDispositivo(t.tipoDispositivo);
+              return (
+                <div
+                  key={t.dispositivoId ?? i}
+                  style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    background: "var(--h421-gray-50)", borderRadius: 10, padding: "10px 14px",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 4, background: "var(--h421-green)", display: "inline-block" }} />
+                    <strong style={{ fontSize: 14 }}>{t.usuarioNombre ?? "Mesero"}</strong>
+                    <span style={{ fontSize: 12, color: "var(--h421-gray-400)" }}>{dispositivo.icono} {dispositivo.texto}</span>
+                  </div>
+                  <span style={{ fontFamily: "monospace", fontSize: 13, color: "var(--h421-gray-400)" }}>{t.ip}</span>
+                  <span style={{ fontSize: 12, color: "var(--h421-gray-400)" }}>{tiempoTranscurrido(t.conectadoDesde)}</span>
                 </div>
-                <span style={{ fontFamily: "monospace", fontSize: 13, color: "var(--h421-gray-400)" }}>{t.ip}</span>
-                <span style={{ fontSize: 12, color: "var(--h421-gray-400)" }}>{tiempoTranscurrido(t.conectadoDesde)}</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
