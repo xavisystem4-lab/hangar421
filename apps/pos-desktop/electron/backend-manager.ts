@@ -93,6 +93,7 @@ export async function iniciarBackendEmbebido(logIn: (msg: string) => void, puert
     log("Inicializando PostgreSQL (initdb)…");
     await conTimeout(pg.initialise(), 90_000, mensajeTimeoutPg);
   }
+  limpiarLockStaleSiCorresponde(pgDataDir, log);
   log("Arrancando PostgreSQL…");
   // embedded-postgres rechaza esta promesa sin ningún Error (`reject()` a secas) si el proceso
   // de Postgres se cierra antes de terminar de arrancar — normalizamos acá para no propagar un
@@ -205,6 +206,43 @@ function verificarArchivosNecesarios(resourcesDir: string, nodeBin: string, log:
         `Historial de protección, restaura lo puesto en cuarentena y agrega una exclusión para ` +
         `la carpeta de instalación. Archivos faltantes: ${faltantes.join("; ")}`,
     );
+  }
+}
+
+/** Si Postgres se apagó de forma abrupta (la app cerrada a la fuerza desde el Administrador de
+ *  tareas, una VM apagada/revertida sin pasar por Windows, un corte de luz) el `before-quit` de
+ *  main.ts nunca llega a correr `pg.stop()`, así que puede quedar un `postmaster.pid` en el
+ *  directorio de datos apuntando a un proceso que ya no existe. Postgres, sobre todo en Windows,
+ *  no siempre distingue bien ese caso de uno donde SÍ hay otro Postgres corriendo contra los
+ *  mismos datos, y puede negarse a arrancar con justo el error "se cerró inesperadamente al
+ *  arrancar" que este cambio busca evitar. Se borra el lock SOLO si el PID que contiene ya no
+ *  corresponde a ningún proceso vivo — si sigue vivo, se deja intacto a propósito (evita correr
+ *  dos Postgres embebidos a la vez contra la misma carpeta, lo que sí corrompería datos). */
+function limpiarLockStaleSiCorresponde(pgDataDir: string, log: (msg: string) => void) {
+  const lockPath = path.join(pgDataDir, "postmaster.pid");
+  if (!fs.existsSync(lockPath)) return;
+  try {
+    const pid = parseInt(fs.readFileSync(lockPath, "utf-8").split("\n")[0], 10);
+    if (!Number.isFinite(pid)) return;
+    if (procesoEnEjecucion(pid)) {
+      log(`[postgres] postmaster.pid apunta a un proceso todavía activo (pid ${pid}) — no se toca.`);
+      return;
+    }
+    log(`[postgres] postmaster.pid quedó de un cierre abrupto anterior (pid ${pid} ya no existe) — se borra para permitir un arranque limpio.`);
+    fs.unlinkSync(lockPath);
+  } catch (e: any) {
+    log(`[postgres] no se pudo revisar postmaster.pid: ${e.message}`);
+  }
+}
+
+/** `process.kill(pid, 0)` no envía ninguna señal real — solo comprueba si el proceso existe
+ *  (lanza ESRCH/EPERM si no). Funciona igual en Windows (Node lo emula) que en macOS/Linux. */
+function procesoEnEjecucion(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
   }
 }
 
