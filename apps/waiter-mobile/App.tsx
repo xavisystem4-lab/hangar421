@@ -77,6 +77,16 @@ export default function App() {
   const { esTablet } = useDispositivo();
   const estilos = crearEstilos(colores, esTablet);
 
+  // `sync.estado` por sí solo NO detecta que la Estación se cayó si la cola offline está
+  // vacía: procesarCola() (syncEngine.ts) solo hace un fetch real cuando hay algo pendiente
+  // que sincronizar — si todo se mandó al vuelo, cada 8s simplemente reafirma "SYNCED" sin
+  // volver a preguntarle al servidor, así que el header se quedaría en verde para siempre
+  // aunque se apague la PC. `conexion.estado` sí verifica de verdad cada 15s (heartbeat de
+  // conexionStore, corre toda la sesión — ver el useEffect de arriba), así que es la señal
+  // que manda para decidir "desconectado"; se combina con un intento real de sync que sí
+  // falló (OFFLINE) para no esperar hasta el siguiente heartbeat en ese caso.
+  const desconectadoDeVeras = conexion.estado === "error" || sync.estado === "OFFLINE";
+
   function cerrarSesion() {
     // Confirmación simple — un toque accidental en medio de un pedido perdería lo que el mesero
     // llevaba capturado en esa pantalla (el borrador del pedido solo vive en memoria hasta que
@@ -144,14 +154,14 @@ export default function App() {
           <Text
             style={[
               estilos.headerSync,
-              { color: sync.estado === "SYNCED" ? colores.green : sync.estado === "SYNCING" ? colores.amber : colores.red },
+              { color: desconectadoDeVeras ? colores.red : sync.estado === "SYNCING" ? colores.amber : colores.green },
             ]}
           >
-            {sync.estado === "SYNCED"
-              ? "● Conectado"
+            {desconectadoDeVeras
+              ? `● Desconectado (${sync.pendientes})`
               : sync.estado === "SYNCING"
                 ? "● Sincronizando…"
-                : `● Desconectado (${sync.pendientes})`}
+                : "● Conectado"}
           </Text>
           <TouchableOpacity onPress={tema.alternar} style={estilos.botonTema}>
             <Text style={estilos.botonTemaTexto}>{tema.tema === "oscuro" ? "☀️" : "🌙"}</Text>
