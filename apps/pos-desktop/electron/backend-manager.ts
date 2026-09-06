@@ -158,7 +158,7 @@ export async function iniciarBackendEmbebido(logIn: (msg: string) => void, puert
     // más procesos zombie acumulándose (y, de paso, ocupando el puerto 3000, forzando al
     // siguiente intento a caer a uno aleatorio en vez de reutilizar el fijo).
     log("Arranque fallido — limpiando el backend/Postgres que ya se habían levantado…");
-    await detener(proceso, pg, pgCtlPath, pgDataDir, log).catch((e2: Error) =>
+    await detener(proceso, pg, pgCtlPath, pgDataDir, url, log).catch((e2: Error) =>
       log(`[backend] error al limpiar tras un arranque fallido: ${e2.message}`),
     );
     throw e;
