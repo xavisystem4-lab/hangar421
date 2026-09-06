@@ -165,10 +165,24 @@ export const useConexionStore = create<ConexionState>((set, get) => ({
     try {
       const controlador = new AbortController();
       const limite = setTimeout(() => controlador.abort(), TIMEOUT_MS);
-      const res = await fetch(`${baseUrl(host, puerto)}/api/v1/health`, { signal: controlador.signal });
+      // El header (App.tsx) solo pinta "Desconectado" cuando `estado === "error"" — mientras
+      // esté en "verificando" se sigue viendo como conectado. `AbortController.abort()` debería
+      // bastar para que `fetch` rechace a tiempo, pero en Android a veces NO cancela de verdad
+      // una conexión atascada a nivel nativo (ej. intentando conectar a una IP que ya no
+      // responde nada, ni siquiera un rechazo) — si eso pasa, `fetch` nunca resuelve ni rechaza,
+      // `estado` se queda pegado en "verificando" para siempre, y el header se ve "conectado"
+      // indefinidamente aunque la Estación lleve rato apagada. Esta carrera contra un timeout
+      // independiente del propio AbortController garantiza que `verificar()` SIEMPRE termine
+      // (resuelto o no el fetch de verdad a nivel nativo) dentro de TIMEOUT_MS + margen.
+      const resultado = await Promise.race([
+        fetch(`${baseUrl(host, puerto)}/api/v1/health`, { signal: controlador.signal }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(Object.assign(new Error("Tiempo de espera agotado"), { name: "AbortError" })), TIMEOUT_MS + 1000),
+        ),
+      ]);
       clearTimeout(limite);
-      if (!res.ok) throw new Error(`La Estación respondió con error ${res.status}`);
-      const body = await res.json().catch(() => ({}));
+      if (!resultado.ok) throw new Error(`La Estación respondió con error ${resultado.status}`);
+      const body = await resultado.json().catch(() => ({}));
       set({ estado: "conectado", ultimoError: null, ultimaVerificacion: Date.now(), nombreEstacion: body?.empresa ?? null });
       return true;
     } catch (e: any) {
