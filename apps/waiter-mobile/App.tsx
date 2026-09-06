@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Alert, SafeAreaView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useDispositivo } from "./src/hooks/useDispositivo";
-import type { Mesa } from "@hangar421/shared";
+import { WS_EVENTS, type Mesa } from "@hangar421/shared";
 import { useAuthStore } from "./src/store/authStore";
 import { useSyncStore } from "./src/store/syncStore";
 import { useConexionStore } from "./src/store/conexionStore";
@@ -70,10 +70,33 @@ export default function App() {
   // pestaña esté parado.
   const { esTablet } = useDispositivo();
 
+  // Señal "dura" de sesión con el software de PC: el propio socket de Socket.IO ES la sesión
+  // (ver api/socket.ts) — sus eventos nativos "connect"/"disconnect" reflejan de verdad si la
+  // conexión con el backend embebido sigue viva, con el heartbeat de transporte (ping/pong,
+  // ver pingInterval/pingTimeout en realtime.gateway.ts) detectando solo cualquier caída
+  // (proceso terminado, apagón, red caída) en ~18s peor caso — mucho más rápido y confiable que
+  // el poll HTTP de conexionStore (15s + hasta 5s de timeout cada vez).
+  const [socketConectado, setSocketConectado] = useState(false);
+  // Distingue un cierre LIMPIO avisado por el propio software (WS_EVENTS.SERVIDOR_CERRANDO) de
+  // una caída silenciosa detectada solo por el heartbeat — puramente para mostrar un mensaje
+  // más preciso en el header, no cambia la lógica de desconexión en sí.
+  const [cerradoPorServidor, setCerradoPorServidor] = useState(false);
+
   useEffect(() => {
     if (!auth.usuario || !auth.sucursalId || !auth.dispositivoId) return;
-    conectarSocket(auth.sucursalId, auth.usuario.id, auth.usuario.nombre, auth.dispositivoId, esTablet ? "tablet" : "celular");
-    return () => desconectarSocket();
+    const socket = conectarSocket(auth.sucursalId, auth.usuario.id, auth.usuario.nombre, auth.dispositivoId, esTablet ? "tablet" : "celular");
+    const manejarConectar = () => { setSocketConectado(true); setCerradoPorServidor(false); };
+    const manejarDesconectar = () => setSocketConectado(false);
+    const manejarCierreServidor = () => setCerradoPorServidor(true);
+    socket.on("connect", manejarConectar);
+    socket.on("disconnect", manejarDesconectar);
+    socket.on(WS_EVENTS.SERVIDOR_CERRANDO, manejarCierreServidor);
+    return () => {
+      socket.off("connect", manejarConectar);
+      socket.off("disconnect", manejarDesconectar);
+      socket.off(WS_EVENTS.SERVIDOR_CERRANDO, manejarCierreServidor);
+      desconectarSocket();
+    };
   }, [auth.usuario, auth.sucursalId, auth.dispositivoId, esTablet]);
 
   const estilos = crearEstilos(colores, esTablet);
@@ -81,12 +104,10 @@ export default function App() {
   // `sync.estado` por sí solo NO detecta que la Estación se cayó si la cola offline está
   // vacía: procesarCola() (syncEngine.ts) solo hace un fetch real cuando hay algo pendiente
   // que sincronizar — si todo se mandó al vuelo, cada 8s simplemente reafirma "SYNCED" sin
-  // volver a preguntarle al servidor, así que el header se quedaría en verde para siempre
-  // aunque se apague la PC. `conexion.estado` sí verifica de verdad cada 15s (heartbeat de
-  // conexionStore, corre toda la sesión — ver el useEffect de arriba), así que es la señal
-  // que manda para decidir "desconectado"; se combina con un intento real de sync que sí
-  // falló (OFFLINE) para no esperar hasta el siguiente heartbeat en ese caso.
-  const desconectadoDeVeras = conexion.estado === "error" || sync.estado === "OFFLINE";
+  // volver a preguntarle al servidor. `conexion.estado` verifica de verdad cada 15s (heartbeat
+  // de conexionStore), pero la señal más rápida y confiable es la sesión de socket en sí
+  // (`socketConectado`, arriba) — se combinan las tres para nunca depender de una sola.
+  const desconectadoDeVeras = !socketConectado || conexion.estado === "error" || sync.estado === "OFFLINE";
 
   function cerrarSesion() {
     // Confirmación simple — un toque accidental en medio de un pedido perdería lo que el mesero
@@ -159,7 +180,9 @@ export default function App() {
             ]}
           >
             {desconectadoDeVeras
-              ? `● Desconectado (${sync.pendientes})`
+              ? cerradoPorServidor
+                ? "● Software cerrado"
+                : `● Desconectado (${sync.pendientes})`
               : sync.estado === "SYNCING"
                 ? "● Sincronizando…"
                 : "● Conectado"}
