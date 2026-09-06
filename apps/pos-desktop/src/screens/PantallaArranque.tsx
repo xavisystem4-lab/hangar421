@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useThemeStore } from "../store/themeStore";
 import logoOscuro from "../assets/logo-dark.png";
 import logoClaro from "../assets/logo-light.png";
+import { BarraActualizacion } from "../components/BarraActualizacion";
 
 /** Hitos del arranque del backend embebido, en el orden real en que los emite
  *  `iniciarBackendEmbebido` (electron/backend-manager.ts vía "backend:onEstado") — mapean el
@@ -50,45 +51,53 @@ export function PantallaArranque({
   const progreso = usarProgreso(mensaje);
 
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "var(--h421-gray-50)", gap: 24, padding: 24 }}>
-      <div style={{ position: "relative", width: "50vw", maxWidth: 640 }}>
-        <img src={tema === "oscuro" ? logoClaro : logoOscuro} alt="HANGAR 421" style={{ width: "100%", height: "auto", display: "block" }} />
-        {/* "POS" sobre el "421" del logo — distingue esta pantalla de la app de Meseros, que
-            usa el mismo wordmark "HANGAR 421" sin esta etiqueta. */}
-        <span
-          style={{
-            position: "absolute", top: "10%", right: "5%", fontSize: "3.2vw", fontWeight: 800,
-            letterSpacing: 2, color: "var(--h421-navy)", textTransform: "uppercase",
-          }}
-        >
-          POS
-        </span>
-      </div>
-
-      {!error && (
-        <>
-          <div style={{ width: 260, height: 8, borderRadius: 4, background: "var(--h421-gray-200)", overflow: "hidden" }}>
-            <div style={{ width: `${progreso}%`, height: "100%", background: "var(--h421-blue)", transition: "width 0.3s ease-out" }} />
+    // Antes, si el arranque se quedaba trabado en error (ej. este mismo bug de Postgres —
+    // "se cerró inesperadamente al arrancar"), no había forma de actualizar a una versión que
+    // ya lo trajera arreglado: la barra de actualización solo vivía en las pantallas de después
+    // del login (ver App.tsx), a las que nunca se llega si el backend no arranca. Ahora vive
+    // aquí también, siempre visible — como en la pantalla de Conexión de la app de Meseros.
+    <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "var(--h421-gray-50)", gap: 24, padding: 24, overflow: "hidden" }}>
+          <div style={{ position: "relative", width: "50vw", maxWidth: 640 }}>
+            <img src={tema === "oscuro" ? logoClaro : logoOscuro} alt="HANGAR 421" style={{ width: "100%", height: "auto", display: "block" }} />
+            {/* "POS" sobre el "421" del logo — distingue esta pantalla de la app de Meseros, que
+                usa el mismo wordmark "HANGAR 421" sin esta etiqueta. */}
+            <span
+              style={{
+                position: "absolute", top: "10%", right: "5%", fontSize: "3.2vw", fontWeight: 800,
+                letterSpacing: 2, color: "var(--h421-navy)", textTransform: "uppercase",
+              }}
+            >
+              POS
+            </span>
           </div>
-          <p style={{ color: "var(--h421-gray-400)", fontSize: 14 }}>{mensaje}</p>
-        </>
-      )}
 
-      {error && (
-        <div style={{ maxWidth: 520, textAlign: "center" }}>
-          <p style={{ color: "var(--h421-red)", fontSize: 14, lineHeight: 1.5 }}>⚠ {error}</p>
-          <p style={{ color: "var(--h421-gray-400)", fontSize: 12, marginTop: 8 }}>
-            Detalle completo en <code>%APPDATA%\HANGAR 421 POS\local-data\arranque.log</code>
-          </p>
-          <button
-            onClick={onReintentar}
-            className="btn-grande"
-            style={{ marginTop: 16, background: "var(--h421-navy)", color: "#fff", padding: "0 28px" }}
-          >
-            ⟳ Reintentar
-          </button>
-        </div>
-      )}
+          {!error && (
+            <>
+              <div style={{ width: 260, height: 8, borderRadius: 4, background: "var(--h421-gray-200)", overflow: "hidden" }}>
+                <div style={{ width: `${progreso}%`, height: "100%", background: "var(--h421-blue)", transition: "width 0.3s ease-out" }} />
+              </div>
+              <p style={{ color: "var(--h421-gray-400)", fontSize: 14 }}>{mensaje}</p>
+            </>
+          )}
+
+          {error && (
+            <div style={{ maxWidth: 520, textAlign: "center" }}>
+              <p style={{ color: "var(--h421-red)", fontSize: 14, lineHeight: 1.5 }}>⚠ {error}</p>
+              <p style={{ color: "var(--h421-gray-400)", fontSize: 12, marginTop: 8 }}>
+                Detalle completo en <code>%APPDATA%\HANGAR 421 POS\local-data\arranque.log</code>
+              </p>
+              <button
+                onClick={onReintentar}
+                className="btn-grande"
+                style={{ marginTop: 16, background: "var(--h421-navy)", color: "#fff", padding: "0 28px" }}
+              >
+                ⟳ Reintentar
+              </button>
+            </div>
+          )}
+      </div>
+      <BarraActualizacion />
     </div>
   );
 }
