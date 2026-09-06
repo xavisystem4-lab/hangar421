@@ -74,14 +74,18 @@ export async function iniciarBackendEmbebido(logIn: (msg: string) => void, puert
   const yaInicializado = fs.existsSync(path.join(pgDataDir, "PG_VERSION"));
   log(yaInicializado ? "Base de datos local existente — iniciando…" : "Primera vez — creando base de datos local…");
 
+  // Buffer chico de las últimas líneas que reporta postgres.exe — permite reconocer causas
+  // conocidas y dar un mensaje de error específico en vez de "revisa el log a mano" (ver el
+  // .catch() de pg.start() más abajo, caso "administrative permissions").
+  const lineasPostgresRecientes: string[] = [];
   const pg = new EmbeddedPostgres({
     databaseDir: pgDataDir,
     user: "hangar",
     password: secretos.dbPassword,
     port: pgPort,
     persistent: true,
-    onLog: (msg: string) => log(`[postgres] ${msg}`),
-    onError: (msg: string) => log(`[postgres] ${msg}`),
+    onLog: (msg: string) => { lineasPostgresRecientes.push(msg); log(`[postgres] ${msg}`); },
+    onError: (msg: string) => { lineasPostgresRecientes.push(msg); log(`[postgres] ${msg}`); },
   });
 
   const mensajeTimeoutPg =
@@ -103,6 +107,24 @@ export async function iniciarBackendEmbebido(logIn: (msg: string) => void, puert
   // (viene del `onLog`/`onError` de embedded-postgres con la salida de postgres.exe).
   await conTimeout(pg.start(), 45_000, mensajeTimeoutPg).catch((e) => {
     if (e instanceof Error) throw e;
+    // Caso conocido y confirmado en producción: Postgres se niega por diseño a arrancar si el
+    // proceso que lo lanza tiene privilegios de Administrador de Windows (protección de
+    // seguridad del propio Postgres, no configurable) — pasa si el acceso directo del POS tiene
+    // marcado "Ejecutar como administrador", o si se inició sesión en Windows con la cuenta
+    // "Administrador" integrada (que siempre corre elevada, a diferencia de una cuenta normal
+    // del grupo Administradores). Sin este caso especial, el usuario tenía que mandar el log
+    // completo para que alguien reconociera este mensaje exacto de postgres.exe.
+    const corrioComoAdmin = lineasPostgresRecientes.some((l) => /administrative permissions|running as root/i.test(l));
+    if (corrioComoAdmin) {
+      throw new Error(
+        "PostgreSQL no puede arrancar porque HANGAR 421 POS se está ejecutando con permisos de " +
+          "Administrador de Windows — Postgres lo bloquea por seguridad, no es configurable. " +
+          "Solución: clic derecho en el acceso directo de HANGAR 421 POS → Propiedades → " +
+          "pestaña Acceso directo → Opciones avanzadas, y desmarca \"Ejecutar como administrador\" " +
+          "si está marcado. Si iniciaste sesión en Windows con la cuenta \"Administrador\" " +
+          "integrada, hace falta usar una cuenta de usuario normal en su lugar.",
+      );
+    }
     throw new Error(
       "PostgreSQL local se cerró inesperadamente al arrancar. Revisa las líneas [postgres] " +
         "justo arriba de esta en local-data/arranque.log para ver el motivo exacto (puerto " +
