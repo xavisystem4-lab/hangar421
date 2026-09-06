@@ -12,6 +12,22 @@ export function configurarAutoUpdater(obtenerVentana: () => BrowserWindow | null
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
+  // Sin empaquetar (`npm run dev`), electron-updater por defecto ni siquiera intenta
+  // checkForUpdates() — falla con "app is not packaged" antes de disparar ningún evento, y el
+  // footer se quedaba pegado en "Buscando actualizaciones…" para siempre (o, con el guard
+  // anterior, mostraba directo un error genérico). `forceDevUpdateConfig` + `dev-app-update.yml`
+  // (mismo `provider`/`owner`/`repo` que `package.json > build.publish`) es el mecanismo
+  // documentado de electron-updater para probar el flujo real de actualización en desarrollo.
+  //
+  // OJO: esto solo puede encontrar un release real en una PC Windows (el único target que
+  // publica este proyecto — ver package.json > build.win). Corriendo en cualquier otra
+  // plataforma (ej. esta Mac de desarrollo) seguirá fallando, ahora con el propio error de
+  // electron-updater ("no se encontró latest-mac.yml" o similar) en vez del mensaje genérico de
+  // antes — no hay ningún artefacto de Mac publicado para encontrar.
+  if (!app.isPackaged) {
+    autoUpdater.forceDevUpdateConfig = true;
+  }
+
   const emitir = (tipo: string, data?: unknown) => {
     obtenerVentana()?.webContents.send("updater:evento", { tipo, data });
   };
@@ -26,17 +42,6 @@ export function configurarAutoUpdater(obtenerVentana: () => BrowserWindow | null
   autoUpdater.on("error", (err) => emitir("error", { mensaje: err.message }));
 
   ipcMain.handle("updater:verificar", async () => {
-    // electron-updater necesita un build EMPAQUETADO (app.isPackaged) — el feed de GitHub
-    // Releases solo trae artefactos de Windows (NSIS), así que en una app sin empaquetar
-    // corriendo en cualquier plataforma (`npm run dev`, incluida una Mac de prueba)
-    // `checkForUpdates()` no dispara ningún evento y el footer se queda pegado en "Buscando
-    // actualizaciones…" para siempre. Se corta acá con un mensaje claro en vez de dejarlo
-    // colgado — en producción (PC Windows con el .exe instalado) `isPackaged` siempre es true,
-    // así que este guard nunca aplica ahí.
-    if (!app.isPackaged) {
-      emitir("error", { mensaje: "La auto-actualización no está disponible en modo desarrollo." });
-      return;
-    }
     try {
       await autoUpdater.checkForUpdates();
     } catch (e: any) {
