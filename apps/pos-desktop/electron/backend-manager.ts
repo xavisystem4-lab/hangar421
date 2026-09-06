@@ -155,7 +155,7 @@ export async function iniciarBackendEmbebido(logIn: (msg: string) => void, puert
   return {
     url,
     puerto: backendPort,
-    detener: () => detener(proceso, pg, pgCtlPath, pgDataDir, log),
+    detener: () => detener(proceso, pg, pgCtlPath, pgDataDir, url, log),
   };
 }
 
@@ -164,9 +164,14 @@ async function detener(
   pg: any,
   pgCtlPath: string | null,
   pgDataDir: string,
+  url: string,
   log: (msg: string) => void,
 ): Promise<void> {
   log("Deteniendo backend local…");
+  // Aviso de cierre LIMPIO a las apps de Meseros conectadas (ver WS_EVENTS.SERVIDOR_CERRANDO,
+  // realtime.gateway.ts) — best-effort: si falla o tarda, no debe bloquear ni romper el cierre
+  // de la app (ej. el backend ya murió por otra razón, o el endpoint no llegó a levantar).
+  await anunciarCierreAlBackend(url, log);
   await new Promise<void>((resolve) => {
     if (!proceso.pid || proceso.exitCode !== null) return resolve();
     proceso.once("exit", () => resolve());
@@ -190,6 +195,33 @@ async function detener(
   if (!detenidoLimpio) {
     await pg.stop().catch((e: Error) => log(`[postgres] error al detener: ${e.message}`));
   }
+}
+
+/** POST /api/v1/realtime/anunciar-cierre — le avisa al gateway de tiempo real que emita
+ *  WS_EVENTS.SERVIDOR_CERRANDO a todas las apps de Meseros conectadas, ANTES de matar el
+ *  proceso del backend. Deliberadamente best-effort y con timeout corto: si el backend ya no
+ *  responde (crasheó antes de llegar aquí, por ejemplo), o tarda, el cierre de la app debe
+ *  seguir su curso igual — este aviso es una mejora de UX (que las tablets se enteren de
+ *  inmediato), no algo de lo que dependa el apagado en sí. Un cierre FORZADO (Task Manager, un
+ *  corte de luz) nunca pasa por acá — de esos se entera la tablet sola vía el heartbeat de
+ *  transporte de Socket.IO cuando la conexión se cae sin avisar. */
+function anunciarCierreAlBackend(url: string, log: (msg: string) => void): Promise<void> {
+  return new Promise((resolve) => {
+    const req = http.request(
+      `${url}/api/v1/realtime/anunciar-cierre`,
+      { method: "POST", timeout: 2_000 },
+      (res) => {
+        res.resume();
+        resolve();
+      },
+    );
+    req.on("timeout", () => req.destroy());
+    req.on("error", (e) => {
+      log(`[backend] no se pudo avisar el cierre a las apps de Meseros (${e.message}) — se sigue con el apagado`);
+      resolve();
+    });
+    req.end();
+  });
 }
 
 function detenerConPgCtl(pgCtlPath: string, pgDataDir: string, log: (msg: string) => void): Promise<boolean> {

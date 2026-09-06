@@ -12,8 +12,17 @@ interface TabletConectada {
   dispositivoId?: string;
   usuarioNombre?: string;
   tipoDispositivo?: string;
+  /** = socketId del backend — identifica la SESIÓN viva actual, no el dispositivo en sí (se
+   *  regenera en cada reconexión). Se muestra en chico, sobre todo para depuración. */
+  socketId: string;
+  appVersion?: string;
+  so?: string;
   ip: string;
   conectadoDesde: string;
+  /** Última prueba de vida a nivel de aplicación (ver "mesero:heartbeat" en
+   *  realtime.gateway.ts) — no confundir con la detección de desconexión en sí, que hace sola
+   *  el heartbeat de transporte de Socket.IO sin necesitar este dato. */
+  ultimoHeartbeat: string;
 }
 
 /** Ícono + etiqueta del tipo de dispositivo — lo manda la app de Meseros según
@@ -31,6 +40,20 @@ function tiempoTranscurrido(iso: string): string {
   if (minutos < 60) return `hace ${minutos} min`;
   const horas = Math.floor(minutos / 60);
   return `hace ${horas}h ${minutos % 60}min`;
+}
+
+function formatearFechaHora(iso: string): string {
+  const d = new Date(iso);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${dd}/${mm}/${d.getFullYear()} ${hh}:${mi}`;
+}
+
+function formatearHora(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleTimeString("es-MX", { hour12: false });
 }
 
 /** IP LAN de esta PC + puerto del backend embebido — el dato exacto que hay que capturar en el
@@ -195,15 +218,17 @@ export function AdminConexion() {
       </p>
 
       <div style={{ marginTop: 28, paddingTop: 20, borderTop: "1px solid var(--h421-gray-200)" }}>
-        <h3 style={{ margin: "0 0 4px", fontSize: 14 }}>Tablets conectadas ahora mismo</h3>
+        <h3 style={{ margin: "0 0 4px", fontSize: 14 }}>Dispositivos Meseros Conectados</h3>
         <p style={{ color: "var(--h421-gray-400)", fontSize: 12, marginTop: 0, marginBottom: 12, lineHeight: 1.5 }}>
-          Se actualiza sola cada 10s. Si un mesero no aparece aquí, revisa que su app tenga sesión iniciada y esté
-          conectada a esta misma Estación.
+          Cada tablet/celular con sesión real y viva contra esta Estación (no un simple chequeo de IP) — se
+          actualiza sola cada 10s. En cuanto se cierra la app, se pierde la red, o este software se apaga, el
+          dispositivo desaparece de esta lista solo. Si un mesero no aparece aquí, revisa que su app tenga sesión
+          iniciada y esté conectada a esta misma Estación.
         </p>
 
         {tablets === null && <p style={{ color: "var(--h421-gray-400)", fontSize: 13 }}>Buscando…</p>}
         {tablets && tablets.length === 0 && (
-          <p style={{ color: "var(--h421-gray-400)", fontSize: 13 }}>Ninguna tablet de mesero conectada ahora mismo.</p>
+          <p style={{ color: "var(--h421-gray-400)", fontSize: 13 }}>Ningún dispositivo de mesero conectado ahora mismo.</p>
         )}
         {tablets && tablets.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -212,18 +237,25 @@ export function AdminConexion() {
               return (
                 <div
                   key={t.dispositivoId ?? i}
-                  style={{
-                    display: "flex", justifyContent: "space-between", alignItems: "center",
-                    background: "var(--h421-gray-50)", borderRadius: 10, padding: "10px 14px",
-                  }}
+                  style={{ background: "var(--h421-gray-50)", borderRadius: 10, padding: "10px 14px" }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: 4, background: "var(--h421-green)", display: "inline-block" }} />
-                    <strong style={{ fontSize: 14 }}>{t.usuarioNombre ?? "Mesero"}</strong>
-                    <span style={{ fontSize: 12, color: "var(--h421-gray-400)" }}>{dispositivo.icono} {dispositivo.texto}</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 4, background: "var(--h421-green)", display: "inline-block" }} />
+                      <strong style={{ fontSize: 14 }}>{t.usuarioNombre ?? "Mesero"}</strong>
+                      <span style={{ fontSize: 12, color: "var(--h421-gray-400)" }}>{dispositivo.icono} {dispositivo.texto}</span>
+                      {t.appVersion && <span style={{ fontSize: 11, color: "var(--h421-gray-400)" }}>APK v{t.appVersion}</span>}
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "var(--h421-green)" }}>🟢 CONECTADO</span>
                   </div>
-                  <span style={{ fontFamily: "monospace", fontSize: 13, color: "var(--h421-gray-400)" }}>{t.ip}</span>
-                  <span style={{ fontSize: 12, color: "var(--h421-gray-400)" }}>{tiempoTranscurrido(t.conectadoDesde)}</span>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 16px", marginTop: 6, fontSize: 12, color: "var(--h421-gray-400)" }}>
+                    <span>IP: <span style={{ fontFamily: "monospace" }}>{t.ip}</span></span>
+                    <span>Conectado: {formatearFechaHora(t.conectadoDesde)} ({tiempoTranscurrido(t.conectadoDesde)})</span>
+                    <span>Último heartbeat: {formatearHora(t.ultimoHeartbeat)}</span>
+                  </div>
+                  <div style={{ marginTop: 4, fontSize: 10, fontFamily: "monospace", color: "var(--h421-gray-400)", opacity: 0.7 }}>
+                    SESSION: {t.socketId}
+                  </div>
                 </div>
               );
             })}
