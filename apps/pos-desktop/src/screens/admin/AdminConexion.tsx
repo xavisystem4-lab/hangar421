@@ -194,11 +194,11 @@ export function AdminConexion() {
               </strong>
             </p>
             <label style={{ display: "block", fontSize: 12, color: "var(--h421-gray-400)" }}>
-              URL del backend en la nube
+              URL del backend en la nube (sin <code>/api/v1</code> al final — la app lo agrega sola)
               <input
                 value={nubeUrlInput}
                 onChange={(e) => setNubeUrlInput(e.target.value)}
-                placeholder="https://hangar421backend-production.up.railway.app/api/v1"
+                placeholder="https://hangar421backend-production.up.railway.app"
                 style={{ width: "100%", marginTop: 4, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)", fontFamily: "monospace", fontSize: 13 }}
               />
             </label>

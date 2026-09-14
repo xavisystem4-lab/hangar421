@@ -56,8 +56,16 @@ process.on("unhandledRejection", (reason) => {
  *  - En desarrollo, no se levanta nada aquí — se usa el backend corrido aparte (`npm run dev:backend`),
  *    el renderer cae a VITE_API_URL (localhost:3000 por defecto). */
 async function resolverBackend(log: (msg: string) => void): Promise<string | null> {
-  const cloudUrl = process.env.HANGAR_CLOUD_API_URL || obtenerConfig(CLAVE_CLOUD_URL);
-  if (cloudUrl) {
+  const cloudUrlCruda = process.env.HANGAR_CLOUD_API_URL || obtenerConfig(CLAVE_CLOUD_URL);
+  if (cloudUrlCruda) {
+    // El renderer arma la URL final como `${url}/api/v1` (ver App.tsx) — este valor debe ser el
+    // origen pelado, sin `/api/v1` ni slash final. Error real en producción: un Admin (siguiendo
+    // una instrucción nuestra equivocada) guardó la URL CON el sufijo `/api/v1` incluido, y
+    // terminó pegándose dos veces (`/api/v1/api/v1/...`, 404 en cada llamada). Se normaliza acá,
+    // en el único lugar por donde pasa tanto la variable de entorno como lo guardado desde
+    // Administración → "Backend en la nube", para que no importe si alguien la vuelve a pegar
+    // con el sufijo — sigue funcionando igual.
+    const cloudUrl = cloudUrlCruda.trim().replace(/\/+$/, "").replace(/\/api\/v1$/i, "");
     log(`Usando backend cloud configurado: ${cloudUrl}`);
     return cloudUrl;
   }
