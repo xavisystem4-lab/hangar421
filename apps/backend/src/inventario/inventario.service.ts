@@ -7,12 +7,66 @@ import { RealtimeGateway } from "../realtime/realtime.gateway";
 export class InventarioService {
   constructor(private prisma: PrismaService, private realtime: RealtimeGateway) {}
 
-  listarInsumos(empresaId: string) {
-    return this.prisma.insumo.findMany({ where: { empresaId, activo: true }, orderBy: { nombre: "asc" } });
+  async listarInsumos(empresaId: string) {
+    const insumos = await this.prisma.insumo.findMany({
+      where: { empresaId, activo: true },
+      include: { proveedor: true },
+      orderBy: { nombre: "asc" },
+    });
+    // Number(...): costoUnitario/precioVenta son Decimal de Prisma — se serializan a JSON como
+    // string si se devuelven crudos (ver PedidosPorCobrar.tsx, mismo bug de fondo ya corregido
+    // ahí). Se convierten aquí, en el único lugar por el que pasan las respuestas de insumos.
+    return insumos.map((i) => ({
+      ...i,
+      costoUnitario: Number(i.costoUnitario),
+      precioVenta: i.precioVenta != null ? Number(i.precioVenta) : null,
+    }));
   }
 
-  crearInsumo(data: { empresaId: string; nombre: string; unidadMedida: string; costoUnitario?: number }) {
-    return this.prisma.insumo.create({ data });
+  /** Crea el insumo y, si se dan mínimo/máximo, siembra el registro de inventario (existencia 0)
+   *  en TODAS las sucursales de la empresa con ese mismo mínimo/máximo — así, al dar de alta un
+   *  insumo, el admin ya no tiene que ir sucursal por sucursal a fijarlo a mano (ver
+   *  fijarMinimo, que sigue disponible aparte para ajustarlo por sucursal después). */
+  async crearInsumo(data: {
+    empresaId: string;
+    nombre: string;
+    unidadMedida: string;
+    costoUnitario?: number;
+    precioVenta?: number;
+    proveedorId?: string;
+    minimo?: number;
+    maximo?: number;
+  }) {
+    const { minimo, maximo, ...insumoData } = data;
+    const insumo = await this.prisma.insumo.create({ data: insumoData });
+
+    if (minimo !== undefined || maximo !== undefined) {
+      const sucursales = await this.prisma.sucursal.findMany({ where: { empresaId: data.empresaId }, select: { id: true } });
+      await this.prisma.$transaction(
+        sucursales.map((s) =>
+          this.prisma.inventarioSucursal.upsert({
+            where: { sucursalId_insumoId: { sucursalId: s.id, insumoId: insumo.id } },
+            update: { minimo: minimo ?? 0, maximo },
+            create: { sucursalId: s.id, insumoId: insumo.id, existencia: 0, minimo: minimo ?? 0, maximo },
+          }),
+        ),
+      );
+    }
+    return insumo;
+  }
+
+  actualizarInsumo(
+    id: string,
+    data: Partial<{
+      nombre: string;
+      unidadMedida: string;
+      costoUnitario: number;
+      precioVenta: number | null;
+      proveedorId: string | null;
+      activo: boolean;
+    }>,
+  ) {
+    return this.prisma.insumo.update({ where: { id }, data });
   }
 
   definirReceta(productoId: string, items: { insumoId: string; cantidad: number }[]) {

@@ -164,6 +164,7 @@ model Empresa {
   productos    Producto[]
   modificadores Modificador[]
   insumos      Insumo[]
+  proveedores  Proveedor[]
   clientes     Cliente[]
   auditLogs    AuditLog[]
 
@@ -629,12 +630,18 @@ model Pago {
 model Insumo {
   id            String  @id @default(uuid())
   empresaId     String
+  proveedorId   String? // opcional: de qué proveedor se compra este insumo
   nombre        String
   unidadMedida  String  // "g", "ml", "pz", "kg", "l"
   costoUnitario Decimal @default(0) @db.Decimal(10, 4)
+  // Precio de venta directa (opcional) — solo aplica a insumos que también se venden tal cual
+  // (ej. agua embotellada, refresco de lata) sin pasar por una receta de producto. null = este
+  // insumo no se vende directo, solo se usa como ingrediente (ver RecetaItem).
+  precioVenta   Decimal? @db.Decimal(10, 2)
   activo        Boolean @default(true)
 
-  empresa Empresa @relation(fields: [empresaId], references: [id])
+  empresa   Empresa    @relation(fields: [empresaId], references: [id])
+  proveedor Proveedor? @relation(fields: [proveedorId], references: [id])
 
   receta        RecetaItem[]
   inventario    InventarioSucursal[]
@@ -642,7 +649,25 @@ model Insumo {
   traspasoItems TraspasoItem[]
 
   @@index([empresaId])
+  @@index([proveedorId])
   @@map("insumos")
+}
+
+model Proveedor {
+  id        String   @id @default(uuid())
+  empresaId String
+  nombre    String
+  telefono  String?
+  email     String?
+  notas     String?
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  empresa Empresa  @relation(fields: [empresaId], references: [id])
+  insumos Insumo[]
+
+  @@index([empresaId])
+  @@map("proveedores")
 }
 
 model RecetaItem {

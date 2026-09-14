@@ -16,6 +16,7 @@ import { PedidosModule } from "./pedidos/pedidos.module";
 import { CocinaModule } from "./cocina/cocina.module";
 import { CajaModule } from "./caja/caja.module";
 import { InventarioModule } from "./inventario/inventario.module";
+import { ProveedoresModule } from "./proveedores/proveedores.module";
 import { TraspasosModule } from "./traspasos/traspasos.module";
 import { ClientesModule } from "./clientes/clientes.module";
 import { ReportesModule } from "./reportes/reportes.module";
@@ -43,6 +44,7 @@ import { AuditInterceptor } from "./common/interceptors/audit.interceptor";
     CocinaModule,
     CajaModule,
     InventarioModule,
+    ProveedoresModule,
     TraspasosModule,
     ClientesModule,
     ReportesModule,

@@ -237,9 +237,23 @@ export interface MovimientoCaja {
 export interface Insumo {
   id: string;
   empresaId: string;
+  proveedorId?: string | null;
   nombre: string;
   unidadMedida: string;
   costoUnitario: number;
+  precioVenta?: number | null;
+  activo?: boolean;
+  proveedor?: Proveedor | null;
+}
+
+export interface Proveedor {
+  id: string;
+  empresaId: string;
+  nombre: string;
+  telefono?: string | null;
+  email?: string | null;
+  notas?: string | null;
+  activo: boolean;
 }
 
 export interface InventarioSucursal {

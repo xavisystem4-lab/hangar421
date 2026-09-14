@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { RolUsuario, TipoMovimientoInventario } from "@hangar421/shared";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
@@ -23,6 +23,15 @@ export class InventarioController {
   @Audit("INSUMO", "CREAR")
   crearInsumo(@Body() body: any) {
     return this.inventario.crearInsumo(body);
+  }
+
+  // También usado para "eliminar" (baja lógica, { activo: false }) — nunca se borra el
+  // registro en sí: conserva el historial de movimientos/receta que ya lo referencian.
+  @Patch("insumos/:id")
+  @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
+  @Audit("INSUMO", "ACTUALIZAR")
+  actualizarInsumo(@Param("id") id: string, @Body() body: any) {
+    return this.inventario.actualizarInsumo(id, body);
   }
 
   @Post("productos/:id/receta")

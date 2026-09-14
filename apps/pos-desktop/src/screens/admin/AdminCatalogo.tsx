@@ -1,19 +1,18 @@
-"use client";
-
 import { useEffect, useState } from "react";
-import type { CategoriaProducto, Producto, Sucursal } from "@hangar421/shared";
-import { apiFetch } from "@/lib/api";
-import { useAuthCrm } from "@/lib/authClient";
+import type { CategoriaProducto, Producto } from "@hangar421/shared";
+import { apiFetch } from "../../api/http";
+import { useAuthStore } from "../../store/authStore";
 
 interface Insumo { id: string; nombre: string; unidadMedida: string }
 interface RecetaItemDto { id: string; insumoId: string; cantidad: string; insumo: { nombre: string; unidadMedida: string } }
 
-export default function CatalogoPage() {
-  const { contexto } = useAuthCrm();
+/** Alta, edición y baja de productos/categorías + receta (qué insumos descuenta cada venta) —
+ *  mismo módulo que apps/crm-web/catalogo, dentro del propio POS. Antes esto solo se podía
+ *  administrar desde el sistema web; el POS no tenía ninguna pantalla de catálogo. */
+export function AdminCatalogo() {
+  const { usuario, sucursalId } = useAuthStore();
   const [categorias, setCategorias] = useState<CategoriaProducto[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
-  const [sucursales, setSucursales] = useState<Sucursal[]>([]);
-  const [sucursalId, setSucursalId] = useState<string>("");
   const [nuevo, setNuevo] = useState({ nombre: "", categoriaId: "", precioBase: "" });
 
   const [insumos, setInsumos] = useState<Insumo[]>([]);
@@ -21,46 +20,37 @@ export default function CatalogoPage() {
   const [receta, setReceta] = useState<RecetaItemDto[]>([]);
   const [nuevoItem, setNuevoItem] = useState({ insumoId: "", cantidad: "" });
 
-  // Edición inline: id del producto que se está editando ahora mismo (null = ninguno), con su
-  // propio borrador de nombre/precio — el mismo patrón que "Nuevo producto" pero en el lugar de
-  // la tarjeta, sin abrir un modal aparte.
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [borrador, setBorrador] = useState({ nombre: "", precioBase: "" });
 
-  async function cargar(suc: string) {
-    if (!contexto) return;
-    const empresaId = contexto.usuario.empresaId;
+  async function cargar() {
+    if (!usuario || !sucursalId) return;
     const [cats, prods] = await Promise.all([
-      apiFetch<CategoriaProducto[]>(`/catalogo/categorias?empresaId=${empresaId}`),
-      apiFetch<Producto[]>(`/catalogo/productos?empresaId=${empresaId}&sucursalId=${suc}`),
+      apiFetch<CategoriaProducto[]>(`/catalogo/categorias?empresaId=${usuario.empresaId}`),
+      apiFetch<Producto[]>(`/catalogo/productos?empresaId=${usuario.empresaId}&sucursalId=${sucursalId}`),
     ]);
     setCategorias(cats);
     setProductos(prods);
   }
 
   useEffect(() => {
-    if (!contexto) return;
-    apiFetch<Sucursal[]>(`/sucursales?empresaId=${contexto.usuario.empresaId}`).then((s) => {
-      setSucursales(s);
-      const activa = s[0]?.id ?? "";
-      setSucursalId(activa);
-      if (activa) cargar(activa);
-    });
-    apiFetch<Insumo[]>(`/inventario/insumos?empresaId=${contexto.usuario.empresaId}`).then((ins) => {
+    if (!usuario) return;
+    cargar();
+    apiFetch<Insumo[]>(`/inventario/insumos?empresaId=${usuario.empresaId}`).then((ins) => {
       setInsumos(ins);
       if (ins[0]) setNuevoItem((n) => ({ ...n, insumoId: ins[0].id }));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contexto]);
+  }, [usuario, sucursalId]);
 
   async function crearProducto() {
-    if (!contexto || !nuevo.nombre || !nuevo.categoriaId) return;
+    if (!usuario || !nuevo.nombre || !nuevo.categoriaId) return;
     await apiFetch("/catalogo/productos", {
       method: "POST",
-      body: JSON.stringify({ empresaId: contexto.usuario.empresaId, categoriaId: nuevo.categoriaId, nombre: nuevo.nombre, precioBase: Number(nuevo.precioBase) }),
+      body: JSON.stringify({ empresaId: usuario.empresaId, categoriaId: nuevo.categoriaId, nombre: nuevo.nombre, precioBase: Number(nuevo.precioBase) }),
     });
     setNuevo({ nombre: "", categoriaId: "", precioBase: "" });
-    cargar(sucursalId);
+    cargar();
   }
 
   function empezarEdicion(p: Producto) {
@@ -75,24 +65,22 @@ export default function CatalogoPage() {
       body: JSON.stringify({ nombre: borrador.nombre, precioBase: Number(borrador.precioBase) }),
     });
     setEditandoId(null);
-    cargar(sucursalId);
+    cargar();
   }
 
-  // Baja lógica (activo: false) — nunca se borra el registro en sí, para no perder el historial
-  // de pedidos/recetas que ya lo referencian (mismo patrón que "Disponible/Agotado" por
-  // sucursal, pero esto lo oculta del catálogo completo, no solo de una sucursal).
   async function eliminarProducto(p: Producto) {
     if (!confirm(`¿Eliminar "${p.nombre}"? Ya no aparecerá en el catálogo (el historial de pedidos que ya lo usan no se pierde).`)) return;
     await apiFetch(`/catalogo/productos/${p.id}`, { method: "PATCH", body: JSON.stringify({ activo: false }) });
-    cargar(sucursalId);
+    cargar();
   }
 
   async function toggleDisponibilidad(p: Producto) {
+    if (!sucursalId) return;
     await apiFetch(`/catalogo/productos/${p.id}/disponibilidad`, {
       method: "PATCH",
       body: JSON.stringify({ sucursalId, disponible: !p.disponibleSucursal }),
     });
-    cargar(sucursalId);
+    cargar();
   }
 
   async function abrirReceta(p: Producto) {
@@ -119,12 +107,7 @@ export default function CatalogoPage() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1 style={{ marginTop: 0 }}>Catálogo</h1>
-        <select value={sucursalId} onChange={(e) => { setSucursalId(e.target.value); cargar(e.target.value); }} style={{ padding: 8 }}>
-          {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-        </select>
-      </div>
+      <h2 style={{ margin: "0 0 12px" }}>Catálogo</h2>
 
       <div style={{ display: "grid", gridTemplateColumns: productoReceta ? "1.6fr 1fr" : "1fr", gap: 16, alignItems: "start" }}>
         <div>
@@ -150,10 +133,10 @@ export default function CatalogoPage() {
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                       {editandoId === p.id ? (
                         <>
-                          <button onClick={() => guardarEdicion(p.id)} style={{ background: "var(--h421-esmeralda, var(--h421-green))", color: "#fff", padding: "6px 10px", fontSize: 12 }}>
+                          <button onClick={() => guardarEdicion(p.id)} style={{ background: "var(--h421-esmeralda)", color: "#fff", padding: "6px 10px", fontSize: 12, minHeight: 0 }}>
                             Guardar
                           </button>
-                          <button onClick={() => setEditandoId(null)} style={{ background: "var(--h421-gray-200)", padding: "6px 10px", fontSize: 12 }}>
+                          <button onClick={() => setEditandoId(null)} style={{ background: "var(--h421-gray-200)", padding: "6px 10px", fontSize: 12, minHeight: 0 }}>
                             Cancelar
                           </button>
                         </>
@@ -161,17 +144,17 @@ export default function CatalogoPage() {
                         <>
                           <button
                             onClick={() => toggleDisponibilidad(p)}
-                            style={{ background: p.disponibleSucursal !== false ? "var(--h421-green)" : "var(--h421-gray-200)", color: "#fff", padding: "6px 10px", fontSize: 12 }}
+                            style={{ background: p.disponibleSucursal !== false ? "var(--h421-green)" : "var(--h421-gray-200)", color: "#fff", padding: "6px 10px", fontSize: 12, minHeight: 0 }}
                           >
                             {p.disponibleSucursal !== false ? "Disponible" : "Agotado"}
                           </button>
-                          <button onClick={() => abrirReceta(p)} style={{ background: "var(--h421-navy)", color: "#fff", padding: "6px 10px", fontSize: 12 }}>
+                          <button onClick={() => abrirReceta(p)} style={{ background: "var(--h421-navy)", color: "#fff", padding: "6px 10px", fontSize: 12, minHeight: 0 }}>
                             Receta
                           </button>
-                          <button onClick={() => empezarEdicion(p)} style={{ background: "var(--h421-gray-50)", padding: "6px 10px", fontSize: 12 }}>
+                          <button onClick={() => empezarEdicion(p)} style={{ background: "var(--h421-gray-50)", padding: "6px 10px", fontSize: 12, minHeight: 0 }}>
                             Editar
                           </button>
-                          <button onClick={() => eliminarProducto(p)} style={{ background: "#fee2e2", color: "var(--h421-red)", padding: "6px 10px", fontSize: 12 }}>
+                          <button onClick={() => eliminarProducto(p)} style={{ background: "#fee2e2", color: "var(--h421-red)", padding: "6px 10px", fontSize: 12, minHeight: 0 }}>
                             Eliminar
                           </button>
                         </>
@@ -186,7 +169,7 @@ export default function CatalogoPage() {
           <div className="card" style={{ maxWidth: 420 }}>
             <h3 style={{ marginTop: 0 }}>Nuevo producto</h3>
             <select value={nuevo.categoriaId} onChange={(e) => setNuevo((n) => ({ ...n, categoriaId: e.target.value }))}
-              style={{ width: "100%", padding: 10, marginBottom: 8 }}>
+              style={{ width: "100%", padding: 10, marginBottom: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }}>
               <option value="">Categoría…</option>
               {categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
             </select>
@@ -202,7 +185,7 @@ export default function CatalogoPage() {
           <div className="card" style={{ position: "sticky", top: 16 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <h3 style={{ marginTop: 0 }}>Receta — {productoReceta.nombre}</h3>
-              <button onClick={() => setProductoReceta(null)} style={{ background: "none", color: "var(--h421-gray-400)" }}>✕</button>
+              <button onClick={() => setProductoReceta(null)} style={{ background: "none", color: "var(--h421-gray-400)", minHeight: 0 }}>✕</button>
             </div>
             <p style={{ fontSize: 12, color: "var(--h421-gray-400)", marginTop: -6 }}>
               Las cantidades definidas aquí se descuentan solas del inventario cada vez que se vende este producto.
@@ -212,7 +195,7 @@ export default function CatalogoPage() {
             {receta.map((r) => (
               <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--h421-gray-200)", fontSize: 14 }}>
                 <span>{r.insumo.nombre} — {r.cantidad} {r.insumo.unidadMedida}</span>
-                <button onClick={() => quitarItemReceta(r.id)} style={{ background: "#fee2e2", color: "var(--h421-red)", padding: "4px 8px", fontSize: 12 }}>Quitar</button>
+                <button onClick={() => quitarItemReceta(r.id)} style={{ background: "#fee2e2", color: "var(--h421-red)", padding: "4px 8px", fontSize: 12, minHeight: 0 }}>Quitar</button>
               </div>
             ))}
 

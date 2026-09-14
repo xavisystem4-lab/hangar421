@@ -10,11 +10,21 @@ interface Existencia {
   insumo: { nombre: string; unidadMedida: string };
 }
 
+interface Proveedor {
+  id: string;
+  nombre: string;
+  telefono: string | null;
+  email: string | null;
+}
+
 interface Insumo {
   id: string;
   nombre: string;
   unidadMedida: string;
   costoUnitario: string;
+  precioVenta: string | null;
+  proveedorId: string | null;
+  proveedor: Proveedor | null;
 }
 
 interface Movimiento {
@@ -40,9 +50,17 @@ export function AdminInventario() {
   const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
   const [mensaje, setMensaje] = useState<string | null>(null);
 
-  const [nuevoInsumo, setNuevoInsumo] = useState({ nombre: "", unidadMedida: "pz", costoUnitario: "" });
+  const [nuevoInsumo, setNuevoInsumo] = useState({
+    nombre: "", unidadMedida: "pz", costoUnitario: "", precioVenta: "", proveedorId: "", minimo: "", maximo: "",
+  });
   const [mov, setMov] = useState({ insumoId: "", tipo: "ENTRADA", cantidad: "", motivo: "" });
   const [minimos, setMinimos] = useState<Record<string, string>>({});
+
+  const [proveedores, setProveedores] = useState<Proveedor[]>([]);
+  const [nuevoProveedor, setNuevoProveedor] = useState({ nombre: "", telefono: "" });
+
+  const [editandoInsumoId, setEditandoInsumoId] = useState<string | null>(null);
+  const [borradorInsumo, setBorradorInsumo] = useState({ nombre: "", unidadMedida: "pz", costoUnitario: "", precioVenta: "", proveedorId: "" });
 
   async function cargar(suc: string) {
     if (!usuario || !suc) return;
@@ -59,12 +77,18 @@ export function AdminInventario() {
     setMov((m) => (m.insumoId ? m : { ...m, insumoId: ins[0]?.id ?? "" }));
   }
 
+  function cargarProveedores() {
+    if (!usuario) return;
+    apiFetch<Proveedor[]>(`/proveedores?empresaId=${usuario.empresaId}`).then(setProveedores);
+  }
+
   useEffect(() => {
     if (!usuario) return;
     apiFetch<Sucursal[]>(`/sucursales?empresaId=${usuario.empresaId}`).then((s) => {
       setSucursales(s);
       if (s[0]) { setSucursalId(s[0].id); cargar(s[0].id); }
     });
+    cargarProveedores();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usuario]);
 
@@ -77,11 +101,63 @@ export function AdminInventario() {
         nombre: nuevoInsumo.nombre,
         unidadMedida: nuevoInsumo.unidadMedida,
         costoUnitario: nuevoInsumo.costoUnitario ? Number(nuevoInsumo.costoUnitario) : undefined,
+        precioVenta: nuevoInsumo.precioVenta ? Number(nuevoInsumo.precioVenta) : undefined,
+        proveedorId: nuevoInsumo.proveedorId || undefined,
+        minimo: nuevoInsumo.minimo ? Number(nuevoInsumo.minimo) : undefined,
+        maximo: nuevoInsumo.maximo ? Number(nuevoInsumo.maximo) : undefined,
       }),
     });
-    setNuevoInsumo({ nombre: "", unidadMedida: "pz", costoUnitario: "" });
+    setNuevoInsumo({ nombre: "", unidadMedida: "pz", costoUnitario: "", precioVenta: "", proveedorId: "", minimo: "", maximo: "" });
     setMensaje("Insumo creado.");
     cargar(sucursalId);
+  }
+
+  function empezarEdicionInsumo(i: Insumo) {
+    setEditandoInsumoId(i.id);
+    setBorradorInsumo({
+      nombre: i.nombre, unidadMedida: i.unidadMedida, costoUnitario: i.costoUnitario,
+      precioVenta: i.precioVenta ?? "", proveedorId: i.proveedorId ?? "",
+    });
+  }
+
+  async function guardarEdicionInsumo(id: string) {
+    if (!borradorInsumo.nombre.trim()) return;
+    await apiFetch(`/inventario/insumos/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        nombre: borradorInsumo.nombre,
+        unidadMedida: borradorInsumo.unidadMedida,
+        costoUnitario: Number(borradorInsumo.costoUnitario) || 0,
+        precioVenta: borradorInsumo.precioVenta ? Number(borradorInsumo.precioVenta) : null,
+        proveedorId: borradorInsumo.proveedorId || null,
+      }),
+    });
+    setEditandoInsumoId(null);
+    setMensaje("Insumo actualizado.");
+    cargar(sucursalId);
+  }
+
+  async function eliminarInsumo(i: Insumo) {
+    if (!confirm(`¿Eliminar "${i.nombre}"? Deja de aparecer en inventario y en recetas nuevas (el historial ya registrado no se pierde).`)) return;
+    await apiFetch(`/inventario/insumos/${i.id}`, { method: "PATCH", body: JSON.stringify({ activo: false }) });
+    setMensaje("Insumo eliminado.");
+    cargar(sucursalId);
+  }
+
+  async function crearProveedor() {
+    if (!usuario || !nuevoProveedor.nombre.trim()) return;
+    await apiFetch("/proveedores", {
+      method: "POST",
+      body: JSON.stringify({ empresaId: usuario.empresaId, nombre: nuevoProveedor.nombre, telefono: nuevoProveedor.telefono || undefined }),
+    });
+    setNuevoProveedor({ nombre: "", telefono: "" });
+    cargarProveedores();
+  }
+
+  async function eliminarProveedor(p: Proveedor) {
+    if (!confirm(`¿Eliminar proveedor "${p.nombre}"? Los insumos que ya lo tienen asignado conservan la referencia.`)) return;
+    await apiFetch(`/proveedores/${p.id}`, { method: "PATCH", body: JSON.stringify({ activo: false }) });
+    cargarProveedores();
   }
 
   async function registrarMovimiento() {
@@ -168,6 +244,75 @@ export function AdminInventario() {
         </table>
       </div>
 
+      <div className="card" style={{ overflowX: "auto", marginTop: 16 }}>
+        <h3 style={{ marginTop: 0 }}>Insumos</h3>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+          <thead>
+            <tr style={{ textAlign: "left", borderBottom: "1px solid var(--h421-gray-200)" }}>
+              <th style={{ padding: 8 }}>Nombre</th>
+              <th style={{ padding: 8 }}>Unidad</th>
+              <th style={{ padding: 8 }}>Proveedor</th>
+              <th style={{ padding: 8 }}>Precio costo</th>
+              <th style={{ padding: 8 }}>Precio venta</th>
+              <th style={{ padding: 8 }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {insumos.map((i) => {
+              if (editandoInsumoId === i.id) {
+                return (
+                  <tr key={i.id} style={{ borderBottom: "1px solid var(--h421-gray-200)" }}>
+                    <td style={{ padding: 8 }}>
+                      <input value={borradorInsumo.nombre} onChange={(e) => setBorradorInsumo((b) => ({ ...b, nombre: e.target.value }))}
+                        style={{ width: "100%", padding: 6, borderRadius: 6, border: "1px solid var(--h421-gray-200)" }} />
+                    </td>
+                    <td style={{ padding: 8 }}>
+                      <select value={borradorInsumo.unidadMedida} onChange={(e) => setBorradorInsumo((b) => ({ ...b, unidadMedida: e.target.value }))} style={{ padding: 6 }}>
+                        <option value="pz">pz</option><option value="g">g</option><option value="kg">kg</option><option value="ml">ml</option><option value="l">l</option>
+                      </select>
+                    </td>
+                    <td style={{ padding: 8 }}>
+                      <select value={borradorInsumo.proveedorId} onChange={(e) => setBorradorInsumo((b) => ({ ...b, proveedorId: e.target.value }))} style={{ padding: 6 }}>
+                        <option value="">—</option>
+                        {proveedores.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ padding: 8 }}>
+                      <input type="number" value={borradorInsumo.costoUnitario} onChange={(e) => setBorradorInsumo((b) => ({ ...b, costoUnitario: e.target.value }))}
+                        style={{ width: 80, padding: 6, borderRadius: 6, border: "1px solid var(--h421-gray-200)" }} />
+                    </td>
+                    <td style={{ padding: 8 }}>
+                      <input type="number" value={borradorInsumo.precioVenta} onChange={(e) => setBorradorInsumo((b) => ({ ...b, precioVenta: e.target.value }))}
+                        style={{ width: 80, padding: 6, borderRadius: 6, border: "1px solid var(--h421-gray-200)" }} />
+                    </td>
+                    <td style={{ padding: 8, display: "flex", gap: 6 }}>
+                      <button onClick={() => guardarEdicionInsumo(i.id)} style={{ background: "var(--h421-green)", color: "#fff", padding: "4px 10px", fontSize: 12, minHeight: 0 }}>Guardar</button>
+                      <button onClick={() => setEditandoInsumoId(null)} style={{ background: "var(--h421-gray-200)", padding: "4px 10px", fontSize: 12, minHeight: 0 }}>Cancelar</button>
+                    </td>
+                  </tr>
+                );
+              }
+              return (
+                <tr key={i.id} style={{ borderBottom: "1px solid var(--h421-gray-200)" }}>
+                  <td style={{ padding: 8 }}>{i.nombre}</td>
+                  <td style={{ padding: 8 }}>{i.unidadMedida}</td>
+                  <td style={{ padding: 8 }}>{i.proveedor?.nombre ?? "—"}</td>
+                  <td style={{ padding: 8 }}>${Number(i.costoUnitario).toFixed(2)}</td>
+                  <td style={{ padding: 8 }}>{i.precioVenta != null ? `$${Number(i.precioVenta).toFixed(2)}` : "—"}</td>
+                  <td style={{ padding: 8, display: "flex", gap: 6 }}>
+                    <button onClick={() => empezarEdicionInsumo(i)} style={{ background: "var(--h421-gray-50)", padding: "4px 10px", fontSize: 12, minHeight: 0 }}>Editar</button>
+                    <button onClick={() => eliminarInsumo(i)} style={{ background: "#fee2e2", color: "var(--h421-red)", padding: "4px 10px", fontSize: 12, minHeight: 0 }}>Eliminar</button>
+                  </td>
+                </tr>
+              );
+            })}
+            {insumos.length === 0 && (
+              <tr><td colSpan={6} style={{ padding: 16, color: "var(--h421-gray-400)", textAlign: "center" }}>Sin insumos todavía.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
       {/* auto-fit/minmax en vez de "1fr 1fr" fijo (mismo patrón que Caja.tsx) — a 1024px de
           ancho mínimo con el padding de Administracion.tsx ya queda ajustado; así, si algún
           día ese padding crece o se usa en una ventana más angosta, las tarjetas se apilan en
@@ -177,7 +322,7 @@ export function AdminInventario() {
           <h3 style={{ marginTop: 0 }}>Nuevo insumo</h3>
           <input placeholder="Nombre (ej. Leche entera)" value={nuevoInsumo.nombre} onChange={(e) => setNuevoInsumo((n) => ({ ...n, nombre: e.target.value }))}
             style={{ width: "100%", padding: 10, marginBottom: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
             <select value={nuevoInsumo.unidadMedida} onChange={(e) => setNuevoInsumo((n) => ({ ...n, unidadMedida: e.target.value }))} style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }}>
               <option value="pz">pz</option>
               <option value="g">g</option>
@@ -185,10 +330,45 @@ export function AdminInventario() {
               <option value="ml">ml</option>
               <option value="l">l</option>
             </select>
-            <input placeholder="Costo unitario (opcional)" type="number" value={nuevoInsumo.costoUnitario} onChange={(e) => setNuevoInsumo((n) => ({ ...n, costoUnitario: e.target.value }))}
+            <select value={nuevoInsumo.proveedorId} onChange={(e) => setNuevoInsumo((n) => ({ ...n, proveedorId: e.target.value }))} style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }}>
+              <option value="">Proveedor…</option>
+              {proveedores.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+            </select>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+            <input placeholder="Precio costo" type="number" value={nuevoInsumo.costoUnitario} onChange={(e) => setNuevoInsumo((n) => ({ ...n, costoUnitario: e.target.value }))}
+              style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
+            <input placeholder="Precio venta (si se vende directo)" type="number" value={nuevoInsumo.precioVenta} onChange={(e) => setNuevoInsumo((n) => ({ ...n, precioVenta: e.target.value }))}
               style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
           </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input placeholder="Stock mínimo" type="number" value={nuevoInsumo.minimo} onChange={(e) => setNuevoInsumo((n) => ({ ...n, minimo: e.target.value }))}
+              style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
+            <input placeholder="Stock máximo" type="number" value={nuevoInsumo.maximo} onChange={(e) => setNuevoInsumo((n) => ({ ...n, maximo: e.target.value }))}
+              style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
+          </div>
+          <p style={{ fontSize: 11, color: "var(--h421-gray-400)", margin: "4px 0 0" }}>
+            El mínimo/máximo aplica a todas las sucursales al crear el insumo — se puede ajustar después por sucursal arriba en &quot;Existencias por sucursal&quot;.
+          </p>
           <button onClick={crearInsumo} style={{ width: "100%", marginTop: 8, background: "var(--h421-green)", color: "#fff", padding: "10px 16px" }}>Crear insumo</button>
+        </div>
+
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Proveedores</h3>
+          {proveedores.length === 0 && <p style={{ fontSize: 13, color: "var(--h421-gray-400)" }}>Sin proveedores dados de alta todavía.</p>}
+          {proveedores.map((p) => (
+            <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--h421-gray-200)", fontSize: 14 }}>
+              <span>{p.nombre}{p.telefono ? ` · ${p.telefono}` : ""}</span>
+              <button onClick={() => eliminarProveedor(p)} style={{ background: "#fee2e2", color: "var(--h421-red)", padding: "4px 8px", fontSize: 12, minHeight: 0 }}>Eliminar</button>
+            </div>
+          ))}
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <input placeholder="Nombre del proveedor" value={nuevoProveedor.nombre} onChange={(e) => setNuevoProveedor((p) => ({ ...p, nombre: e.target.value }))}
+              style={{ flex: 2, padding: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
+            <input placeholder="Teléfono (opcional)" value={nuevoProveedor.telefono} onChange={(e) => setNuevoProveedor((p) => ({ ...p, telefono: e.target.value }))}
+              style={{ flex: 1, padding: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
+            <button onClick={crearProveedor} style={{ background: "var(--h421-navy)", color: "#fff", padding: "0 14px" }}>+</button>
+          </div>
         </div>
 
         <div className="card">
