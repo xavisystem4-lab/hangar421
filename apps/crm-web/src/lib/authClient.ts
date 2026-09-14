@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import type { AuthUserContext } from "@hangar421/shared";
-import { apiFetch, cerrarSesionLocal, guardarToken } from "./api";
+import { apiFetch, cerrarSesionLocal, guardarRefreshToken, guardarToken } from "./api";
 
 interface Contexto {
   usuario: AuthUserContext;
@@ -35,6 +35,7 @@ export const useAuthCrm = create<AuthState>((set) => ({
     try {
       const resp = await apiFetch<any>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
       guardarToken(resp.accessToken);
+      guardarRefreshToken(resp.refreshToken);
       const payload = JSON.parse(atob(resp.accessToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
       const contexto: Contexto = { usuario: resp.usuario, sucursalId: payload.sucursalId, rol: payload.rol };
       localStorage.setItem("hangar421_crm_contexto", JSON.stringify(contexto));
