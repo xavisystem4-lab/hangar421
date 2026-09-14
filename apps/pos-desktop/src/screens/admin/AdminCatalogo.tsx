@@ -154,7 +154,7 @@ export function AdminCatalogo() {
                           <button onClick={() => empezarEdicion(p)} style={{ background: "var(--h421-gray-50)", padding: "6px 10px", fontSize: 12, minHeight: 0 }}>
                             Editar
                           </button>
-                          <button onClick={() => eliminarProducto(p)} style={{ background: "#fee2e2", color: "var(--h421-red)", padding: "6px 10px", fontSize: 12, minHeight: 0 }}>
+                          <button onClick={() => eliminarProducto(p)} style={{ background: "var(--h421-red-bg)", color: "var(--h421-red-texto)", padding: "6px 10px", fontSize: 12, minHeight: 0 }}>
                             Eliminar
                           </button>
                         </>
@@ -195,7 +195,7 @@ export function AdminCatalogo() {
             {receta.map((r) => (
               <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--h421-gray-200)", fontSize: 14 }}>
                 <span>{r.insumo.nombre} — {r.cantidad} {r.insumo.unidadMedida}</span>
-                <button onClick={() => quitarItemReceta(r.id)} style={{ background: "#fee2e2", color: "var(--h421-red)", padding: "4px 8px", fontSize: 12, minHeight: 0 }}>Quitar</button>
+                <button onClick={() => quitarItemReceta(r.id)} style={{ background: "var(--h421-red-bg)", color: "var(--h421-red-texto)", padding: "4px 8px", fontSize: 12, minHeight: 0 }}>Quitar</button>
               </div>
             ))}
 

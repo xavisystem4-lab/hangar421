@@ -17,6 +17,14 @@
   --h421-blue: #2563eb;
   --h421-yellow: #f5a524;
   --h421-red: #dc2626;
+  /* Variantes "-texto"/"-bg", mismo criterio que --h421-navy-texto arriba: el rojo/ámbar de
+     marca es demasiado oscuro para usarse como TEXTO sobre una superficie que se oscurece en
+     modo oscuro (mensajes de error, "Eliminar"/"Quitar", alerta de nivel mínimo) — se mantienen
+     fijos aquí y se aclaran solo en el bloque [data-theme="oscuro"]. No tocar --h421-red/--h421-amber
+     directamente porque esos siguen usándose como FONDO de botón con texto blanco encima. */
+  --h421-red-texto: #dc2626;
+  --h421-red-bg: #fee2e2;
+  --h421-amber-texto: #92400e;
   /* paleta de categorías (píldoras de colores, acorde a los colores del logotipo, en tono
      vivo/llamativo — ver src/theme/categoriaColores.ts, fuente real que usa la UI) */
   --h421-cat-1: #8b4fa0; /* Combos — morado vivo */
@@ -42,6 +50,9 @@
   --h421-navy-texto: #8fb4e0; /* navy aclarado — mismo rol que --h421-navy pero como texto, legible sobre superficies oscuras */
   --h421-gray-400: #8b95a8;   /* texto secundario/placeholder, igual de legible en ambos modos */
   --h421-gray-600: #aab3c2;   /* texto secundario un poco más marcado que gray-400 (labels de formulario) */
+  --h421-red-texto: #f87171;  /* rojo aclarado — el rojo de marca es muy oscuro para usarse como texto sobre fondo oscuro */
+  --h421-red-bg: #3a1616;     /* fondo de píldora "peligro" (Eliminar/Quitar), oscurecido en vez del rosa claro fijo */
+  --h421-amber-texto: #fbbf24; /* ámbar aclarado, mismo criterio que red-texto */
 }
 
 * { box-sizing: border-box; }

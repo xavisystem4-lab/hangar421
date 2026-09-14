@@ -81,7 +81,7 @@ export function BarraActualizacion() {
         )}
         {estado === "verificando" && <span>Buscando actualizaciones…</span>}
         {estado === "al-dia" && <span style={{ color: "var(--h421-green)" }}>✓ Ya tienes la última versión</span>}
-        {estado === "error" && <span style={{ color: "var(--h421-red)" }}>⚠ {mensajeError}</span>}
+        {estado === "error" && <span style={{ color: "var(--h421-red-texto)" }}>⚠ {mensajeError}</span>}
 
         <button
           onClick={manejarClick}

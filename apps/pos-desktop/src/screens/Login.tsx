@@ -81,7 +81,7 @@ export function Login() {
         <img src={tema === "oscuro" ? logoClaro : logoOscuro} alt="HANGAR 421" style={{ height: 44, width: "auto", marginBottom: 6 }} />
         <p style={{ color: "var(--h421-gray-400)", margin: 0, fontSize: 14 }}>Elige tu usuario para entrar</p>
 
-        {errorUsuarios && <p style={{ color: "var(--h421-red)" }}>{errorUsuarios}</p>}
+        {errorUsuarios && <p style={{ color: "var(--h421-red-texto)" }}>{errorUsuarios}</p>}
         {!usuarios && !errorUsuarios && <p style={{ color: "var(--h421-gray-400)" }}>Cargando usuarios…</p>}
 
         {usuarios && (
@@ -133,7 +133,7 @@ export function Login() {
             style={{ width: "100%", padding: 14, borderRadius: 10, border: "1px solid var(--h421-gray-200)" }}
           />
 
-          {error && <p style={{ color: "var(--h421-red)", fontSize: 13, textAlign: "center", margin: 0 }}>{error}</p>}
+          {error && <p style={{ color: "var(--h421-red-texto)", fontSize: 13, textAlign: "center", margin: 0 }}>{error}</p>}
 
           <button type="submit" disabled={cargando || !seleccionado} className="btn-grande"
             style={{ width: "100%", background: "var(--h421-esmeralda)", color: "#fff", fontSize: 16, opacity: seleccionado ? 1 : 0.5 }}>

@@ -201,7 +201,7 @@ export function AdminInventario() {
 
       {alertas.length > 0 && (
         <div className="card" style={{ borderLeft: "4px solid var(--h421-yellow)", marginBottom: 16, marginTop: 12 }}>
-          <strong style={{ color: "#92400e" }}>⚠ {alertas.length} insumo(s) en nivel mínimo</strong>
+          <strong style={{ color: "var(--h421-amber-texto)" }}>⚠ {alertas.length} insumo(s) en nivel mínimo</strong>
           <ul>
             {alertas.map((a) => <li key={a.insumoId}>{a.insumo.nombre}: {a.existencia} {a.insumo.unidadMedida}</li>)}
           </ul>
@@ -228,7 +228,7 @@ export function AdminInventario() {
                   <td style={{ padding: 8 }}>{e.insumo.nombre}</td>
                   <td style={{ padding: 8 }}>{e.existencia} {e.insumo.unidadMedida}</td>
                   <td style={{ padding: 8 }}>{e.minimo}</td>
-                  <td style={{ padding: 8, color: bajo ? "var(--h421-red)" : "var(--h421-green)" }}>{bajo ? "Bajo" : "OK"}</td>
+                  <td style={{ padding: 8, color: bajo ? "var(--h421-red-texto)" : "var(--h421-green)" }}>{bajo ? "Bajo" : "OK"}</td>
                   <td style={{ padding: 8, display: "flex", gap: 6 }}>
                     <input type="number" placeholder={e.minimo} value={minimos[e.insumoId] ?? ""} onChange={(ev) => setMinimos((m) => ({ ...m, [e.insumoId]: ev.target.value }))}
                       style={{ width: 70, padding: 6, borderRadius: 6, border: "1px solid var(--h421-gray-200)" }} />
@@ -303,7 +303,7 @@ export function AdminInventario() {
                 <tr key={i.id} style={{ borderBottom: "1px solid var(--h421-gray-200)" }}>
                   <td style={{ padding: 8 }}>{i.nombre}</td>
                   <td style={{ padding: 8 }}>{i.unidadMedida}</td>
-                  <td style={{ padding: 8, color: bajo ? "var(--h421-red)" : undefined, fontWeight: bajo ? 700 : undefined }}>
+                  <td style={{ padding: 8, color: bajo ? "var(--h421-red-texto)" : undefined, fontWeight: bajo ? 700 : undefined }}>
                     {existencia ? `${existencia.existencia} ${i.unidadMedida}` : "—"}
                   </td>
                   <td style={{ padding: 8 }}>{i.proveedor?.nombre ?? "—"}</td>
@@ -311,7 +311,7 @@ export function AdminInventario() {
                   <td style={{ padding: 8 }}>{i.precioVenta != null ? `$${Number(i.precioVenta).toFixed(2)}` : "—"}</td>
                   <td style={{ padding: 8, display: "flex", gap: 6 }}>
                     <button onClick={() => empezarEdicionInsumo(i)} style={{ background: "var(--h421-gray-50)", padding: "4px 10px", fontSize: 12, minHeight: 0 }}>Editar</button>
-                    <button onClick={() => eliminarInsumo(i)} style={{ background: "#fee2e2", color: "var(--h421-red)", padding: "4px 10px", fontSize: 12, minHeight: 0 }}>Eliminar</button>
+                    <button onClick={() => eliminarInsumo(i)} style={{ background: "var(--h421-red-bg)", color: "var(--h421-red-texto)", padding: "4px 10px", fontSize: 12, minHeight: 0 }}>Eliminar</button>
                   </td>
                 </tr>
               );
@@ -369,7 +369,7 @@ export function AdminInventario() {
           {proveedores.map((p) => (
             <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--h421-gray-200)", fontSize: 14 }}>
               <span>{p.nombre}{p.telefono ? ` · ${p.telefono}` : ""}</span>
-              <button onClick={() => eliminarProveedor(p)} style={{ background: "#fee2e2", color: "var(--h421-red)", padding: "4px 8px", fontSize: 12, minHeight: 0 }}>Eliminar</button>
+              <button onClick={() => eliminarProveedor(p)} style={{ background: "var(--h421-red-bg)", color: "var(--h421-red-texto)", padding: "4px 8px", fontSize: 12, minHeight: 0 }}>Eliminar</button>
             </div>
           ))}
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>

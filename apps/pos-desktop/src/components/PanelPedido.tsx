@@ -51,7 +51,7 @@ export function PanelPedido({ mesaNombre, onCobrar }: { mesaNombre: string | nul
                 >
                   <IconoNota />
                 </button>
-                <button onClick={() => quitarItem(item.id)} style={{ marginLeft: "auto", width: 36, height: 36, minHeight: 0, fontSize: 17, background: "#fee2e2", color: "var(--h421-red)", borderRadius: 8 }}>🗑</button>
+                <button onClick={() => quitarItem(item.id)} style={{ marginLeft: "auto", width: 36, height: 36, minHeight: 0, fontSize: 17, background: "var(--h421-red-bg)", color: "var(--h421-red-texto)", borderRadius: 8 }}>🗑</button>
               </div>
             </div>
           </div>

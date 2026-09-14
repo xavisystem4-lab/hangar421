@@ -235,7 +235,7 @@ export function AdminConexion() {
       {info === null && <p style={{ color: "var(--h421-gray-400)" }}>Buscando…</p>}
 
       {info && !texto && (
-        <p style={{ color: "var(--h421-red)" }}>
+        <p style={{ color: "var(--h421-red-texto)" }}>
           Esta instalación usa un backend en la nube configurado (no un backend local embebido), así que no hay
           una IP:puerto de PC que capturar — en ese caso la app de Meseros debe apuntar directo a la URL del
           backend en la nube.

@@ -83,7 +83,7 @@ export function ModalDescuento({ sucursalId, onCerrar }: { sucursalId: string; o
           <strong style={{ fontSize: 13 }}>Autorización de supervisor</strong>
 
           {autorizadores === null && <p style={{ fontSize: 13, color: "var(--h421-gray-400)", marginBottom: 0 }}>Cargando…</p>}
-          {autorizadores?.length === 0 && <p style={{ fontSize: 13, color: "var(--h421-red)", marginBottom: 0 }}>No hay usuarios con rol de supervisor o admin dados de alta.</p>}
+          {autorizadores?.length === 0 && <p style={{ fontSize: 13, color: "var(--h421-red-texto)", marginBottom: 0 }}>No hay usuarios con rol de supervisor o admin dados de alta.</p>}
 
           {autorizadores && autorizadores.length > 0 && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
@@ -111,7 +111,7 @@ export function ModalDescuento({ sucursalId, onCerrar }: { sucursalId: string; o
             style={{ width: "100%", padding: 10, marginTop: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
         </div>
 
-        {error && <p style={{ color: "var(--h421-red)" }}>{error}</p>}
+        {error && <p style={{ color: "var(--h421-red-texto)" }}>{error}</p>}
 
         {/* Cancelar cierra sin tocar nada — no se aplica ni se resta ningún descuento. */}
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>

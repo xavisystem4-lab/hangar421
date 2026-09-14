@@ -83,7 +83,7 @@ export function PantallaArranque({
 
           {error && (
             <div style={{ maxWidth: 520, textAlign: "center" }}>
-              <p style={{ color: "var(--h421-red)", fontSize: 14, lineHeight: 1.5 }}>⚠ {error}</p>
+              <p style={{ color: "var(--h421-red-texto)", fontSize: 14, lineHeight: 1.5 }}>⚠ {error}</p>
               <p style={{ color: "var(--h421-gray-400)", fontSize: 12, marginTop: 8 }}>
                 Detalle completo en <code>%APPDATA%\HANGAR 421 POS\local-data\arranque.log</code>
               </p>

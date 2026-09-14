@@ -217,7 +217,7 @@ export function Caja({ sucursalId }: { sucursalId: string }) {
   const ESTADO_INFO: Record<string, { texto: string; color: string }> = {
     correcto: { texto: "✓ Correcto", color: "var(--h421-esmeralda)" },
     sobrante: { texto: "▲ Sobrante", color: "var(--h421-blue)" },
-    faltante: { texto: "▼ Faltante", color: "var(--h421-red)" },
+    faltante: { texto: "▼ Faltante", color: "var(--h421-red-texto)" },
   };
 
   return (
@@ -265,7 +265,7 @@ export function Caja({ sucursalId }: { sucursalId: string }) {
                     </tr>
                   ))}
                   <tr><td style={{ padding: "4px 0" }}>Ingresos de caja</td><td style={{ textAlign: "right", color: "var(--h421-esmeralda)" }}>+${resumen.totalIngresos.toFixed(2)}</td></tr>
-                  <tr><td style={{ padding: "4px 0" }}>Egresos de caja</td><td style={{ textAlign: "right", color: "var(--h421-red)" }}>−${resumen.totalEgresos.toFixed(2)}</td></tr>
+                  <tr><td style={{ padding: "4px 0" }}>Egresos de caja</td><td style={{ textAlign: "right", color: "var(--h421-red-texto)" }}>−${resumen.totalEgresos.toFixed(2)}</td></tr>
                   <tr style={{ fontWeight: 800, borderTop: "1px solid var(--h421-gray-200)" }}>
                     <td style={{ paddingTop: 8 }}>Efectivo esperado</td>
                     <td style={{ textAlign: "right", paddingTop: 8, color: "var(--h421-navy-texto)" }}>${resumen.montoEsperado.toFixed(2)}</td>
@@ -383,7 +383,7 @@ export function Caja({ sucursalId }: { sucursalId: string }) {
         </div>
       )}
 
-      {mensaje && <p style={{ color: "var(--h421-red)" }}>{mensaje}</p>}
+      {mensaje && <p style={{ color: "var(--h421-red-texto)" }}>{mensaje}</p>}
 
       {resultadoCorte && (
         <div style={{ ...tarjeta, maxWidth: 420, marginTop: 16 }}>

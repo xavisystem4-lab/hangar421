@@ -172,7 +172,7 @@ export function AdminUsuarios() {
                     <td style={{ padding: 8 }}>{f.usuario.nombre}</td>
                     <td style={{ padding: 8 }}>{f.usuario.email}</td>
                     <td style={{ padding: 8 }}>{ETIQUETA_ROL[f.rol] ?? f.rol}</td>
-                    <td style={{ padding: 8, color: f.usuario.activo ? "var(--h421-green)" : "var(--h421-red)" }}>{f.usuario.activo ? "Activo" : "Inactivo"}</td>
+                    <td style={{ padding: 8, color: f.usuario.activo ? "var(--h421-green)" : "var(--h421-red-texto)" }}>{f.usuario.activo ? "Activo" : "Inactivo"}</td>
                     <td style={{ padding: 8, display: "flex", gap: 6 }}>
                       <button onClick={() => seleccionarUsuario(f)} style={{ background: "var(--h421-navy)", color: "#fff", padding: "6px 10px", fontSize: 12, minHeight: 0 }}>Editar</button>
                       <button onClick={() => toggleActivo(f)} style={{ background: f.usuario.activo ? "var(--h421-red)" : "var(--h421-green)", color: "#fff", padding: "6px 10px", fontSize: 12, minHeight: 0 }}>
@@ -238,7 +238,7 @@ export function AdminUsuarios() {
               {horarios.map((h) => (
                 <div key={h.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--h421-gray-200)", fontSize: 14 }}>
                   <span>{DIAS[h.diaSemana]} · {h.horaInicio}–{h.horaFin} · {h.sucursal.nombre}{h.notas ? ` (${h.notas})` : ""}</span>
-                  <button onClick={() => eliminarHorario(h.id)} style={{ background: "#fee2e2", color: "var(--h421-red)", padding: "4px 8px", fontSize: 12, minHeight: 0 }}>Quitar</button>
+                  <button onClick={() => eliminarHorario(h.id)} style={{ background: "var(--h421-red-bg)", color: "var(--h421-red-texto)", padding: "4px 8px", fontSize: 12, minHeight: 0 }}>Quitar</button>
                 </div>
               ))}
 

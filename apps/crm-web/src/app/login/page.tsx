@@ -36,7 +36,7 @@ export default function LoginPage() {
         <input placeholder="Contraseña" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
           style={{ width: "100%", padding: 12, marginTop: 10, borderRadius: 10, border: "1px solid var(--h421-gray-200)" }} />
 
-        {error && <p style={{ color: "var(--h421-red)", fontSize: 13 }}>{error}</p>}
+        {error && <p style={{ color: "var(--h421-red-texto)", fontSize: 13 }}>{error}</p>}
 
         <button disabled={cargando} style={{ width: "100%", marginTop: 16, padding: 14, background: "var(--h421-green)", color: "#fff", fontSize: 16 }}>
           {cargando ? "Ingresando…" : "Entrar"}

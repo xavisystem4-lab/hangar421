@@ -226,7 +226,7 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
               </p>
             </div>
 
-            {error && <p style={{ color: "var(--h421-red)" }}>{error}</p>}
+            {error && <p style={{ color: "var(--h421-red-texto)" }}>{error}</p>}
 
             <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
               <button onClick={onCerrar} style={{ flex: 1, padding: 14, background: "var(--h421-gray-200)" }}>Cancelar</button>
@@ -250,8 +250,8 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
                   key={k}
                   onClick={() => presionarTecla(k)}
                   style={{
-                    fontSize: 22, fontWeight: 700, background: k === "borrar" ? "#fee2e2" : "var(--h421-white)",
-                    color: k === "borrar" ? "var(--h421-red)" : "var(--h421-black)",
+                    fontSize: 22, fontWeight: 700, background: k === "borrar" ? "var(--h421-red-bg)" : "var(--h421-white)",
+                    color: k === "borrar" ? "var(--h421-red-texto)" : "var(--h421-black)",
                     border: "1px solid var(--h421-gray-200)", minHeight: 56,
                   }}
                 >

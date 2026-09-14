@@ -63,7 +63,7 @@ export function PedidosPorCobrar({ sucursalId }: { sucursalId: string }) {
         Pedidos ya enviados (sobre todo desde la app de Meseros) que todavía no se cobran. Toca uno para abrir el cobro.
       </p>
 
-      {error && <p style={{ color: "var(--h421-red)" }}>{error}</p>}
+      {error && <p style={{ color: "var(--h421-red-texto)" }}>{error}</p>}
       {pedidos === null && !error && <p style={{ color: "var(--h421-gray-400)" }}>Cargando…</p>}
       {pedidos && pedidos.length === 0 && <p style={{ color: "var(--h421-gray-400)" }}>No hay pedidos pendientes de cobro.</p>}
 
