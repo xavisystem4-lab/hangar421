@@ -1,43 +1,41 @@
-"use client";
-
 import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
-import { useAuthCrm } from "@/lib/authClient";
+import { apiFetch } from "../../api/http";
+import { useAuthStore } from "../../store/authStore";
 
 interface Sucursal {
   id: string;
   nombre: string;
-  direccion?: string;
-  horarioApertura?: string;
-  horarioCierre?: string;
+  direccion?: string | null;
+  horarioApertura?: string | null;
+  horarioCierre?: string | null;
   tasaImpuesto: number;
   activo: boolean;
 }
 
-export default function SucursalesPage() {
-  const { contexto } = useAuthCrm();
+/** Alta y edición de sucursales — mismo módulo que apps/crm-web/sucursales, dentro del propio
+ *  POS. El backend ya soportaba editar (PUT /sucursales/:id); antes no había ninguna pantalla
+ *  en el POS para llegar a esa acción, ni para dar de alta una sucursal nueva. */
+export function AdminSucursales() {
+  const { usuario } = useAuthStore();
   const [sucursales, setSucursales] = useState<Sucursal[]>([]);
   const [nuevo, setNuevo] = useState({ nombre: "", direccion: "" });
 
-  // Edición inline del nombre — mismo patrón que Catálogo/Inventario: sin modal, se edita en
-  // el lugar. Antes no había ninguna forma de corregir el nombre de una sucursal ya creada
-  // (el backend sí lo soportaba via PUT /sucursales/:id, solo faltaba exponerlo aquí).
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [nombreBorrador, setNombreBorrador] = useState("");
 
   async function cargar() {
-    if (!contexto) return;
-    const data = await apiFetch<Sucursal[]>(`/sucursales?empresaId=${contexto.usuario.empresaId}`);
+    if (!usuario) return;
+    const data = await apiFetch<Sucursal[]>(`/sucursales?empresaId=${usuario.empresaId}`);
     setSucursales(data);
   }
 
-  useEffect(() => { cargar(); }, [contexto]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { cargar(); }, [usuario]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function crear() {
-    if (!contexto || !nuevo.nombre) return;
+    if (!usuario || !nuevo.nombre) return;
     await apiFetch("/sucursales", {
       method: "POST",
-      body: JSON.stringify({ empresaId: contexto.usuario.empresaId, nombre: nuevo.nombre, direccion: nuevo.direccion }),
+      body: JSON.stringify({ empresaId: usuario.empresaId, nombre: nuevo.nombre, direccion: nuevo.direccion }),
     });
     setNuevo({ nombre: "", direccion: "" });
     cargar();
@@ -57,20 +55,18 @@ export default function SucursalesPage() {
 
   return (
     <div>
-      <h1 style={{ marginTop: 0 }}>Sucursales</h1>
+      <h2 style={{ margin: "0 0 12px" }}>Sucursales</h2>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
         {sucursales.map((s) => (
           <div key={s.id} className="card">
             {editandoId === s.id ? (
-              <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                <input
-                  value={nombreBorrador}
-                  onChange={(e) => setNombreBorrador(e.target.value)}
-                  autoFocus
-                  style={{ flex: 1, padding: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)", fontSize: 16, fontWeight: 700 }}
-                />
-              </div>
+              <input
+                value={nombreBorrador}
+                onChange={(e) => setNombreBorrador(e.target.value)}
+                autoFocus
+                style={{ width: "100%", padding: 8, marginBottom: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)", fontSize: 16, fontWeight: 700 }}
+              />
             ) : (
               <strong style={{ fontSize: 16 }}>{s.nombre}</strong>
             )}
@@ -80,11 +76,11 @@ export default function SucursalesPage() {
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
               {editandoId === s.id ? (
                 <>
-                  <button onClick={() => guardarNombre(s.id)} style={{ background: "var(--h421-green)", color: "#fff", padding: "6px 12px", fontSize: 13 }}>Guardar</button>
-                  <button onClick={() => setEditandoId(null)} style={{ background: "var(--h421-gray-200)", padding: "6px 12px", fontSize: 13 }}>Cancelar</button>
+                  <button onClick={() => guardarNombre(s.id)} style={{ background: "var(--h421-green)", color: "#fff", padding: "6px 12px", fontSize: 13, minHeight: 0 }}>Guardar</button>
+                  <button onClick={() => setEditandoId(null)} style={{ background: "var(--h421-gray-200)", padding: "6px 12px", fontSize: 13, minHeight: 0 }}>Cancelar</button>
                 </>
               ) : (
-                <button onClick={() => empezarEdicion(s)} style={{ background: "var(--h421-gray-50)", padding: "6px 12px", fontSize: 13 }}>Editar nombre</button>
+                <button onClick={() => empezarEdicion(s)} style={{ background: "var(--h421-gray-50)", padding: "6px 12px", fontSize: 13, minHeight: 0 }}>Editar nombre</button>
               )}
             </div>
           </div>

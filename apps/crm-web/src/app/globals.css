@@ -12,6 +12,20 @@
   --h421-red: #dc2626;
 }
 
+/* Modo oscuro — mismos tokens y mismo criterio que apps/pos-desktop/src/theme.css: solo se
+   redefinen los tokens de SUPERFICIE/TEXTO (fondo, tarjetas, bordes, texto principal). Los
+   colores de acento (navy, amber, green, red, etc.) se mantienen iguales en ambos modos — son
+   color de marca, no de superficie. Se activa con [data-theme="oscuro"] en <html> (ver
+   src/store/themeStore.ts) — como el resto de la UI ya lee estos mismos tokens vía
+   var(--h421-...), este único bloque basta para que toda la app responda. */
+:root[data-theme="oscuro"] {
+  --h421-white: #1a212c;   /* superficie elevada: tarjetas, sidebar de contenido, inputs */
+  --h421-gray-50: #10141c; /* fondo de página */
+  --h421-gray-200: #2b3444; /* bordes/divisores */
+  --h421-black: #e8ebf0;   /* texto principal, casi blanco */
+  --h421-gray-400: #8b95a8; /* texto secundario/placeholder */
+}
+
 * { box-sizing: border-box; }
 
 body {
@@ -35,10 +49,15 @@ a { color: inherit; text-decoration: none; }
 input, select {
   font-family: inherit;
   font-size: 14px;
+  background: var(--h421-white);
+  color: var(--h421-black);
+  border-color: var(--h421-gray-200);
 }
 
+table { color: inherit; }
+
 .card {
-  background: #fff;
+  background: var(--h421-white);
   border-radius: 14px;
   padding: 18px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);

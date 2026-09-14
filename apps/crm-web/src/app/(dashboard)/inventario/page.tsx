@@ -255,6 +255,7 @@ export default function InventarioPage() {
             <tr style={{ textAlign: "left", borderBottom: "1px solid var(--h421-gray-200)" }}>
               <th style={{ padding: 8 }}>Nombre</th>
               <th style={{ padding: 8 }}>Unidad</th>
+              <th style={{ padding: 8 }}>Cantidad existente</th>
               <th style={{ padding: 8 }}>Proveedor</th>
               <th style={{ padding: 8 }}>Precio costo</th>
               <th style={{ padding: 8 }}>Precio venta</th>
@@ -263,6 +264,10 @@ export default function InventarioPage() {
           </thead>
           <tbody>
             {insumos.map((i) => {
+              // Existencia de este insumo en la sucursal seleccionada arriba (mismo dato que la
+              // tabla "Existencias por sucursal") — aquí solo se muestra, se sigue editando desde
+              // "Registrar movimiento" o el campo de mínimo de esa tabla, nunca desde aquí.
+              const existencia = existencias.find((e) => e.insumoId === i.id);
               if (editandoInsumoId === i.id) {
                 return (
                   <tr key={i.id} style={{ borderBottom: "1px solid var(--h421-gray-200)" }}>
@@ -275,6 +280,7 @@ export default function InventarioPage() {
                         <option value="pz">pz</option><option value="g">g</option><option value="kg">kg</option><option value="ml">ml</option><option value="l">l</option>
                       </select>
                     </td>
+                    <td style={{ padding: 8, color: "var(--h421-gray-400)" }}>{existencia ? `${existencia.existencia} ${i.unidadMedida}` : "—"}</td>
                     <td style={{ padding: 8 }}>
                       <select value={borradorInsumo.proveedorId} onChange={(e) => setBorradorInsumo((b) => ({ ...b, proveedorId: e.target.value }))} style={{ padding: 6 }}>
                         <option value="">—</option>
@@ -296,10 +302,14 @@ export default function InventarioPage() {
                   </tr>
                 );
               }
+              const bajo = existencia && Number(existencia.existencia) <= Number(existencia.minimo);
               return (
                 <tr key={i.id} style={{ borderBottom: "1px solid var(--h421-gray-200)" }}>
                   <td style={{ padding: 8 }}>{i.nombre}</td>
                   <td style={{ padding: 8 }}>{i.unidadMedida}</td>
+                  <td style={{ padding: 8, color: bajo ? "var(--h421-red)" : undefined, fontWeight: bajo ? 700 : undefined }}>
+                    {existencia ? `${existencia.existencia} ${i.unidadMedida}` : "—"}
+                  </td>
                   <td style={{ padding: 8 }}>{i.proveedor?.nombre ?? "—"}</td>
                   <td style={{ padding: 8 }}>${Number(i.costoUnitario).toFixed(2)}</td>
                   <td style={{ padding: 8 }}>{i.precioVenta != null ? `$${Number(i.precioVenta).toFixed(2)}` : "—"}</td>
@@ -311,7 +321,7 @@ export default function InventarioPage() {
               );
             })}
             {insumos.length === 0 && (
-              <tr><td colSpan={6} style={{ padding: 16, color: "var(--h421-gray-400)", textAlign: "center" }}>Sin insumos todavía.</td></tr>
+              <tr><td colSpan={7} style={{ padding: 16, color: "var(--h421-gray-400)", textAlign: "center" }}>Sin insumos todavía.</td></tr>
             )}
           </tbody>
         </table>

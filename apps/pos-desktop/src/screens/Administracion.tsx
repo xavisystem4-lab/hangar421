@@ -2,15 +2,17 @@ import { useState } from "react";
 import { AdminReportes } from "./admin/AdminReportes";
 import { AdminCatalogo } from "./admin/AdminCatalogo";
 import { AdminInventario } from "./admin/AdminInventario";
+import { AdminSucursales } from "./admin/AdminSucursales";
 import { AdminUsuarios } from "./admin/AdminUsuarios";
 import { AdminConexion } from "./admin/AdminConexion";
 
-type Modulo = "reportes" | "catalogo" | "inventario" | "usuarios" | "conexion";
+type Modulo = "reportes" | "catalogo" | "inventario" | "sucursales" | "usuarios" | "conexion";
 
 const MODULOS: { id: Modulo; etiqueta: string }[] = [
   { id: "reportes", etiqueta: "Reportes" },
   { id: "catalogo", etiqueta: "Catálogo" },
   { id: "inventario", etiqueta: "Inventario" },
+  { id: "sucursales", etiqueta: "Sucursales" },
   { id: "usuarios", etiqueta: "Usuarios" },
   { id: "conexion", etiqueta: "Conexión" },
 ];
@@ -48,6 +50,7 @@ export function Administracion() {
         {modulo === "reportes" && <AdminReportes />}
         {modulo === "catalogo" && <AdminCatalogo />}
         {modulo === "inventario" && <AdminInventario />}
+        {modulo === "sucursales" && <AdminSucursales />}
         {modulo === "usuarios" && <AdminUsuarios />}
         {modulo === "conexion" && <AdminConexion />}
       </div>

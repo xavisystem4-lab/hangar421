@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { RolUsuario } from "@hangar421/shared";
 import { useAuthCrm } from "@/lib/authClient";
+import { useThemeStore } from "@/store/themeStore";
 
 // `roles` refleja los mismos roles que exige el backend en cada @Roles() del controlador
 // correspondiente (sucursales/inventario/usuarios/catalogo .controller.ts) — así el menú no
@@ -23,6 +24,7 @@ export function Sidebar() {
   const { contexto, logout } = useAuthCrm();
   const rol = contexto?.rol as RolUsuario | undefined;
   const items = ITEMS.filter((item) => !item.roles || (rol && item.roles.includes(rol)));
+  const { tema, alternar } = useThemeStore();
 
   return (
     <aside style={{ width: 220, background: "var(--h421-navy)", color: "#fff", display: "flex", flexDirection: "column", padding: "20px 12px" }}>
@@ -44,6 +46,15 @@ export function Sidebar() {
           </Link>
         ))}
       </nav>
+
+      <button
+        onClick={alternar}
+        title={tema === "oscuro" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+        style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, background: "rgba(255,255,255,0.08)", color: "#fff", marginBottom: 8 }}
+      >
+        <span>{tema === "oscuro" ? "☀️" : "🌙"}</span>
+        <span>{tema === "oscuro" ? "Modo claro" : "Modo oscuro"}</span>
+      </button>
 
       <div style={{ fontSize: 13, opacity: 0.8, padding: "0 8px" }}>
         <div>{contexto?.usuario.nombre}</div>
