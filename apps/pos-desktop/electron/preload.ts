@@ -41,6 +41,13 @@ contextBridge.exposeInMainWorld("hangar", {
      *  próximo arranque del backend (no se puede recolocar un puerto ya bindeado). */
     guardarInfoConexion: (ip: string, puertoPreferido: number): Promise<void> =>
       ipcRenderer.invoke("backend:guardarInfoConexion", ip, puertoPreferido),
+    /** URL guardada del backend en la nube (vacía = ninguna) + el modo en el que corre esta
+     *  sesión AHORA MISMO ("cloud" o "standalone") — ver AdminConexion.tsx. */
+    obtenerConfigNube: (): Promise<{ url: string; modoActual: "cloud" | "standalone" }> =>
+      ipcRenderer.invoke("backend:obtenerConfigNube"),
+    /** Guarda (url no vacía) o borra (url vacía, "") la URL del backend en la nube. Requiere
+     *  reiniciar la app para tomar efecto — nunca reconecta en caliente. */
+    guardarConfigNube: (url: string): Promise<void> => ipcRenderer.invoke("backend:guardarConfigNube", url),
     onEstado: (callback: (mensaje: string) => void) => {
       const handler = (_e: unknown, mensaje: string) => callback(mensaje);
       ipcRenderer.on("backend:estado", handler);

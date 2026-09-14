@@ -72,6 +72,41 @@ export function AdminConexion() {
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [tablets, setTablets] = useState<TabletConectada[] | null>(null);
 
+  const [nube, setNube] = useState<{ url: string; modoActual: "cloud" | "standalone" } | null>(null);
+  const [nubeUrlInput, setNubeUrlInput] = useState("");
+  const [guardandoNube, setGuardandoNube] = useState(false);
+  const [mensajeNube, setMensajeNube] = useState<string | null>(null);
+
+  function cargarNube() {
+    window.hangar?.backend
+      ?.obtenerConfigNube()
+      .then((r) => {
+        setNube(r);
+        setNubeUrlInput(r.url);
+      })
+      .catch(() => setNube({ url: "", modoActual: "standalone" }));
+  }
+
+  useEffect(cargarNube, []);
+
+  async function guardarNube() {
+    setMensajeNube(null);
+    setGuardandoNube(true);
+    try {
+      await window.hangar!.backend.guardarConfigNube(nubeUrlInput.trim());
+      setMensajeNube(
+        nubeUrlInput.trim()
+          ? "✓ Guardado. Cierra y vuelve a abrir HANGAR 421 POS para conectarte a la nube — a partir de ese reinicio, todo lo que administres aquí (inventario, pedidos, catálogo) también se va a ver en el sistema web."
+          : "✓ Guardado. Cierra y vuelve a abrir HANGAR 421 POS para volver al backend local de esta PC.",
+      );
+      cargarNube();
+    } catch (e: any) {
+      setMensajeNube(`✕ ${e.message ?? "No se pudo guardar"}`);
+    } finally {
+      setGuardandoNube(false);
+    }
+  }
+
   function cargar() {
     window.hangar?.backend
       ?.obtenerInfoConexion()
@@ -139,6 +174,57 @@ export function AdminConexion() {
 
   return (
     <div style={{ maxWidth: 560 }}>
+      <div style={{ marginBottom: 28, paddingBottom: 24, borderBottom: "1px solid var(--h421-gray-200)" }}>
+        <h2 style={{ margin: "0 0 6px", fontSize: 18 }}>Backend en la nube</h2>
+        <p style={{ color: "var(--h421-gray-400)", fontSize: 14, marginTop: 0, marginBottom: 14, lineHeight: 1.5 }}>
+          Por defecto este POS crea su propia base de datos local (modo standalone) — lo que administres aquí
+          (inventario, pedidos, catálogo, usuarios) queda solo en esta PC. Para que también se vea desde el
+          sistema web, captura aquí la URL del backend en la nube (la misma que usa el sistema web) — a partir
+          del próximo reinicio, este POS deja de usar su base local y se conecta directo a esa.
+        </p>
+
+        {nube === null && <p style={{ color: "var(--h421-gray-400)", fontSize: 13 }}>Cargando…</p>}
+
+        {nube && (
+          <>
+            <p style={{ fontSize: 13, margin: "0 0 12px" }}>
+              Modo actual de esta sesión:{" "}
+              <strong style={{ color: nube.modoActual === "cloud" ? "var(--h421-green)" : "var(--h421-navy-texto)" }}>
+                {nube.modoActual === "cloud" ? "🌐 Nube" : "💻 Standalone (local a esta PC)"}
+              </strong>
+            </p>
+            <label style={{ display: "block", fontSize: 12, color: "var(--h421-gray-400)" }}>
+              URL del backend en la nube
+              <input
+                value={nubeUrlInput}
+                onChange={(e) => setNubeUrlInput(e.target.value)}
+                placeholder="https://hangar421backend-production.up.railway.app/api/v1"
+                style={{ width: "100%", marginTop: 4, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)", fontFamily: "monospace", fontSize: 13 }}
+              />
+            </label>
+            <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+              <button onClick={guardarNube} disabled={guardandoNube} className="btn-grande" style={{ background: "var(--h421-esmeralda)", color: "#fff", padding: "10px 18px" }}>
+                Guardar
+              </button>
+              {nubeUrlInput.trim() !== "" && (
+                <button
+                  onClick={() => { setNubeUrlInput(""); }}
+                  disabled={guardandoNube}
+                  style={{ background: "var(--h421-gray-50)", padding: "10px 18px" }}
+                >
+                  Volver a standalone
+                </button>
+              )}
+            </div>
+            {mensajeNube && (
+              <p style={{ marginTop: 10, fontSize: 13, color: mensajeNube.startsWith("✓") ? "var(--h421-green)" : "var(--h421-red)" }}>
+                {mensajeNube}
+              </p>
+            )}
+          </>
+        )}
+      </div>
+
       <h2 style={{ margin: "0 0 6px", fontSize: 18 }}>Conexión para la app de Meseros</h2>
       <p style={{ color: "var(--h421-gray-400)", fontSize: 14, marginTop: 0, marginBottom: 20, lineHeight: 1.5 }}>
         En cada tablet de mesero, la primera vez que abre la app (o al tocar "⚙ Estación" en el login), pide la

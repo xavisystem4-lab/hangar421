@@ -10,7 +10,7 @@ const MODULOS: { id: Modulo; etiqueta: string }[] = [
   { id: "reportes", etiqueta: "Reportes" },
   { id: "inventario", etiqueta: "Inventario" },
   { id: "usuarios", etiqueta: "Usuarios" },
-  { id: "conexion", etiqueta: "Conexión Meseros" },
+  { id: "conexion", etiqueta: "Conexión" },
 ];
 
 /** Reportes/Inventario/Usuarios, con todos sus filtros, sin salir del POS — mismos módulos

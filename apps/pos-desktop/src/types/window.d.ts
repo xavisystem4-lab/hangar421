@@ -29,6 +29,8 @@ declare global {
         obtenerUrl(): Promise<string | null>;
         obtenerInfoConexion(): Promise<{ ip: string | null; puerto: number | null; puertoPreferido: number | null }>;
         guardarInfoConexion(ip: string, puertoPreferido: number): Promise<void>;
+        obtenerConfigNube(): Promise<{ url: string; modoActual: "cloud" | "standalone" }>;
+        guardarConfigNube(url: string): Promise<void>;
         onEstado(callback: (mensaje: string) => void): () => void;
       };
     };

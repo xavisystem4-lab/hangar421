@@ -29,6 +29,14 @@ let backendEmbebido: BackendEmbebido | null = null;
 const CLAVE_IP = "conexion_meseros_ip_manual";
 const CLAVE_PUERTO = "conexion_meseros_puerto_preferido";
 
+// URL del backend en la nube, configurable desde Administración → "Backend en la nube" (ver
+// AdminConexion.tsx) — antes `HANGAR_CLOUD_API_URL` solo se podía fijar a mano como variable de
+// entorno de Windows, algo que ningún instalador ni pantalla de la app exponía: en la práctica
+// TODO POS instalado corría en modo standalone (Postgres embebido, aislado, nunca visto por
+// crm-web) sin ninguna forma real de activar el modo nube. Con esto, un Admin lo hace desde la
+// propia app, sin tocar variables de entorno.
+const CLAVE_CLOUD_URL = "backend_cloud_url";
+
 // El backend embebido (electron/backend-manager.ts) tiene su propio watchdog interno de
 // unhandled rejections en Node; embedded-postgres además dispara alguna advertencia interna
 // al detenerse dos veces seguidas — se registra sin tumbar la app (nunca es un error del
@@ -38,12 +46,17 @@ process.on("unhandledRejection", (reason) => {
 });
 
 /** Resuelve la URL del backend a usar:
- *  - Si HANGAR_CLOUD_API_URL está configurada (deployment cloud real, multisucursal), se usa esa.
- *  - Si no, y estamos empaquetados (producción), se levanta el backend + Postgres embebidos.
+ *  - Si HANGAR_CLOUD_API_URL está configurada como variable de entorno (uso avanzado/CI), se usa esa.
+ *  - Si no, pero el Admin guardó una URL de nube desde Administración → "Backend en la nube" (ver
+ *    CLAVE_CLOUD_URL, AdminConexion.tsx), se usa esa — así todo lo que se administre en este POS
+ *    (inventario, pedidos, catálogo, usuarios) llega al mismo backend que ya usa el sistema web
+ *    (crm-web), sin tener que tocar nada fuera de la app.
+ *  - Si ninguna está configurada, y estamos empaquetados (producción), se levanta el backend +
+ *    Postgres embebidos (modo standalone, 100% local a esta PC).
  *  - En desarrollo, no se levanta nada aquí — se usa el backend corrido aparte (`npm run dev:backend`),
  *    el renderer cae a VITE_API_URL (localhost:3000 por defecto). */
 async function resolverBackend(log: (msg: string) => void): Promise<string | null> {
-  const cloudUrl = process.env.HANGAR_CLOUD_API_URL;
+  const cloudUrl = process.env.HANGAR_CLOUD_API_URL || obtenerConfig(CLAVE_CLOUD_URL);
   if (cloudUrl) {
     log(`Usando backend cloud configurado: ${cloudUrl}`);
     return cloudUrl;
@@ -193,6 +206,26 @@ function registrarIpc() {
   ipcMain.handle("backend:guardarInfoConexion", (_e, ip: string, puertoPreferido: number) => {
     guardarConfig(CLAVE_IP, ip?.trim() ?? "");
     guardarConfig(CLAVE_PUERTO, puertoPreferido > 0 ? String(puertoPreferido) : "");
+  });
+
+  // Backend en la nube (ver AdminConexion.tsx, sección "Backend en la nube" y resolverBackend
+  // arriba): permite que un Admin conecte este POS al mismo backend que ya usa el sistema web
+  // (crm-web), sin tocar variables de entorno de Windows. `modoActual` distingue "cloud" (URL
+  // guardada, o la de la variable de entorno si alguien la fijó a mano) de "standalone" (Postgres
+  // embebido en esta PC) — la pantalla lo usa para explicar en qué modo está corriendo AHORA
+  // MISMO (puede diferir de lo guardado si se acaba de cambiar y todavía no se reinicia la app).
+  ipcMain.handle("backend:obtenerConfigNube", () => ({
+    url: obtenerConfig(CLAVE_CLOUD_URL) ?? "",
+    modoActual: backendEmbebido ? "standalone" : "cloud",
+  }));
+
+  // Guarda (o borra, con "") la URL del backend en la nube. Nunca reconecta en caliente — el
+  // backend embebido/cloud ya elegido para esta sesión sigue corriendo tal cual hasta que el
+  // Admin reinicia la app (ver mensaje en AdminConexion.tsx); cambiar de backend a mitad de
+  // sesión dejaría la sesión de auth, el motor de sync y los sockets abiertos apuntando al
+  // backend viejo, un estado a medias mucho más riesgoso que pedir un reinicio.
+  ipcMain.handle("backend:guardarConfigNube", (_e, url: string) => {
+    guardarConfig(CLAVE_CLOUD_URL, url?.trim() ?? "");
   });
 }
 
