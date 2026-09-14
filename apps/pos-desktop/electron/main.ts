@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, screen } from "electron";
 import * as path from "path";
 import * as os from "os";
 import {
@@ -61,9 +61,17 @@ async function resolverBackend(log: (msg: string) => void): Promise<string | nul
 }
 
 function crearVentana() {
+  // Tamaño inicial = el área de trabajo real de la pantalla donde corre la app (resta la barra
+  // de tareas de Windows), no un tamaño fijo — antes era 1366x900 sin importar el monitor real,
+  // así que en un touchscreen POS más chico (1280x1024, 1024x768…) la ventana nacía más grande
+  // que la pantalla y Windows la recortaba de forma inconsistente. `minWidth`/`minHeight` se
+  // conservan como piso de seguridad para que la UI nunca intente dibujarse en menos espacio del
+  // que sus pantallas asumen (ver Mesas/BarraSuperior), sin importar qué tan chico sea el monitor.
+  const { width: anchoPantalla, height: altoPantalla } = screen.getPrimaryDisplay().workAreaSize;
+
   const win = new BrowserWindow({
-    width: 1366,
-    height: 900,
+    width: anchoPantalla,
+    height: altoPantalla,
     minWidth: 1024,
     minHeight: 700,
     title: "HANGAR 421 POS",
@@ -75,6 +83,12 @@ function crearVentana() {
       nodeIntegration: false,
     },
   });
+  // Maximizada de entrada: en un POS táctil de mostrador siempre se usa a pantalla completa —
+  // igualar el tamaño de ventana al área de trabajo (arriba) ya la deja del tamaño correcto,
+  // pero maximizar además la "ancla" al monitor (evita la barra de título/bordes sueltos que
+  // dejaría una ventana solo redimensionada, y se adapta sola si el usuario cambia de resolución
+  // mientras la app corre y luego la restaura).
+  win.maximize();
 
   if (isDev) {
     win.loadURL("http://localhost:5173");

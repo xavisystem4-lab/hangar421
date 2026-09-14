@@ -94,7 +94,10 @@ export function AdminReportes() {
         <StatTile etiqueta="Productos distintos vendidos" valor={String(porProducto.length)} acento="var(--h421-amber)" />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 16, marginTop: 20 }}>
+      {/* auto-fit/minmax en vez de "1.3fr 1fr" fijo (mismo patrón que Caja.tsx) — el BarChart de
+          adentro ya es 100% fluido (SVG con viewBox), así que apilarse en una sola columna en
+          una ventana angosta no lo distorsiona. */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 16, marginTop: 20 }}>
         <div className="card">
           <h3 style={{ marginTop: 0 }}>Top productos (por unidades vendidas)</h3>
           {topProductos.length > 0 ? (

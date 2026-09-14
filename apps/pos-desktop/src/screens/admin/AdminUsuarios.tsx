@@ -150,7 +150,10 @@ export function AdminUsuarios() {
 
       {mensaje && <p style={{ color: "var(--h421-navy-texto)" }}>{mensaje}</p>}
 
-      <div style={{ display: "grid", gridTemplateColumns: usuarioEditando ? "1.4fr 1fr" : "1fr", gap: 16, marginTop: 12 }}>
+      {/* auto-fit/minmax en vez de "1.4fr 1fr" fijo al editar (mismo patrón que Caja.tsx) — la
+          tabla ya se desplaza horizontal por su cuenta (overflowX abajo), pero el formulario de
+          edición se apila debajo en vez de comprimirse si la ventana es angosta. */}
+      <div style={{ display: "grid", gridTemplateColumns: usuarioEditando ? "repeat(auto-fit, minmax(380px, 1fr))" : "1fr", gap: 16, marginTop: 12 }}>
         <div>
           <div className="card" style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>

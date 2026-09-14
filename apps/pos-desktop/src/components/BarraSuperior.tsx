@@ -51,16 +51,25 @@ export function BarraSuperior({
     : OPCIONES_NAV;
 
   return (
-    <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 20px", background: "var(--h421-navy)", color: "#fff" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <img src={logo} alt="HANGAR 421" style={{ height: 26, width: "auto" }} />
-        <span style={{ opacity: 0.6 }}>|</span>
-        <span>{sucursalNombre}</span>
-        <span style={{ opacity: 0.6 }}>|</span>
-        <span>{usuario?.nombre}</span>
+    // flexWrap + rowGap: única fila de toda la app sin esto (el resto ya lo usa — Login,
+    // Caja, ModalCobro, AdminReportes…). Sin esto, en el ancho MÍNIMO que la propia app declara
+    // soportar (1024px, ver electron/main.ts) el logo + sucursal + usuario, los 4-5 botones de
+    // navegación y la fecha/estado/"Cambiar de usuario"/"Cerrar sesión" de la derecha no caben
+    // en una sola línea y se encimaban en vez de acomodarse — reportado como botones que "se
+    // empalman" en pantallas de menor resolución.
+    <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", rowGap: 8, padding: "10px 20px", background: "var(--h421-navy)", color: "#fff" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0, flexShrink: 1 }}>
+        <img src={logo} alt="HANGAR 421" style={{ height: 26, width: "auto", flexShrink: 0 }} />
+        <span style={{ opacity: 0.6, flexShrink: 0 }}>|</span>
+        {/* Nombre de sucursal/usuario: se truncan con "…" en vez de estirar el header — un
+            nombre largo ya no empuja el menú de navegación o los botones de la derecha fuera
+            de la pantalla. */}
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>{sucursalNombre}</span>
+        <span style={{ opacity: 0.6, flexShrink: 0 }}>|</span>
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>{usuario?.nombre}</span>
       </div>
 
-      <nav style={{ display: "flex", gap: 8 }}>
+      <nav style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
         {opciones.map((opcion) => {
           const activa = pantallaActual === opcion.id;
           return (
@@ -85,9 +94,9 @@ export function BarraSuperior({
         })}
       </nav>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <span>{ahora.toLocaleDateString("es-MX")} {ahora.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}</span>
-        <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", justifyContent: "flex-end" }}>
+        <span style={{ whiteSpace: "nowrap" }}>{ahora.toLocaleDateString("es-MX")} {ahora.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, whiteSpace: "nowrap" }}>
           <span style={{ width: 10, height: 10, borderRadius: 5, background: estadoInfo.color, display: "inline-block" }} />
           {estadoInfo.texto}{sync.pendientes > 0 ? ` (${sync.pendientes})` : ""}
         </span>

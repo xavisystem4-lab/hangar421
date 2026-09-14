@@ -168,7 +168,11 @@ export function AdminInventario() {
         </table>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
+      {/* auto-fit/minmax en vez de "1fr 1fr" fijo (mismo patrón que Caja.tsx) — a 1024px de
+          ancho mínimo con el padding de Administracion.tsx ya queda ajustado; así, si algún
+          día ese padding crece o se usa en una ventana más angosta, las tarjetas se apilan en
+          vez de comprimirse hasta encimar su contenido. */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16, marginTop: 16 }}>
         <div className="card">
           <h3 style={{ marginTop: 0 }}>Nuevo insumo</h3>
           <input placeholder="Nombre (ej. Leche entera)" value={nuevoInsumo.nombre} onChange={(e) => setNuevoInsumo((n) => ({ ...n, nombre: e.target.value }))}

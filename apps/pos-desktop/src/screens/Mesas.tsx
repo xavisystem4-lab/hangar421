@@ -29,8 +29,12 @@ export function Mesas({ sucursalId, onAbrirMesa }: { sucursalId: string; onAbrir
   }, [sucursalId]);
 
   return (
-    <div style={{ padding: 24 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+    // height/overflowY: mismo patrón que Caja.tsx/Administracion.tsx/PedidosPorCobrar.tsx —
+    // sin esto, el padre (App.tsx envuelve cada pantalla en overflow:hidden) recortaba las
+    // mesas de más abajo en vez de dejarlas desplazar, sobre todo con muchas mesas o en
+    // pantallas de menor resolución donde entran menos filas visibles.
+    <div style={{ padding: 24, height: "100%", overflowY: "auto" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <h2 style={{ margin: 0 }}>Mesas — Salón principal</h2>
         <label style={{ fontSize: 14 }}>
           Comensales por defecto:{" "}
