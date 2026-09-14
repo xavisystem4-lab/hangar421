@@ -79,12 +79,18 @@ export const useOrderStore = create<OrderState>((set, get) => ({
           productoId: i.productoId,
           nombreProducto: i.nombreProducto ?? "",
           cantidad: i.cantidad,
-          precioUnitario: i.precioUnitario,
+          // Number(...): igual que p.total en PedidosPorCobrar.tsx, precioUnitario/precioExtra
+          // son Decimal de Prisma en el backend y llegan como STRING por JSON pese al tipo
+          // `number` de shared/entities.ts. Sin la conversión, ModalCobro hacía
+          // `item.precioUnitario + ...` con un string — concatenación de texto en vez de suma,
+          // y el total terminaba en NaN al multiplicar por cantidad — para cualquier pedido
+          // cargado desde el backend (típicamente los que llegan de la app de Meseros).
+          precioUnitario: Number(i.precioUnitario),
           notas: i.notas ?? undefined,
           modificadores: i.modificadores.map((m) => ({
             opcionModificadorId: m.opcionModificadorId,
             nombreOpcion: m.nombreOpcion ?? "",
-            precioExtra: m.precioExtra,
+            precioExtra: Number(m.precioExtra),
           })),
         })),
       descuentos: [],

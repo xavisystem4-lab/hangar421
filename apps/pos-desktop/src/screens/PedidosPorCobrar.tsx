@@ -90,7 +90,14 @@ export function PedidosPorCobrar({ sucursalId }: { sucursalId: string }) {
                 {p.cliente?.nombre && <span style={{ fontSize: 13 }}>👤 Cliente: {p.cliente.nombre}</span>}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
                   <span style={{ fontSize: 12, color: "var(--h421-gray-400)" }}>Hace {minutosDesde(p.createdAt)} min</span>
-                  <span style={{ fontSize: 18, fontWeight: 800, color: "var(--h421-navy-texto)" }}>${p.total.toFixed(2)}</span>
+                  {/* Number(...): p.total viaja del backend como Decimal de Prisma, que se
+                      serializa a JSON como STRING (aunque el tipo de shared/entities.ts diga
+                      `number`) — llamar .toFixed() directo sobre eso tira
+                      "p.total.toFixed is not a function" al renderizar, sin try/catch que lo
+                      atrape, y React desmonta toda la UI (pantalla en negro, el fondo oscuro
+                      del body queda solo). Mismo criterio defensivo que ya usa App.tsx con
+                      `Number(pedido.total).toFixed(2)` en la notificación de pedido nuevo. */}
+                  <span style={{ fontSize: 18, fontWeight: 800, color: "var(--h421-navy-texto)" }}>${Number(p.total).toFixed(2)}</span>
                 </div>
               </button>
             );
