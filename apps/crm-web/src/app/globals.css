@@ -156,3 +156,16 @@ table { color: inherit; }
 @media (max-width: 760px) {
   .h421-grid-2col { grid-template-columns: 1fr !important; }
 }
+
+/* Aviso de "hay más columnas, desliza" en las tablas que se scrollean horizontalmente en
+   celular (Mesas, Inventario, Usuarios) — antes la última columna quedaba cortada justo en el
+   borde de la pantalla sin ninguna pista de que se podía deslizar para verla completa. Se
+   difumina hacia el propio color de fondo de la tarjeta (--h421-white, ya adapta con el tema). */
+@media (max-width: 760px) {
+  .h421-tabla-wrap { position: relative; }
+  .h421-tabla-wrap::after {
+    content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 28px;
+    background: linear-gradient(to right, transparent, var(--h421-white));
+    pointer-events: none;
+  }
+}

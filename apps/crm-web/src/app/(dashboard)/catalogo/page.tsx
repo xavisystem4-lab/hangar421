@@ -133,9 +133,9 @@ export default function CatalogoPage() {
               <h3>{cat.nombre}</h3>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
                 {productos.filter((p) => p.categoriaId === cat.id).map((p) => (
-                  <div key={p.id} className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                  <div key={p.id} className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {editandoId === p.id ? (
-                      <div style={{ flex: 1 }}>
+                      <div>
                         <input value={borrador.nombre} onChange={(e) => setBorrador((b) => ({ ...b, nombre: e.target.value }))}
                           style={{ width: "100%", padding: 6, marginBottom: 4, borderRadius: 6, border: "1px solid var(--h421-gray-200)" }} />
                         <input type="number" value={borrador.precioBase} onChange={(e) => setBorrador((b) => ({ ...b, precioBase: e.target.value }))}
@@ -147,7 +147,7 @@ export default function CatalogoPage() {
                         <div style={{ fontSize: 13, color: "var(--h421-gray-400)" }}>${(p.precioSucursal ?? p.precioBase).toFixed(2)}</div>
                       </div>
                     )}
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                       {editandoId === p.id ? (
                         <>
                           <button onClick={() => guardarEdicion(p.id)} style={{ background: "var(--h421-esmeralda, var(--h421-green))", color: "#fff", padding: "6px 10px", fontSize: 12 }}>

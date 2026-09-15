@@ -399,7 +399,7 @@ export default function InventarioPage() {
         <button onClick={() => { setModalHistorial(true); cargarMovimientosRecientes(sucursalId); }} style={{ background: "transparent", color: "#8b5cf6", border: "1px solid #8b5cf6", padding: "10px 14px", fontSize: 13 }}>🕘 Historial</button>
       </div>
 
-      <div className="card" style={{ overflowX: "auto" }}>
+      <div className="card h421-tabla-wrap" style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
           <thead>
             <tr style={{ textAlign: "left", borderBottom: "1px solid var(--h421-gray-200)" }}>
