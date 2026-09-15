@@ -21,7 +21,7 @@ import "./theme.css";
 export default function App() {
   const auth = useAuthStore();
   const catalogo = useCatalogoStore();
-  const [pantalla, setPantalla] = useState<Pantalla>("mesas");
+  const [pantalla, setPantalla] = useState<Pantalla>("venta");
   const [mesaActiva, setMesaActiva] = useState<{ id: string; nombre: string } | null>(null);
   const [sucursalNombre, setSucursalNombre] = useState("");
   const [backendListo, setBackendListo] = useState(false);
@@ -63,9 +63,19 @@ export default function App() {
   // el usuario ya está ahí (auth.inicializar corre en paralelo, no espera a esta pantalla).
   useEffect(() => {
     if (!backendListo) return;
-    const t = setTimeout(() => setMostrarBienvenida(false), 2400);
+    const t = setTimeout(() => setMostrarBienvenida(false), 2800);
     return () => clearTimeout(t);
   }, [backendListo]);
+
+  // La pantalla inicial es "Venta" (mostrador, sin mesa) — antes onCambiarPantalla era el único
+  // lugar que abría un carrito en blanco al entrar a Venta (useOrderStore.iniciar), así que
+  // arrancar ya parado ahí sin pasar por ese handler dejaba el carrito sin inicializar. Corre una
+  // sola vez, justo cuando el login resuelve (no en cada cambio de pantalla).
+  useEffect(() => {
+    if (!auth.usuario) return;
+    if (pantalla === "venta" && !mesaActiva) useOrderStore.getState().iniciar(null, 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth.usuario]);
 
   useEffect(() => {
     if (!auth.usuario || !auth.sucursalId) return;

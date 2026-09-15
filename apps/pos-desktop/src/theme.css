@@ -162,14 +162,21 @@ input, textarea, select {
 .h421-hoja-carta.hojeando-siguiente { animation: h421-hojear-siguiente 500ms ease-in-out; }
 .h421-hoja-carta.hojeando-anterior { animation: h421-hojear-anterior 500ms ease-in-out; }
 
-/* Presentación de bienvenida al abrir la app (ver PantallaBienvenida.tsx) — logo y texto entran
-   con un pequeño fade + deslizamiento hacia arriba, el texto un poco después que el logo. */
-@keyframes h421-bienvenida-entra {
-  0% { opacity: 0; transform: translateY(12px); }
+/* Presentación de bienvenida al abrir la app (ver PantallaBienvenida.tsx): el logo "aparece" con
+   un pequeño rebote (crece de más y se asienta, cubic-bezier tipo "back") en vez de solo desvanecer
+   — se nota más como una presentación real. El texto "Bienvenidos" entra después, con un fade +
+   deslizamiento más simple, para que la secuencia se lea logo-primero-texto-después. */
+@keyframes h421-bienvenida-logo-entra {
+  0% { opacity: 0; transform: scale(0.72) translateY(14px); }
+  65% { opacity: 1; transform: scale(1.06) translateY(0); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes h421-bienvenida-texto-entra {
+  0% { opacity: 0; transform: translateY(10px); }
   100% { opacity: 1; transform: translateY(0); }
 }
-.h421-bienvenida-logo { animation: h421-bienvenida-entra 600ms ease-out both; }
-.h421-bienvenida-texto { animation: h421-bienvenida-entra 600ms ease-out 200ms both; }
+.h421-bienvenida-logo { animation: h421-bienvenida-logo-entra 850ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.h421-bienvenida-texto { animation: h421-bienvenida-texto-entra 500ms ease-out 650ms both; }
 
 /* Impresión del reporte (botón "Imprimir" de ReporteInventario.tsx). */
 #reporte-imprimible { display: none; }
