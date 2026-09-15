@@ -73,5 +73,20 @@ export function instalarFallbackNavegador() {
       instalar: async () => undefined,
       onEvento: () => () => undefined,
     },
+    // En navegador (sin Electron) no hay impresoras del sistema ni impresión silenciosa: se abre
+    // una ventana nueva con el ticket y se dispara el diálogo de impresión normal del navegador,
+    // solo para poder revisar visualmente la plantilla mientras se desarrolla.
+    impresion: {
+      listar: async () => [],
+      imprimir: async (opciones: { html: string }) => {
+        const ventana = window.open("", "_blank", "width=400,height=600");
+        if (!ventana) return { ok: false, error: "popup_bloqueado" };
+        ventana.document.write(opciones.html);
+        ventana.document.close();
+        ventana.focus();
+        ventana.print();
+        return { ok: true };
+      },
+    },
   };
 }

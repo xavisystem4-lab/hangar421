@@ -113,8 +113,8 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
       // se crea aquí mismo (si todavía no existe) y se cobra en el mismo toque de "Confirmar
       // pago". Al estar ya dentro del modal, cualquier error de esta creación se ve en pantalla
       // en vez de bloquear silenciosamente la apertura de la ventana de cobro.
-      if (!pedidoId) await enviarACocina();
-      await cobrar(pagosFinales);
+      if (!pedidoId) await enviarACocina(mesaNombre);
+      await cobrar(pagosFinales, mesaNombre);
       onCobrado();
     } catch (e: any) {
       setError(e.message ?? "No se pudo procesar el cobro");

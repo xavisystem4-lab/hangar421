@@ -11,6 +11,8 @@ import {
 import { apiFetch } from "../api/http";
 import { useAuthStore } from "./authStore";
 import { encolarSyncSiFalla } from "../sync/syncEngine";
+import { obtenerContextoTicket } from "../lib/ticketContexto";
+import { imprimirComanda, imprimirTicketCliente } from "../lib/ticket";
 
 export interface ItemCarrito {
   id: string; // local, temporal hasta confirmarse
@@ -31,6 +33,7 @@ export interface DescuentoCarrito {
 
 interface OrderState {
   pedidoId: string | null; // null hasta que se confirma/envía
+  folio: string | null; // asignado por el backend al crear el pedido (null si se creó offline)
   mesaId: string | null;
   numComensales: number;
   items: ItemCarrito[];
@@ -46,19 +49,20 @@ interface OrderState {
   aplicarDescuento: (d: DescuentoCarrito) => void;
   limpiar: () => void;
   totales: () => ReturnType<typeof calcularTotalesPedido>;
-  enviarACocina: () => Promise<string>;
-  cobrar: (pagos: { metodo: string; monto: number; referencia?: string }[]) => Promise<void>;
+  enviarACocina: (mesaNombre?: string | null) => Promise<string>;
+  cobrar: (pagos: { metodo: string; monto: number; referencia?: string }[], mesaNombre?: string | null) => Promise<void>;
 }
 
 export const useOrderStore = create<OrderState>((set, get) => ({
   pedidoId: null,
+  folio: null,
   mesaId: null,
   numComensales: 1,
   items: [],
   descuentos: [],
   enviado: false,
 
-  iniciar: (mesaId, numComensales = 1) => set({ pedidoId: null, mesaId, numComensales, items: [], descuentos: [], enviado: false }),
+  iniciar: (mesaId, numComensales = 1) => set({ pedidoId: null, folio: null, mesaId, numComensales, items: [], descuentos: [], enviado: false }),
 
   /** Carga en el carrito un pedido que YA EXISTE en el servidor — típicamente uno enviado desde
    *  la app de Meseros — para poder cobrarlo con el mismo ModalCobro que usan los pedidos
@@ -70,6 +74,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   cargarPedidoExistente: (pedido) =>
     set({
       pedidoId: pedido.id,
+      folio: pedido.folio,
       mesaId: pedido.mesaId ?? null,
       numComensales: pedido.numComensales ?? 1,
       items: pedido.items
@@ -118,7 +123,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
 
   aplicarDescuento: (d) => set((s) => ({ descuentos: [...s.descuentos, d] })),
 
-  limpiar: () => set({ pedidoId: null, mesaId: null, numComensales: 1, items: [], descuentos: [], enviado: false }),
+  limpiar: () => set({ pedidoId: null, folio: null, mesaId: null, numComensales: 1, items: [], descuentos: [], enviado: false }),
 
   totales: () => {
     const { items, descuentos } = get();
@@ -136,8 +141,10 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   },
 
   /** Envía el pedido a cocina. Si hay conexión, se confirma de inmediato; si no, se encola
-   *  en el outbox local (SQLite) y se sincroniza automáticamente al reconectar. */
-  enviarACocina: async () => {
+   *  en el outbox local (SQLite) y se sincroniza automáticamente al reconectar. Imprime la
+   *  comanda (si hay impresora de cocina asignada, ver AdminTicket.tsx) independientemente de
+   *  si hubo conexión — la cocina necesita el ticket en papel ahora mismo, no cuando sincronice. */
+  enviarACocina: async (mesaNombre) => {
     const { items, mesaId, numComensales, descuentos } = get();
     const auth = useAuthStore.getState();
     if (items.length === 0) throw new Error("El pedido no tiene productos");
@@ -164,7 +171,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       })),
     };
 
-    await encolarSyncSiFalla(
+    const pedidoCreado = await encolarSyncSiFalla<any>(
       () => apiFetch("/pedidos", { method: "POST", body: JSON.stringify(payload) }),
       { id: pedidoId, entidad: "PEDIDO", operacion: "CREATE", entidadId: pedidoId, idempotencyKey, payload },
     );
@@ -178,12 +185,20 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       );
     }
 
-    set({ pedidoId, enviado: true });
+    set({ pedidoId, folio: pedidoCreado?.folio ?? null, enviado: true });
+
+    const { config } = await obtenerContextoTicket(auth.sucursalId!, auth.usuario!.empresaId);
+    imprimirComanda(config, {
+      mesaNombre,
+      fecha: new Date(),
+      items: items.map((i) => ({ cantidad: i.cantidad, nombre: i.nombreProducto, notas: i.notas })),
+    }).catch((e) => console.error("[orderStore] error al imprimir comanda:", e));
+
     return pedidoId;
   },
 
-  cobrar: async (pagos) => {
-    const { pedidoId } = get();
+  cobrar: async (pagos, mesaNombre) => {
+    const { pedidoId, items, folio } = get();
     if (!pedidoId) throw new Error("No hay un pedido enviado para cobrar");
     const auth = useAuthStore.getState();
     const idempotencyKey = `${auth.dispositivoId}-PAGO-${pedidoId}`;
@@ -193,6 +208,26 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       () => apiFetch(`/pedidos/${pedidoId}/cobrar`, { method: "POST", body: JSON.stringify({ pagos, cajeroId: auth.usuario!.id }) }),
       { id: uuid7(), entidad: "PAGO", operacion: "CREATE", entidadId: pedidoId, idempotencyKey, payload },
     );
+
+    const t = get().totales();
+    const { config, empresaNombre, logoUrl, sucursalNombre } = await obtenerContextoTicket(auth.sucursalId!, auth.usuario!.empresaId);
+    imprimirTicketCliente(config, {
+      empresaNombre,
+      sucursalNombre,
+      logoUrl,
+      mesaNombre,
+      meseroNombre: auth.usuario!.nombre,
+      folio: folio ?? pedidoId.slice(0, 8),
+      fecha: new Date(),
+      items: items.map((i) => ({
+        cantidad: i.cantidad,
+        nombre: i.nombreProducto,
+        precioTotal: (i.precioUnitario + i.modificadores.reduce((s, m) => s + m.precioExtra, 0)) * i.cantidad,
+      })),
+      subtotal: t.subtotal,
+      impuesto: t.impuesto,
+      total: t.total,
+    }).catch((e) => console.error("[orderStore] error al imprimir ticket:", e));
 
     get().limpiar();
   },

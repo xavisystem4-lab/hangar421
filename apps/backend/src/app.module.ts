@@ -11,6 +11,7 @@ import { EmpresasModule } from "./empresas/empresas.module";
 import { SucursalesModule } from "./sucursales/sucursales.module";
 import { UsuariosModule } from "./usuarios/usuarios.module";
 import { PerfilesModule } from "./perfiles/perfiles.module";
+import { AreasImpresionModule } from "./areas-impresion/areas-impresion.module";
 import { CatalogoModule } from "./catalogo/catalogo.module";
 import { MesasModule } from "./mesas/mesas.module";
 import { PedidosModule } from "./pedidos/pedidos.module";
@@ -40,6 +41,7 @@ import { AuditInterceptor } from "./common/interceptors/audit.interceptor";
     SucursalesModule,
     UsuariosModule,
     PerfilesModule,
+    AreasImpresionModule,
     CatalogoModule,
     MesasModule,
     PedidosModule,

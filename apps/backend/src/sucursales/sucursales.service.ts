@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 
 @Injectable()
@@ -31,6 +32,17 @@ export class SucursalesService {
 
   actualizar(id: string, data: Partial<{ nombre: string; direccion: string; horarioApertura: string; horarioCierre: string; tasaImpuesto: number; activo: boolean }>) {
     return this.prisma.sucursal.update({ where: { id }, data });
+  }
+
+  // Config del ticket (plantilla de impresión: encabezado/pie, fuentes, ancho de papel, logo —
+  // ver AdminTicket.tsx) vive dentro de configJson bajo la clave "ticket" en vez de columnas
+  // propias: son ~20 campos de estilo que no se consultan por separado, solo se leen/escriben
+  // como un bloque completo. Se mergea sobre el configJson existente para no perder otras claves
+  // que ya pudiera tener (ej. a futuro).
+  async actualizarConfigTicket(sucursalId: string, configTicket: unknown) {
+    const sucursal = await this.prisma.sucursal.findUniqueOrThrow({ where: { id: sucursalId } });
+    const configJson = { ...((sucursal.configJson as Record<string, unknown>) ?? {}), ticket: configTicket };
+    return this.prisma.sucursal.update({ where: { id: sucursalId }, data: { configJson: configJson as Prisma.InputJsonValue } });
   }
 
   // --- Áreas ---

@@ -37,6 +37,13 @@ export class SucursalesController {
     return this.sucursales.actualizar(id, body);
   }
 
+  @Put(":id/config-ticket")
+  @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
+  @Audit("SUCURSAL", "ACTUALIZAR_CONFIG_TICKET")
+  actualizarConfigTicket(@Param("id") id: string, @Body() body: unknown) {
+    return this.sucursales.actualizarConfigTicket(id, body);
+  }
+
   @Get(":id/areas")
   listarAreas(@Param("id") id: string) {
     return this.sucursales.listarAreas(id);

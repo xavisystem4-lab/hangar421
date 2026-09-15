@@ -168,6 +168,7 @@ model Empresa {
   sucursales   Sucursal[]
   usuarios     Usuario[]
   perfiles     Perfil[]
+  areasImpresion AreaImpresion[]
   categorias   CategoriaProducto[]
   productos    Producto[]
   modificadores Modificador[]
@@ -326,6 +327,24 @@ model Perfil {
   @@unique([empresaId, nombre])
   @@index([empresaId])
   @@map("perfiles")
+}
+
+// Estaciones de impresión (Barra, Cocina, Caja, etc.) — por ahora solo un catálogo con nombre
+// para organizar el menú (ver AdminTicket.tsx §"Áreas de impresión"); la asignación de un
+// producto a una estación y el enrutamiento real a una impresora por estación quedan para una
+// siguiente entrega (hoy solo hay una impresora de cocina configurada por sucursal).
+model AreaImpresion {
+  id        String   @id @default(uuid())
+  empresaId String
+  nombre    String
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  empresa Empresa @relation(fields: [empresaId], references: [id])
+
+  @@unique([empresaId, nombre])
+  @@index([empresaId])
+  @@map("areas_impresion")
 }
 
 // Horario semanal recurrente de un empleado en una sucursal (no es el turno de caja — ver

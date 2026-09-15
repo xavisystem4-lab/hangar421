@@ -258,6 +258,56 @@ function registrarIpc() {
   // confiable en Electron — shell.openExternal sí, es el mecanismo correcto para cualquier
   // enlace que deba abrirse fuera de la propia ventana de la app.
   ipcMain.handle("app:abrirExterno", (_e, url: string) => shell.openExternal(url));
+
+  // Impresión de tickets (ver Administración → Ticket, AdminTicket.tsx y src/lib/ticket.ts).
+  // Electron ya puede imprimir directo a cualquier impresora instalada en Windows sin diálogos
+  // ni software de terceros (a diferencia de una web normal, que sí necesitaría algo como QZ
+  // Tray) — por eso no se integró QZ Tray aquí.
+  ipcMain.handle("impresion:listar", async () => {
+    const win = ventanaPrincipal ?? BrowserWindow.getAllWindows()[0];
+    if (!win) return [];
+    return win.webContents.getPrintersAsync();
+  });
+
+  ipcMain.handle("impresion:imprimirHtml", (_e, opciones: { html: string; impresora?: string; anchoMM: number }) =>
+    imprimirHtml(opciones),
+  );
+}
+
+/** Imprime un HTML ya armado (ver src/lib/ticket.ts) en una ventana oculta. Sin impresora
+ *  asignada (`impresora` vacío) cae al diálogo normal de impresión de Windows, para que el
+ *  cajero pueda elegir a mano — igual que "Sin asignar (usar diálogo del sistema)" en
+ *  AdminTicket.tsx. Con impresora asignada, imprime en silencio, sin ningún diálogo.
+ *  `pageSize` en microns (1 mm = 1000 microns); el alto es generoso (297 mm) porque el ticket
+ *  no tiene un largo fijo — en una impresora de rollo térmico, el driver corta al terminar el
+ *  contenido, no al llegar a esa altura. */
+function imprimirHtml(opciones: { html: string; impresora?: string; anchoMM: number }): Promise<{ ok: boolean; error?: string }> {
+  return new Promise((resolve) => {
+    const ventana = new BrowserWindow({ show: false });
+    const rutaTemporal = path.join(os.tmpdir(), `hangar421-ticket-${Date.now()}-${Math.random().toString(36).slice(2)}.html`);
+    fs.writeFileSync(rutaTemporal, opciones.html, "utf-8");
+
+    const limpiar = (resultado: { ok: boolean; error?: string }) => {
+      ventana.close();
+      fs.unlink(rutaTemporal, () => undefined);
+      resolve(resultado);
+    };
+
+    ventana.webContents.once("did-finish-load", () => {
+      ventana.webContents.print(
+        {
+          silent: !!opciones.impresora,
+          deviceName: opciones.impresora || undefined,
+          printBackground: true,
+          margins: { marginType: "none" },
+          pageSize: { width: Math.round(opciones.anchoMM * 1000), height: 297000 },
+        },
+        (success, errorType) => limpiar(success ? { ok: true } : { ok: false, error: errorType }),
+      );
+    });
+    ventana.webContents.once("did-fail-load", (_e, _code, descripcion) => limpiar({ ok: false, error: descripcion }));
+    ventana.loadFile(rutaTemporal);
+  });
 }
 
 /** true si `ip` cae en un rango privado RFC1918 (192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12) —

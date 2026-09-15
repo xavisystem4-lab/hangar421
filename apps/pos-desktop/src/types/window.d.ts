@@ -37,6 +37,10 @@ declare global {
         guardar(opciones: { nombreSugerido: string; datosBase64: string; filtros: { name: string; extensions: string[] }[] }): Promise<{ guardado: boolean; ruta?: string }>;
       };
       abrirExterno(url: string): Promise<void>;
+      impresion: {
+        listar(): Promise<{ name: string; displayName: string; isDefault: boolean }[]>;
+        imprimir(opciones: { html: string; impresora?: string; anchoMM: number }): Promise<{ ok: boolean; error?: string }>;
+      };
     };
   }
 }

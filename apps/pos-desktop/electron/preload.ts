@@ -74,4 +74,10 @@ contextBridge.exposeInMainWorld("hangar", {
   },
 
   abrirExterno: (url: string): Promise<void> => ipcRenderer.invoke("app:abrirExterno", url),
+
+  impresion: {
+    listar: (): Promise<{ name: string; displayName: string; isDefault: boolean }[]> => ipcRenderer.invoke("impresion:listar"),
+    imprimir: (opciones: { html: string; impresora?: string; anchoMM: number }): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke("impresion:imprimirHtml", opciones),
+  },
 });
