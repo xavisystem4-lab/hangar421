@@ -442,6 +442,11 @@ model Mesa {
   nombre     String
   capacidad  Int        @default(2)
   estado     EstadoMesa @default(LIBRE)
+  // Baja lógica (nunca se borra: conservaría el historial de pedidos que ya la referencian) —
+  // agregado para poder limpiar mesas duplicadas desde la UI sin tocar la base a mano. Ver
+  // AdminMesas.tsx y mesas.service.ts (actualizar() rechaza dar de baja una mesa que no esté
+  // LIBRE, para no desactivar por error la que sigue en uso).
+  activo     Boolean    @default(true)
 
   sucursal Sucursal @relation(fields: [sucursalId], references: [id])
   area     Area?    @relation(fields: [areaId], references: [id])

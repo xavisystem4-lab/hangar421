@@ -138,6 +138,7 @@ export interface Mesa {
   nombre: string;
   capacidad: number;
   estado: EstadoMesa;
+  activo: boolean;
 }
 
 export interface PedidoItemModificador {
