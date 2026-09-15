@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { NivelInventario, Sucursal } from "@hangar421/shared";
 import { calcularNivelInventario } from "@hangar421/shared";
 import { apiFetch } from "@/lib/api";
@@ -133,6 +133,20 @@ export default function InventarioPage() {
   const [modalConteo, setModalConteo] = useState(false);
   const [conteo, setConteo] = useState<Record<string, string>>({});
   const [guardandoConteo, setGuardandoConteo] = useState(false);
+  const inputsConteoRef = useRef<(HTMLInputElement | null)[]>([]);
+
+  // Enter y flechas arriba/abajo se desplazan al campo contiguo en vez de su comportamiento
+  // nativo (Enter no hace nada en un input suelto; las flechas incrementan/decrementan un
+  // type="number") — captura rápida de un conteo físico sin soltar el teclado.
+  function moverFocoConteo(e: React.KeyboardEvent<HTMLInputElement>, indice: number) {
+    if (e.key === "Enter" || e.key === "ArrowDown") {
+      e.preventDefault();
+      inputsConteoRef.current[indice + 1]?.focus();
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      inputsConteoRef.current[indice - 1]?.focus();
+    }
+  }
 
   // Traspasar a otra sucursal: solicitar + autorizar + enviar en un solo paso (quien lo usa ya es
   // admin/supervisor, así que no tiene sentido pedirle que autorice su propia solicitud aparte).
@@ -655,13 +669,17 @@ export default function InventarioPage() {
               </tr>
             </thead>
             <tbody>
-              {filas.map((f) => (
+              {filas.map((f, indice) => (
                 <tr key={f.insumo.id} style={{ borderBottom: "1px solid var(--h421-gray-200)" }}>
                   <td style={{ padding: 8 }}>{f.insumo.nombre}</td>
                   <td style={{ padding: 8, color: "var(--h421-gray-400)" }}>{f.existencia} {f.insumo.unidadMedida}</td>
                   <td style={{ padding: 8 }}>
-                    <input type="number" placeholder={String(f.existencia)} value={conteo[f.insumo.id] ?? ""}
+                    <input
+                      type="number" inputMode="decimal" step="0.01"
+                      placeholder={String(f.existencia)} value={conteo[f.insumo.id] ?? ""}
+                      ref={(el) => { inputsConteoRef.current[indice] = el; }}
                       onChange={(e) => setConteo((c) => ({ ...c, [f.insumo.id]: e.target.value }))}
+                      onKeyDown={(e) => moverFocoConteo(e, indice)}
                       style={{ width: 90, padding: 6, borderRadius: 6, border: "1px solid var(--h421-gray-200)" }} />
                   </td>
                 </tr>
