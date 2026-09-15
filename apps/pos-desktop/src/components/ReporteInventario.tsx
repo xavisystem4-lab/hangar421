@@ -4,10 +4,13 @@ import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 import type { NivelInventario } from "@hangar421/shared";
 
+export type TipoDocumentoInventario = "reporte" | "compras";
+
 export interface FilaReporte {
-  insumo: { nombre: string; unidadMedida: string };
+  insumo: { nombre: string; unidadMedida: string; proveedor?: { nombre: string } | null };
   existencia: number;
   minimo: number;
+  maximo?: number | null;
   nivel: NivelInventario;
 }
 
@@ -19,6 +22,28 @@ const COLOR_ESTADO: Record<NivelInventario, { bg: string; texto: string }> = {
 };
 
 const FILAS_POR_PAGINA = 12;
+
+/** Config por tipo de documento — "reporte" muestra todo el inventario con su Estado; "compras"
+ *  solo insumos en Bajo/Crítico con la cantidad sugerida a comprar (hasta el máximo capturado, o
+ *  el doble del mínimo si no hay máximo — mismo criterio que calcularNivelInventario). */
+const CONFIG: Record<TipoDocumentoInventario, { titulo: string; archivoBase: string; encabezados: string[] }> = {
+  reporte: { titulo: "Reporte de Inventario", archivoBase: "reporte-inventario", encabezados: ["Insumo", "Existencia", "Mínimo", "Estado"] },
+  compras: { titulo: "Lista de Compras", archivoBase: "lista-de-compras", encabezados: ["Insumo", "Existencia", "Mínimo", "Proveedor", "Sugerido a comprar"] },
+};
+
+function calcularSugerido(f: FilaReporte): number {
+  const referencia = f.maximo ?? f.minimo * 2;
+  return Math.max(0, Math.ceil(referencia - f.existencia));
+}
+
+/** Celdas en texto plano en el mismo orden que CONFIG[tipo].encabezados — usado para PDF, Excel
+ *  e impresión (a diferencia de la vista en pantalla, ahí no hace falta la píldora de color). */
+function celdasTexto(tipo: TipoDocumentoInventario, f: FilaReporte): (string | number)[] {
+  if (tipo === "compras") {
+    return [f.insumo.nombre, `${f.existencia} ${f.insumo.unidadMedida}`, `${f.minimo} ${f.insumo.unidadMedida}`, f.insumo.proveedor?.nombre ?? "—", calcularSugerido(f)];
+  }
+  return [f.insumo.nombre, `${f.existencia} ${f.insumo.unidadMedida}`, `${f.minimo} ${f.insumo.unidadMedida}`, ETIQUETA_NIVEL[f.nivel]];
+}
 
 function fechaLarga(): string {
   return new Date().toLocaleDateString("es-MX", { day: "numeric", month: "long", year: "numeric" });
@@ -39,7 +64,8 @@ async function guardarConDialogoNativo(blob: Blob, nombreSugerido: string, filtr
   return window.hangar.archivo.guardar({ nombreSugerido, datosBase64, filtros });
 }
 
-function construirPdf(filas: FilaReporte[]): jsPDF {
+function construirPdf(tipo: TipoDocumentoInventario, filas: FilaReporte[]): jsPDF {
+  const { titulo, encabezados } = CONFIG[tipo];
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   const anchoPagina = doc.internal.pageSize.getWidth();
 
@@ -56,12 +82,12 @@ function construirPdf(filas: FilaReporte[]): jsPDF {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(20);
   doc.setTextColor(17, 19, 24);
-  doc.text("Reporte de Inventario", 40, 100);
+  doc.text(titulo, 40, 100);
 
   autoTable(doc, {
     startY: 118,
-    head: [["Insumo", "Existencia", "Mínimo", "Estado"]],
-    body: filas.map((f) => [f.insumo.nombre, `${f.existencia} ${f.insumo.unidadMedida}`, `${f.minimo} ${f.insumo.unidadMedida}`, ETIQUETA_NIVEL[f.nivel]]),
+    head: [encabezados],
+    body: filas.map((f) => celdasTexto(tipo, f)),
     headStyles: { fillColor: [11, 30, 51] },
     styles: { fontSize: 10, cellPadding: 6 },
     margin: { left: 40, right: 40 },
@@ -70,28 +96,30 @@ function construirPdf(filas: FilaReporte[]): jsPDF {
   return doc;
 }
 
-function construirExcelBlob(filas: FilaReporte[]): Blob {
-  const datos = filas.map((f) => ({
-    Insumo: f.insumo.nombre,
-    Existencia: `${f.existencia} ${f.insumo.unidadMedida}`,
-    Mínimo: `${f.minimo} ${f.insumo.unidadMedida}`,
-    Estado: ETIQUETA_NIVEL[f.nivel],
-  }));
+function construirExcelBlob(tipo: TipoDocumentoInventario, filas: FilaReporte[]): Blob {
+  const { encabezados } = CONFIG[tipo];
+  const datos = filas.map((f) => {
+    const celdas = celdasTexto(tipo, f);
+    return Object.fromEntries(encabezados.map((h, i) => [h, celdas[i]]));
+  });
   const hoja = XLSX.utils.json_to_sheet(datos);
   const libro = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(libro, hoja, "Inventario");
+  XLSX.utils.book_append_sheet(libro, hoja, CONFIG[tipo].titulo.slice(0, 31));
   const buffer = XLSX.write(libro, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
   return new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
 }
 
-/** Vista previa tipo hoja carta del reporte de inventario, con paginación (efecto de hojear al
- *  cambiar de página) y exportación real a PDF/Excel + impresión — mismo componente que
- *  apps/crm-web, salvo cómo se guarda el archivo (aquí, diálogo nativo de Electron; allá, File
- *  System Access API del navegador). */
-export function ReporteInventario({ filas, onCerrar }: { filas: FilaReporte[]; onCerrar: () => void }) {
+/** Vista previa tipo hoja carta del reporte de inventario o la lista de compras, con paginación
+ *  (efecto de hojear al cambiar de página) y exportación real a PDF/Excel + impresión — mismo
+ *  componente que apps/crm-web, salvo cómo se guarda el archivo (aquí, diálogo nativo de
+ *  Electron; allá, File System Access API del navegador). */
+export function ReporteInventario({ tipo, filas: todasLasFilas, onCerrar }: { tipo: TipoDocumentoInventario; filas: FilaReporte[]; onCerrar: () => void }) {
   const [paginaActual, setPaginaActual] = useState(0);
   const [animacion, setAnimacion] = useState<"" | "hojeando-siguiente" | "hojeando-anterior">("");
   const [generando, setGenerando] = useState<"" | "pdf" | "excel">("");
+
+  const { titulo, archivoBase, encabezados } = CONFIG[tipo];
+  const filas = useMemo(() => (tipo === "compras" ? todasLasFilas.filter((f) => f.nivel !== "OPTIMO") : todasLasFilas), [todasLasFilas, tipo]);
 
   const totalPaginas = Math.max(1, Math.ceil(filas.length / FILAS_POR_PAGINA));
   const filasPagina = useMemo(
@@ -109,8 +137,8 @@ export function ReporteInventario({ filas, onCerrar }: { filas: FilaReporte[]; o
   async function exportarPdf() {
     setGenerando("pdf");
     try {
-      const doc = construirPdf(filas);
-      const nombre = `reporte-inventario-${new Date().toISOString().slice(0, 10)}.pdf`;
+      const doc = construirPdf(tipo, filas);
+      const nombre = `${archivoBase}-${new Date().toISOString().slice(0, 10)}.pdf`;
       await guardarConDialogoNativo(doc.output("blob"), nombre, [{ name: "Documento PDF", extensions: ["pdf"] }]);
     } finally {
       setGenerando("");
@@ -120,8 +148,8 @@ export function ReporteInventario({ filas, onCerrar }: { filas: FilaReporte[]; o
   async function exportarExcel() {
     setGenerando("excel");
     try {
-      const blob = construirExcelBlob(filas);
-      const nombre = `reporte-inventario-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      const blob = construirExcelBlob(tipo, filas);
+      const nombre = `${archivoBase}-${new Date().toISOString().slice(0, 10)}.xlsx`;
       await guardarConDialogoNativo(blob, nombre, [{ name: "Libro de Excel", extensions: ["xlsx"] }]);
     } finally {
       setGenerando("");
@@ -134,8 +162,8 @@ export function ReporteInventario({ filas, onCerrar }: { filas: FilaReporte[]; o
     // listo y el PDF se descarga aparte para adjuntarlo a mano. Adjuntarlo automáticamente
     // requeriría un servicio de envío de correo (SMTP/SendGrid) configurado en el backend.
     exportarPdf();
-    const asunto = encodeURIComponent("Reporte de Inventario - HANGAR 421");
-    const cuerpo = encodeURIComponent(`Adjunto el reporte de inventario generado el ${fechaLarga()}.\n\n(El PDF se guardó por separado — adjúntalo a este correo antes de enviarlo.)`);
+    const asunto = encodeURIComponent(`${titulo} - HANGAR 421`);
+    const cuerpo = encodeURIComponent(`Adjunto ${titulo.toLowerCase()} generado el ${fechaLarga()}.\n\n(El PDF se guardó por separado — adjúntalo a este correo antes de enviarlo.)`);
     window.hangar.abrirExterno(`mailto:?subject=${asunto}&body=${cuerpo}`);
   }
 
@@ -172,7 +200,7 @@ export function ReporteInventario({ filas, onCerrar }: { filas: FilaReporte[]; o
 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "22px 0 16px" }}>
               <div>
-                <h1 style={{ margin: 0, fontSize: 24 }}>Reporte de Inventario</h1>
+                <h1 style={{ margin: 0, fontSize: 24 }}>{titulo}</h1>
                 <div style={{ width: 48, height: 3, background: "#0b1e33", marginTop: 6 }} />
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 13 }}>
@@ -184,31 +212,38 @@ export function ReporteInventario({ filas, onCerrar }: { filas: FilaReporte[]; o
               </div>
             </div>
 
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-              <thead>
-                <tr style={{ background: "#0b1e33", color: "#fff", textAlign: "left" }}>
-                  <th style={{ padding: 10 }}>Insumo</th>
-                  <th style={{ padding: 10 }}>Existencia</th>
-                  <th style={{ padding: 10 }}>Mínimo</th>
-                  <th style={{ padding: 10 }}>Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filasPagina.map((f, i) => {
-                  const colores = COLOR_ESTADO[f.nivel];
-                  return (
+            {filas.length === 0 ? (
+              <p style={{ color: "#9ca3af", textAlign: "center", padding: "40px 0" }}>
+                No hay insumos en nivel bajo o crítico — todo el inventario está en niveles óptimos.
+              </p>
+            ) : (
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: "#0b1e33", color: "#fff", textAlign: "left" }}>
+                    {encabezados.map((h) => <th key={h} style={{ padding: 10 }}>{h}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filasPagina.map((f, i) => (
                     <tr key={i} style={{ borderBottom: "1px solid #e5e7eb", background: i % 2 === 1 ? "#f6f7f8" : undefined }}>
                       <td style={{ padding: 10, fontWeight: 600 }}>{f.insumo.nombre}</td>
                       <td style={{ padding: 10 }}>{f.existencia} {f.insumo.unidadMedida}</td>
                       <td style={{ padding: 10 }}>{f.minimo} {f.insumo.unidadMedida}</td>
-                      <td style={{ padding: 10 }}>
-                        <span style={{ background: colores.bg, color: colores.texto, padding: "3px 10px", borderRadius: 999, fontSize: 12, fontWeight: 700 }}>{ETIQUETA_NIVEL[f.nivel]}</span>
-                      </td>
+                      {tipo === "compras" ? (
+                        <>
+                          <td style={{ padding: 10 }}>{f.insumo.proveedor?.nombre ?? "—"}</td>
+                          <td style={{ padding: 10, fontWeight: 700 }}>{calcularSugerido(f)} {f.insumo.unidadMedida}</td>
+                        </>
+                      ) : (
+                        <td style={{ padding: 10 }}>
+                          <span style={{ background: COLOR_ESTADO[f.nivel].bg, color: COLOR_ESTADO[f.nivel].texto, padding: "3px 10px", borderRadius: 999, fontSize: 12, fontWeight: 700 }}>{ETIQUETA_NIVEL[f.nivel]}</span>
+                        </td>
+                      )}
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       </div>
@@ -223,23 +258,17 @@ export function ReporteInventario({ filas, onCerrar }: { filas: FilaReporte[]; o
           </div>
           <div style={{ fontSize: 12, color: "#9ca3af" }}>Generado el {fechaLarga()}</div>
         </div>
-        <h1 style={{ fontSize: 24, margin: "22px 0 16px" }}>Reporte de Inventario</h1>
+        <h1 style={{ fontSize: 24, margin: "22px 0 16px" }}>{titulo}</h1>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr style={{ background: "#0b1e33", color: "#fff", textAlign: "left" }}>
-              <th style={{ padding: 10 }}>Insumo</th>
-              <th style={{ padding: 10 }}>Existencia</th>
-              <th style={{ padding: 10 }}>Mínimo</th>
-              <th style={{ padding: 10 }}>Estado</th>
+              {encabezados.map((h) => <th key={h} style={{ padding: 10 }}>{h}</th>)}
             </tr>
           </thead>
           <tbody>
             {filas.map((f, i) => (
               <tr key={i} style={{ borderBottom: "1px solid #e5e7eb" }}>
-                <td style={{ padding: 10 }}>{f.insumo.nombre}</td>
-                <td style={{ padding: 10 }}>{f.existencia} {f.insumo.unidadMedida}</td>
-                <td style={{ padding: 10 }}>{f.minimo} {f.insumo.unidadMedida}</td>
-                <td style={{ padding: 10 }}>{ETIQUETA_NIVEL[f.nivel]}</td>
+                {celdasTexto(tipo, f).map((c, j) => <td key={j} style={{ padding: 10 }}>{c}</td>)}
               </tr>
             ))}
           </tbody>

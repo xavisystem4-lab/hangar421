@@ -84,17 +84,6 @@ function Modal({ titulo, ancho = 520, onCerrar, children }: { titulo: string; an
   );
 }
 
-function descargarCsv(nombreArchivo: string, filas: (string | number)[][]) {
-  const contenido = filas.map((f) => f.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\r\n");
-  const blob = new Blob(["﻿" + contenido], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = nombreArchivo;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 export default function InventarioPage() {
   const { contexto } = useAuthCrm();
   const [sucursales, setSucursales] = useState<Sucursal[]>([]);
@@ -126,6 +115,7 @@ export default function InventarioPage() {
   // Historial: los mismos movimientos pero sin límite de 30 y filtrables por insumo — vista de
   // auditoría completa en vez de la operativa de arriba.
   const [modalReporte, setModalReporte] = useState(false);
+  const [modalListaCompras, setModalListaCompras] = useState(false);
 
   const [modalHistorial, setModalHistorial] = useState(false);
   const [historialInsumoId, setHistorialInsumoId] = useState("");
@@ -362,18 +352,6 @@ export default function InventarioPage() {
     cargar(sucursalId);
   }
 
-  function generarListaCompras() {
-    const bajos = filas.filter((f) => f.nivel !== "OPTIMO");
-    const encabezado = ["Insumo", "Unidad", "Proveedor", "Existencia", "Mínimo", "Sugerido a comprar"];
-    const filasCsv = bajos.map((f) => {
-      const referencia = f.maximo ?? f.minimo * 2;
-      const sugerido = Math.max(0, Math.ceil(referencia - f.existencia));
-      return [f.insumo.nombre, f.insumo.unidadMedida, f.insumo.proveedor?.nombre ?? "—", f.existencia, f.minimo, sugerido];
-    });
-    if (bajos.length === 0) { setMensaje("No hay insumos en nivel bajo o crítico — no se generó lista de compras."); return; }
-    descargarCsv(`lista-de-compras-${new Date().toISOString().slice(0, 10)}.csv`, [encabezado, ...filasCsv]);
-  }
-
   const movimientosHistorial = historialInsumoId ? movimientos.filter((m) => m.insumoId === historialInsumoId) : movimientos;
 
   return (
@@ -416,7 +394,7 @@ export default function InventarioPage() {
         </select>
         <button onClick={() => setModalConteo(true)} style={{ background: "var(--h421-amber-bg)", color: "var(--h421-amber-texto)", border: "1px solid var(--h421-amber)", padding: "10px 14px", fontSize: 13 }}>📋 Hacer Inventario</button>
         <button onClick={() => setModalReporte(true)} style={{ background: "var(--h421-green-bg)", color: "var(--h421-green)", border: "1px solid var(--h421-green)", padding: "10px 14px", fontSize: 13 }}>📄 Generar Reporte</button>
-        <button onClick={generarListaCompras} style={{ background: "var(--h421-green-bg)", color: "var(--h421-green)", border: "1px solid var(--h421-green)", padding: "10px 14px", fontSize: 13 }}>🛒 Lista de Compras</button>
+        <button onClick={() => setModalListaCompras(true)} style={{ background: "var(--h421-green-bg)", color: "var(--h421-green)", border: "1px solid var(--h421-green)", padding: "10px 14px", fontSize: 13 }}>🛒 Lista de Compras</button>
         <button onClick={() => { setModalMovimientosRecientes(true); cargarMovimientosRecientes(sucursalId); }} style={{ background: "transparent", color: "var(--h421-blue)", border: "1px solid var(--h421-blue)", padding: "10px 14px", fontSize: 13 }}>🔄 Movimientos</button>
         <button onClick={() => { setModalHistorial(true); cargarMovimientosRecientes(sucursalId); }} style={{ background: "transparent", color: "#8b5cf6", border: "1px solid #8b5cf6", padding: "10px 14px", fontSize: 13 }}>🕘 Historial</button>
       </div>
@@ -700,7 +678,8 @@ export default function InventarioPage() {
         </Modal>
       )}
 
-      {modalReporte && <ReporteInventario filas={filas} onCerrar={() => setModalReporte(false)} />}
+      {modalReporte && <ReporteInventario tipo="reporte" filas={filas} onCerrar={() => setModalReporte(false)} />}
+      {modalListaCompras && <ReporteInventario tipo="compras" filas={filas} onCerrar={() => setModalListaCompras(false)} />}
     </div>
   );
 }
