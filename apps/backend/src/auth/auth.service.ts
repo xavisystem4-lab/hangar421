@@ -42,7 +42,7 @@ export class AuthService {
     const empresa = await this.prisma.empresa.findFirst({ orderBy: { createdAt: "asc" } });
     if (!empresa) return [];
     const usuarios = await this.prisma.usuario.findMany({
-      where: { empresaId: empresa.id, activo: true, email: { not: null } },
+      where: { empresaId: empresa.id, activo: true, eliminado: false, email: { not: null } },
       select: {
         id: true,
         nombre: true,
@@ -66,13 +66,13 @@ export class AuthService {
       }));
   }
 
-  /** Login con email + password (POS Windows admin, CRM). */
+  /** Login con correo o nombre de usuario + password (POS Windows admin, CRM). */
   async loginConCredenciales(dto: LoginCredencialesDto): Promise<LoginResponse> {
-    const usuario = await this.prisma.usuario.findUnique({
-      where: { email: dto.email },
+    const usuario = await this.prisma.usuario.findFirst({
+      where: { OR: [{ email: dto.email }, { username: dto.email }] },
       include: { sucursales: { where: { activo: true } } },
     });
-    if (!usuario || !usuario.activo || !usuario.passwordHash) {
+    if (!usuario || !usuario.activo || usuario.eliminado || !usuario.passwordHash) {
       throw new UnauthorizedException("Credenciales inválidas");
     }
     const ok = await bcrypt.compare(dto.password, usuario.passwordHash);
@@ -93,7 +93,7 @@ export class AuthService {
       throw new UnauthorizedException("Sin acceso a la sucursal");
     }
     const usuario = usuarioSucursal.usuario;
-    if (!usuario.activo || !usuario.pinHash) throw new UnauthorizedException("PIN no configurado");
+    if (!usuario.activo || usuario.eliminado || !usuario.pinHash) throw new UnauthorizedException("PIN no configurado");
 
     const ok = await bcrypt.compare(dto.pin, usuario.pinHash);
     if (!ok) throw new UnauthorizedException("PIN incorrecto");

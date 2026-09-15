@@ -12,13 +12,14 @@ describe("AuthService — jti único por sesión", () => {
       empresaId: "e1",
       nombre: "Admin",
       activo: true,
+      eliminado: false,
       passwordHash: "hash",
       sucursales: [{ sucursalId: "s1", rol: RolUsuario.CAJERO, activo: true }],
     };
 
     const refreshTokensCreados: { tokenHash: string }[] = [];
     const prisma = {
-      usuario: { findUnique: jest.fn().mockResolvedValue(usuario) },
+      usuario: { findFirst: jest.fn().mockResolvedValue(usuario) },
       refreshToken: {
         create: jest.fn((args: any) => {
           refreshTokensCreados.push({ tokenHash: args.data.tokenHash });

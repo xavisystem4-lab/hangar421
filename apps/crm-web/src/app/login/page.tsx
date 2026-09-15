@@ -36,7 +36,7 @@ export default function LoginPage() {
         <img src="/logo.png" alt="HANGAR 421" style={{ height: 64, width: "auto", margin: "0 auto" }} />
         <p style={{ color: "#6b7280", marginTop: 10 }}>CRM corporativo</p>
 
-        <input placeholder="Correo" value={email} onChange={(e) => setEmail(e.target.value)}
+        <input placeholder="Correo o usuario" value={email} onChange={(e) => setEmail(e.target.value)}
           style={{ width: "100%", padding: 12, marginTop: 16, borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", color: "#111318" }} />
         <input placeholder="Contraseña" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
           style={{ width: "100%", padding: 12, marginTop: 10, borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", color: "#111318" }} />

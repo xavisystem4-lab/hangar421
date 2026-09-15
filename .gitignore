@@ -25,6 +25,9 @@ apps/pos-desktop/resources/backend/
 # Prisma
 apps/backend/prisma/dev.db*
 
+# Postgres embebido de desarrollo (scripts/dev-embedded-pg.mjs) — datos binarios, no se versionan
+apps/backend/.dev-pgdata/
+
 # Expo / React Native
 apps/waiter-mobile/.expo/
 apps/waiter-mobile/android/

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import type { RolUsuario, Sucursal } from "@hangar421/shared";
+import type { Perfil, RolUsuario, Sucursal, TurnoTrabajo } from "@hangar421/shared";
+import { PERMISOS } from "@hangar421/shared";
 import { apiFetch } from "../../api/http";
 import { useAuthStore } from "../../store/authStore";
 
@@ -7,8 +8,11 @@ interface UsuarioSucursalRow {
   usuarioId: string;
   sucursalId: string;
   rol: RolUsuario;
+  turno: TurnoTrabajo | null;
+  perfilId: string | null;
   activo: boolean;
-  usuario: { id: string; nombre: string; email: string | null; activo: boolean };
+  usuario: { id: string; nombre: string; email: string | null; username: string | null; activo: boolean };
+  perfil: { id: string; nombre: string } | null;
 }
 
 interface HorarioRow {
@@ -27,10 +31,33 @@ const ETIQUETA_ROL: Record<string, string> = {
   ADMIN_CORPORATIVO: "Admin. corporativo", ADMIN_SUCURSAL: "Admin. sucursal", SUPERVISOR: "Supervisor",
   CAJERO: "Cajero", MESERO: "Mesero", COCINA: "Cocina",
 };
+const TURNOS: TurnoTrabajo[] = ["MATUTINO", "VESPERTINO", "NOCTURNO", "MIXTO"] as TurnoTrabajo[];
+const ETIQUETA_TURNO: Record<string, string> = {
+  MATUTINO: "Matutino", VESPERTINO: "Vespertino", NOCTURNO: "Nocturno", MIXTO: "Mixto",
+};
+const ETIQUETA_PERMISO: Record<string, string> = {
+  [PERMISOS.VENTA_CREAR]: "Crear pedidos",
+  [PERMISOS.VENTA_COBRAR]: "Cobrar pedidos",
+  [PERMISOS.VENTA_DESCUENTO]: "Aplicar descuentos",
+  [PERMISOS.VENTA_CANCELAR]: "Cancelar pedidos",
+  [PERMISOS.VENTA_DEVOLUCION]: "Hacer devoluciones",
+  [PERMISOS.CAJA_APERTURA]: "Abrir caja",
+  [PERMISOS.CAJA_CORTE]: "Cerrar/cortar caja",
+  [PERMISOS.MESA_TRANSFERIR]: "Transferir mesas",
+  [PERMISOS.PEDIDO_REABRIR]: "Reabrir pedidos cobrados",
+  [PERMISOS.CATALOGO_EDITAR]: "Editar catálogo",
+  [PERMISOS.INVENTARIO_AJUSTAR]: "Ajustar inventario",
+  [PERMISOS.TRASPASO_AUTORIZAR]: "Autorizar traspasos",
+  [PERMISOS.USUARIOS_ADMINISTRAR]: "Administrar usuarios",
+  [PERMISOS.REPORTES_GLOBALES]: "Ver reportes globales",
+};
 const DIAS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 
-/** Alta/edición de usuarios (contraseña, PIN, rol, activo/inactivo) y horario semanal, con
- *  filtro por sucursal — mismo módulo que apps/crm-web/usuarios, dentro del propio POS. */
+const inputStyle = { width: "100%", padding: 10, marginBottom: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" } as const;
+
+/** Alta/edición de usuarios (usuario/contraseña, PIN, rol, turno, perfil de permisos,
+ *  activo/inactivo/eliminado) y horario semanal, con filtro por sucursal — mismo módulo que
+ *  apps/crm-web/usuarios, dentro del propio POS. */
 export function AdminUsuarios() {
   const { usuario: usuarioSesion } = useAuthStore();
   const [sucursales, setSucursales] = useState<Sucursal[]>([]);
@@ -38,7 +65,17 @@ export function AdminUsuarios() {
   const [filas, setFilas] = useState<UsuarioSucursalRow[]>([]);
   const [mensaje, setMensaje] = useState<string | null>(null);
 
-  const [nuevo, setNuevo] = useState({ nombre: "", email: "", password: "", pin: "", rol: "CAJERO" as RolUsuario });
+  const [perfiles, setPerfiles] = useState<Perfil[]>([]);
+  const [mostrarPerfiles, setMostrarPerfiles] = useState(false);
+  const [nuevoPerfil, setNuevoPerfil] = useState<{ nombre: string; descripcion: string; permisos: string[] }>({
+    nombre: "", descripcion: "", permisos: [],
+  });
+  const [guardandoPerfil, setGuardandoPerfil] = useState(false);
+
+  const [nuevo, setNuevo] = useState({
+    nombre: "", email: "", username: "", password: "", pin: "",
+    rol: "CAJERO" as RolUsuario, turno: "" as TurnoTrabajo | "", perfilId: "",
+  });
   const [creando, setCreando] = useState(false);
 
   const [usuarioEditando, setUsuarioEditando] = useState<UsuarioSucursalRow | null>(null);
@@ -54,17 +91,24 @@ export function AdminUsuarios() {
     setFilas(filas);
   }
 
+  async function cargarPerfiles() {
+    if (!usuarioSesion) return;
+    const p = await apiFetch<Perfil[]>(`/perfiles?empresaId=${usuarioSesion.empresaId}`);
+    setPerfiles(p);
+  }
+
   useEffect(() => {
     if (!usuarioSesion) return;
     apiFetch<Sucursal[]>(`/sucursales?empresaId=${usuarioSesion.empresaId}`).then((s) => {
       setSucursales(s);
       if (s[0]) { setSucursalId(s[0].id); cargar(s[0].id); }
     });
+    cargarPerfiles();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usuarioSesion]);
 
   async function crearUsuario() {
-    if (!usuarioSesion || !nuevo.nombre.trim() || !nuevo.email.trim() || !sucursalId) return;
+    if (!usuarioSesion || !nuevo.nombre.trim() || (!nuevo.email.trim() && !nuevo.username.trim()) || !sucursalId) return;
     setCreando(true);
     setMensaje(null);
     try {
@@ -73,13 +117,18 @@ export function AdminUsuarios() {
         body: JSON.stringify({
           empresaId: usuarioSesion.empresaId,
           nombre: nuevo.nombre,
-          email: nuevo.email,
+          email: nuevo.email || undefined,
+          username: nuevo.username || undefined,
           password: nuevo.password || undefined,
           pin: nuevo.pin || undefined,
-          sucursales: [{ sucursalId, rol: nuevo.rol }],
+          sucursales: [{
+            sucursalId, rol: nuevo.rol,
+            turno: nuevo.turno || undefined,
+            perfilId: nuevo.perfilId || undefined,
+          }],
         }),
       });
-      setNuevo({ nombre: "", email: "", password: "", pin: "", rol: "CAJERO" as RolUsuario });
+      setNuevo({ nombre: "", email: "", username: "", password: "", pin: "", rol: "CAJERO" as RolUsuario, turno: "", perfilId: "" });
       cargar(sucursalId);
     } catch (e: any) {
       setMensaje(e.message);
@@ -102,9 +151,26 @@ export function AdminUsuarios() {
     setMensaje("PIN actualizado.");
   }
 
+  async function guardarAsignacion(cambios: Partial<{ rol: RolUsuario; turno: TurnoTrabajo | null; perfilId: string | null }>) {
+    if (!usuarioEditando) return;
+    await apiFetch(`/usuarios/${usuarioEditando.usuarioId}/sucursales/${usuarioEditando.sucursalId}`, {
+      method: "PATCH",
+      body: JSON.stringify(cambios),
+    });
+    await cargar(sucursalId);
+    setMensaje("Actualizado.");
+  }
+
   async function toggleActivo(fila: UsuarioSucursalRow) {
     const accion = fila.usuario.activo ? "desactivar" : "activar";
     await apiFetch(`/usuarios/${fila.usuarioId}/${accion}`, { method: "PATCH" });
+    cargar(sucursalId);
+  }
+
+  async function eliminarUsuario(fila: UsuarioSucursalRow) {
+    if (!confirm(`¿Eliminar a "${fila.usuario.nombre}"? No podrá volver a iniciar sesión; su historial de pedidos, turnos de caja y auditoría se conserva.`)) return;
+    await apiFetch(`/usuarios/${fila.usuarioId}`, { method: "DELETE" });
+    if (usuarioEditando?.usuarioId === fila.usuarioId) setUsuarioEditando(null);
     cargar(sucursalId);
   }
 
@@ -139,16 +205,99 @@ export function AdminUsuarios() {
     setHorarios((h) => h.filter((x) => x.id !== id));
   }
 
+  function togglePermisoNuevo(clave: string) {
+    setNuevoPerfil((p) => ({
+      ...p,
+      permisos: p.permisos.includes(clave) ? p.permisos.filter((x) => x !== clave) : [...p.permisos, clave],
+    }));
+  }
+
+  async function crearPerfil() {
+    if (!usuarioSesion || !nuevoPerfil.nombre.trim()) return;
+    setGuardandoPerfil(true);
+    setMensaje(null);
+    try {
+      await apiFetch("/perfiles", {
+        method: "POST",
+        body: JSON.stringify({
+          empresaId: usuarioSesion.empresaId,
+          nombre: nuevoPerfil.nombre,
+          descripcion: nuevoPerfil.descripcion || undefined,
+          permisos: nuevoPerfil.permisos,
+        }),
+      });
+      setNuevoPerfil({ nombre: "", descripcion: "", permisos: [] });
+      cargarPerfiles();
+    } catch (e: any) {
+      setMensaje(e.message);
+    } finally {
+      setGuardandoPerfil(false);
+    }
+  }
+
+  async function togglePerfilActivo(perfil: Perfil) {
+    await apiFetch(`/perfiles/${perfil.id}`, { method: "PATCH", body: JSON.stringify({ activo: !perfil.activo }) });
+    cargarPerfiles();
+  }
+
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <h2 style={{ margin: 0 }}>Usuarios</h2>
-        <select value={sucursalId} onChange={(e) => { setSucursalId(e.target.value); setUsuarioEditando(null); cargar(e.target.value); }} style={{ padding: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }}>
-          {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-        </select>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button onClick={() => setMostrarPerfiles((v) => !v)} style={{ background: "var(--h421-navy)", color: "#fff", padding: "8px 14px" }}>
+            Perfiles
+          </button>
+          <select value={sucursalId} onChange={(e) => { setSucursalId(e.target.value); setUsuarioEditando(null); cargar(e.target.value); }} style={{ padding: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }}>
+            {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+          </select>
+        </div>
       </div>
 
       {mensaje && <p style={{ color: "var(--h421-navy-texto)" }}>{mensaje}</p>}
+
+      {mostrarPerfiles && (
+        <div className="card" style={{ marginTop: 12, marginBottom: 4 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h3 style={{ marginTop: 0 }}>Perfiles de permisos</h3>
+            <button onClick={() => setMostrarPerfiles(false)} style={{ background: "none", color: "var(--h421-gray-400)", minHeight: 0 }}>✕</button>
+          </div>
+
+          {perfiles.length === 0 && <p style={{ color: "var(--h421-gray-400)", fontSize: 13 }}>Aún no hay perfiles creados.</p>}
+          {perfiles.map((p) => (
+            <div key={p.id} style={{ borderBottom: "1px solid var(--h421-gray-200)", padding: "10px 0" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <strong>{p.nombre}</strong>{p.descripcion ? <span style={{ color: "var(--h421-gray-400)", fontSize: 13 }}> — {p.descripcion}</span> : null}
+                </div>
+                <button onClick={() => togglePerfilActivo(p)} style={{ background: p.activo ? "var(--h421-red)" : "var(--h421-green)", color: "#fff", padding: "4px 10px", fontSize: 12, minHeight: 0 }}>
+                  {p.activo ? "Desactivar" : "Activar"}
+                </button>
+              </div>
+              <p style={{ fontSize: 12, color: "var(--h421-gray-400)", margin: "4px 0 0" }}>
+                {p.permisos.length === 0 ? "Sin permisos asignados" : p.permisos.map((c) => ETIQUETA_PERMISO[c] ?? c).join(", ")}
+              </p>
+            </div>
+          ))}
+
+          <h4 style={{ marginBottom: 8 }}>Nuevo perfil</h4>
+          <input placeholder="Nombre del perfil (ej. Cajero senior)" value={nuevoPerfil.nombre}
+            onChange={(e) => setNuevoPerfil((p) => ({ ...p, nombre: e.target.value }))} style={inputStyle} />
+          <input placeholder="Descripción (opcional)" value={nuevoPerfil.descripcion}
+            onChange={(e) => setNuevoPerfil((p) => ({ ...p, descripcion: e.target.value }))} style={inputStyle} />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 6, marginBottom: 12 }}>
+            {Object.values(PERMISOS).map((clave) => (
+              <label key={clave} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                <input type="checkbox" checked={nuevoPerfil.permisos.includes(clave)} onChange={() => togglePermisoNuevo(clave)} />
+                {ETIQUETA_PERMISO[clave] ?? clave}
+              </label>
+            ))}
+          </div>
+          <button onClick={crearPerfil} disabled={guardandoPerfil || !nuevoPerfil.nombre.trim()} style={{ background: "var(--h421-green)", color: "#fff", padding: "10px 16px" }}>
+            {guardandoPerfil ? "Guardando…" : "Crear perfil"}
+          </button>
+        </div>
+      )}
 
       {/* auto-fit/minmax en vez de "1.4fr 1fr" fijo al editar (mismo patrón que Caja.tsx) — la
           tabla ya se desplaza horizontal por su cuenta (overflowX abajo), pero el formulario de
@@ -160,8 +309,10 @@ export function AdminUsuarios() {
               <thead>
                 <tr style={{ textAlign: "left", borderBottom: "1px solid var(--h421-gray-200)" }}>
                   <th style={{ padding: 8 }}>Nombre</th>
-                  <th style={{ padding: 8 }}>Email</th>
+                  <th style={{ padding: 8 }}>Usuario / Email</th>
                   <th style={{ padding: 8 }}>Rol</th>
+                  <th style={{ padding: 8 }}>Turno</th>
+                  <th style={{ padding: 8 }}>Perfil</th>
                   <th style={{ padding: 8 }}>Estado</th>
                   <th style={{ padding: 8 }}></th>
                 </tr>
@@ -170,19 +321,24 @@ export function AdminUsuarios() {
                 {filas.map((f) => (
                   <tr key={f.usuarioId} style={{ borderBottom: "1px solid var(--h421-gray-200)", background: usuarioEditando?.usuarioId === f.usuarioId ? "var(--h421-gray-50)" : "transparent" }}>
                     <td style={{ padding: 8 }}>{f.usuario.nombre}</td>
-                    <td style={{ padding: 8 }}>{f.usuario.email}</td>
+                    <td style={{ padding: 8 }}>{f.usuario.username ?? f.usuario.email ?? "—"}</td>
                     <td style={{ padding: 8 }}>{ETIQUETA_ROL[f.rol] ?? f.rol}</td>
+                    <td style={{ padding: 8 }}>{f.turno ? ETIQUETA_TURNO[f.turno] : "—"}</td>
+                    <td style={{ padding: 8 }}>{f.perfil?.nombre ?? "—"}</td>
                     <td style={{ padding: 8, color: f.usuario.activo ? "var(--h421-green)" : "var(--h421-red-texto)" }}>{f.usuario.activo ? "Activo" : "Inactivo"}</td>
-                    <td style={{ padding: 8, display: "flex", gap: 6 }}>
+                    <td style={{ padding: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
                       <button onClick={() => seleccionarUsuario(f)} style={{ background: "var(--h421-navy)", color: "#fff", padding: "6px 10px", fontSize: 12, minHeight: 0 }}>Editar</button>
                       <button onClick={() => toggleActivo(f)} style={{ background: f.usuario.activo ? "var(--h421-red)" : "var(--h421-green)", color: "#fff", padding: "6px 10px", fontSize: 12, minHeight: 0 }}>
                         {f.usuario.activo ? "Desactivar" : "Activar"}
+                      </button>
+                      <button onClick={() => eliminarUsuario(f)} style={{ background: "var(--h421-red-bg)", color: "var(--h421-red-texto)", padding: "6px 10px", fontSize: 12, minHeight: 0 }}>
+                        Eliminar
                       </button>
                     </td>
                   </tr>
                 ))}
                 {filas.length === 0 && (
-                  <tr><td colSpan={5} style={{ padding: 16, color: "var(--h421-gray-400)", textAlign: "center" }}>Sin usuarios en esta sucursal.</td></tr>
+                  <tr><td colSpan={7} style={{ padding: 16, color: "var(--h421-gray-400)", textAlign: "center" }}>Sin usuarios en esta sucursal.</td></tr>
                 )}
               </tbody>
             </table>
@@ -190,17 +346,21 @@ export function AdminUsuarios() {
 
           <div className="card" style={{ maxWidth: 460, marginTop: 16 }}>
             <h3 style={{ marginTop: 0 }}>Nuevo usuario</h3>
-            <input placeholder="Nombre" value={nuevo.nombre} onChange={(e) => setNuevo((n) => ({ ...n, nombre: e.target.value }))}
-              style={{ width: "100%", padding: 10, marginBottom: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-            <input placeholder="Correo" value={nuevo.email} onChange={(e) => setNuevo((n) => ({ ...n, email: e.target.value }))}
-              style={{ width: "100%", padding: 10, marginBottom: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-            <input placeholder="Contraseña" type="password" value={nuevo.password} onChange={(e) => setNuevo((n) => ({ ...n, password: e.target.value }))}
-              style={{ width: "100%", padding: 10, marginBottom: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-            <input placeholder="PIN (4 dígitos)" value={nuevo.pin} onChange={(e) => setNuevo((n) => ({ ...n, pin: e.target.value }))}
-              style={{ width: "100%", padding: 10, marginBottom: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-            <select value={nuevo.rol} onChange={(e) => setNuevo((n) => ({ ...n, rol: e.target.value as RolUsuario }))}
-              style={{ width: "100%", padding: 10, marginBottom: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }}>
+            <input placeholder="Nombre" value={nuevo.nombre} onChange={(e) => setNuevo((n) => ({ ...n, nombre: e.target.value }))} style={inputStyle} />
+            <input placeholder="Nombre de usuario" value={nuevo.username} onChange={(e) => setNuevo((n) => ({ ...n, username: e.target.value }))} style={inputStyle} />
+            <input placeholder="Correo (opcional si ya diste nombre de usuario)" value={nuevo.email} onChange={(e) => setNuevo((n) => ({ ...n, email: e.target.value }))} style={inputStyle} />
+            <input placeholder="Contraseña" type="password" value={nuevo.password} onChange={(e) => setNuevo((n) => ({ ...n, password: e.target.value }))} style={inputStyle} />
+            <input placeholder="PIN (4 dígitos)" value={nuevo.pin} onChange={(e) => setNuevo((n) => ({ ...n, pin: e.target.value }))} style={inputStyle} />
+            <select value={nuevo.rol} onChange={(e) => setNuevo((n) => ({ ...n, rol: e.target.value as RolUsuario }))} style={inputStyle}>
               {ROLES.map((r) => <option key={r} value={r}>{ETIQUETA_ROL[r]}</option>)}
+            </select>
+            <select value={nuevo.turno} onChange={(e) => setNuevo((n) => ({ ...n, turno: e.target.value as TurnoTrabajo | "" }))} style={inputStyle}>
+              <option value="">Turno (opcional)</option>
+              {TURNOS.map((t) => <option key={t} value={t}>{ETIQUETA_TURNO[t]}</option>)}
+            </select>
+            <select value={nuevo.perfilId} onChange={(e) => setNuevo((n) => ({ ...n, perfilId: e.target.value }))} style={inputStyle}>
+              <option value="">Perfil de permisos (opcional)</option>
+              {perfiles.filter((p) => p.activo).map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
             </select>
             <p style={{ fontSize: 12, color: "var(--h421-gray-400)", margin: "0 0 8px" }}>Se asigna a la sucursal seleccionada arriba: <strong>{sucursales.find((s) => s.id === sucursalId)?.nombre}</strong>.</p>
             <button onClick={crearUsuario} disabled={creando} style={{ width: "100%", background: "var(--h421-green)", color: "#fff", padding: "10px 16px" }}>
@@ -216,6 +376,26 @@ export function AdminUsuarios() {
                 <h3 style={{ marginTop: 0 }}>{usuarioEditando.usuario.nombre}</h3>
                 <button onClick={() => setUsuarioEditando(null)} style={{ background: "none", color: "var(--h421-gray-400)", minHeight: 0 }}>✕</button>
               </div>
+
+              <label style={{ fontSize: 13, color: "var(--h421-gray-600)" }}>Rol</label>
+              <select value={usuarioEditando.rol} onChange={(e) => { const rol = e.target.value as RolUsuario; setUsuarioEditando((u) => u && { ...u, rol }); guardarAsignacion({ rol }); }}
+                style={{ width: "100%", padding: 8, marginTop: 4, marginBottom: 12, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }}>
+                {ROLES.map((r) => <option key={r} value={r}>{ETIQUETA_ROL[r]}</option>)}
+              </select>
+
+              <label style={{ fontSize: 13, color: "var(--h421-gray-600)" }}>Turno</label>
+              <select value={usuarioEditando.turno ?? ""} onChange={(e) => { const turno = (e.target.value || null) as TurnoTrabajo | null; setUsuarioEditando((u) => u && { ...u, turno }); guardarAsignacion({ turno }); }}
+                style={{ width: "100%", padding: 8, marginTop: 4, marginBottom: 12, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }}>
+                <option value="">Sin turno</option>
+                {TURNOS.map((t) => <option key={t} value={t}>{ETIQUETA_TURNO[t]}</option>)}
+              </select>
+
+              <label style={{ fontSize: 13, color: "var(--h421-gray-600)" }}>Perfil de permisos</label>
+              <select value={usuarioEditando.perfilId ?? ""} onChange={(e) => { const perfilId = e.target.value || null; setUsuarioEditando((u) => u && { ...u, perfilId }); guardarAsignacion({ perfilId }); }}
+                style={{ width: "100%", padding: 8, marginTop: 4, marginBottom: 12, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }}>
+                <option value="">Sin perfil</option>
+                {perfiles.filter((p) => p.activo).map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+              </select>
 
               <label style={{ fontSize: 13, color: "var(--h421-gray-600)" }}>Nueva contraseña</label>
               <div style={{ display: "flex", gap: 8, marginTop: 4, marginBottom: 12 }}>

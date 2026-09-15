@@ -144,6 +144,13 @@ enum EstacionPreparacion {
   POSTRES
 }
 
+enum TurnoTrabajo {
+  MATUTINO
+  VESPERTINO
+  NOCTURNO
+  MIXTO
+}
+
 // ---------------------------------------------------------------------------
 // Jerarquía organizacional
 // ---------------------------------------------------------------------------
@@ -160,6 +167,7 @@ model Empresa {
 
   sucursales   Sucursal[]
   usuarios     Usuario[]
+  perfiles     Perfil[]
   categorias   CategoriaProducto[]
   productos    Producto[]
   modificadores Modificador[]
@@ -250,9 +258,15 @@ model Usuario {
   empresaId    String
   nombre       String
   email        String?  @unique
+  username     String?  @unique
   passwordHash String?
   pinHash      String?
   activo       Boolean  @default(true)
+  // Baja lógica permanente (botón "Eliminar" en CRM) — distinta de `activo` (que solo
+  // suspende temporalmente vía Activar/Desactivar). Nunca se borra el registro: conserva
+  // el historial de pedidos, turnos de caja y auditoría que ya lo referencian.
+  eliminado    Boolean  @default(false)
+  eliminadoAt  DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -276,15 +290,42 @@ model UsuarioSucursal {
   usuarioId   String
   sucursalId  String
   rol         RolUsuario
+  turno       TurnoTrabajo?
+  perfilId    String?
   permisosJson Json?     @default("{}")
   activo      Boolean    @default(true)
 
   usuario   Usuario  @relation(fields: [usuarioId], references: [id])
   sucursal  Sucursal @relation(fields: [sucursalId], references: [id])
+  perfil    Perfil?  @relation(fields: [perfilId], references: [id])
 
   @@unique([usuarioId, sucursalId])
   @@index([sucursalId])
+  @@index([perfilId])
   @@map("usuarios_sucursales")
+}
+
+// Perfil de permisos: capa adicional sobre RolUsuario (que sigue controlando el acceso base
+// a los módulos del backend vía RolesGuard). Un Perfil es un conjunto reutilizable y nombrado
+// de claves de PERMISOS (ver packages/shared/src/constants.ts) que un ADMIN puede armar con
+// checkboxes desde el botón "Perfiles" del CRM y asignar a usuarios para afinar qué acciones
+// finas puede realizar dentro de su rol (ej. un Cajero con permiso de aplicar descuentos).
+model Perfil {
+  id          String   @id @default(uuid())
+  empresaId   String
+  nombre      String
+  descripcion String?
+  permisos    String[] @default([])
+  activo      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  empresa      Empresa           @relation(fields: [empresaId], references: [id])
+  asignaciones UsuarioSucursal[]
+
+  @@unique([empresaId, nombre])
+  @@index([empresaId])
+  @@map("perfiles")
 }
 
 // Horario semanal recurrente de un empleado en una sucursal (no es el turno de caja — ver

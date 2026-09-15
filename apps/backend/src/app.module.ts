@@ -10,6 +10,7 @@ import { AuthModule } from "./auth/auth.module";
 import { EmpresasModule } from "./empresas/empresas.module";
 import { SucursalesModule } from "./sucursales/sucursales.module";
 import { UsuariosModule } from "./usuarios/usuarios.module";
+import { PerfilesModule } from "./perfiles/perfiles.module";
 import { CatalogoModule } from "./catalogo/catalogo.module";
 import { MesasModule } from "./mesas/mesas.module";
 import { PedidosModule } from "./pedidos/pedidos.module";
@@ -38,6 +39,7 @@ import { AuditInterceptor } from "./common/interceptors/audit.interceptor";
     EmpresasModule,
     SucursalesModule,
     UsuariosModule,
+    PerfilesModule,
     CatalogoModule,
     MesasModule,
     PedidosModule,

@@ -1,8 +1,9 @@
-import { IsEmail, IsOptional, IsString, MinLength } from "class-validator";
+import { IsOptional, IsString, MinLength } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
 export class LoginCredencialesDto {
-  @ApiProperty() @IsEmail() email!: string;
+  /** Acepta correo o nombre de usuario (Usuario.username) indistintamente. */
+  @ApiProperty({ description: "Correo o nombre de usuario" }) @IsString() email!: string;
   @ApiProperty() @IsString() @MinLength(6) password!: string;
   @ApiPropertyOptional() @IsOptional() @IsString() dispositivoId?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() sucursalId?: string;

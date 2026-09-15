@@ -14,6 +14,7 @@ import {
   TipoMovimientoCaja,
   TipoMovimientoInventario,
   TipoPedido,
+  TurnoTrabajo,
 } from "../enums";
 
 /** Tipos de transporte (DTO) compartidos entre backend y clientes.
@@ -63,6 +64,7 @@ export interface Usuario {
   empresaId: string;
   nombre: string;
   email?: string | null;
+  username?: string | null;
   activo: boolean;
 }
 
@@ -70,6 +72,17 @@ export interface UsuarioSucursal {
   usuarioId: string;
   sucursalId: string;
   rol: RolUsuario;
+  turno?: TurnoTrabajo | null;
+  perfilId?: string | null;
+}
+
+export interface Perfil {
+  id: string;
+  empresaId: string;
+  nombre: string;
+  descripcion?: string | null;
+  permisos: string[];
+  activo: boolean;
 }
 
 export interface HorarioUsuario {

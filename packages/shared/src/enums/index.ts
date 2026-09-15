@@ -123,6 +123,13 @@ export enum TipoDescuento {
   PORCENTAJE = "PORCENTAJE",
 }
 
+export enum TurnoTrabajo {
+  MATUTINO = "MATUTINO",
+  VESPERTINO = "VESPERTINO",
+  NOCTURNO = "NOCTURNO",
+  MIXTO = "MIXTO",
+}
+
 /** Entidades sincronizables reconocidas por el endpoint /sync. */
 export enum SyncEntidad {
   PEDIDO = "PEDIDO",

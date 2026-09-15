@@ -1,6 +1,7 @@
 import { RolUsuario } from "../enums";
 
 export interface LoginCredencialesRequest {
+  /** Acepta el correo o el nombre de usuario (`Usuario.username`) indistintamente. */
   email: string;
   password: string;
   dispositivoId?: string;

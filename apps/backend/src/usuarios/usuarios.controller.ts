@@ -53,6 +53,20 @@ export class UsuariosController {
     return this.usuarios.activar(id);
   }
 
+  @Delete(":id")
+  @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
+  @Audit("USUARIO", "ELIMINAR")
+  eliminar(@Param("id") id: string) {
+    return this.usuarios.eliminar(id);
+  }
+
+  @Patch(":id/sucursales/:sucursalId")
+  @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
+  @Audit("USUARIO", "ACTUALIZAR_ASIGNACION")
+  actualizarAsignacion(@Param("id") id: string, @Param("sucursalId") sucursalId: string, @Body() body: any) {
+    return this.usuarios.actualizarAsignacion(id, sucursalId, body);
+  }
+
   // --- Horarios ---
 
   @Get(":id/horarios")
