@@ -13,6 +13,7 @@ import { POSHome } from "./screens/POSHome";
 import { Caja } from "./screens/Caja";
 import { Administracion } from "./screens/Administracion";
 import { PantallaArranque } from "./screens/PantallaArranque";
+import { PantallaBienvenida } from "./screens/PantallaBienvenida";
 import { BarraSuperior, type Pantalla } from "./components/BarraSuperior";
 import { BarraActualizacion } from "./components/BarraActualizacion";
 import "./theme.css";
@@ -27,6 +28,7 @@ export default function App() {
   const [mensajeArranque, setMensajeArranque] = useState("Iniciando…");
   const [errorArranque, setErrorArranque] = useState<string | null>(null);
   const [intentoArranque, setIntentoArranque] = useState(0);
+  const [mostrarBienvenida, setMostrarBienvenida] = useState(true);
 
   // Primero se resuelve dónde vive el backend (embebido, cloud, o dev) — recién entonces
   // se configuran los clientes HTTP/WebSocket y se puede intentar cualquier login. Si falla
@@ -54,6 +56,15 @@ export default function App() {
   useEffect(() => {
     if (backendListo) auth.inicializar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backendListo]);
+
+  // Presentación de bienvenida (ver PantallaBienvenida.tsx): una sola vez por arranque, apenas
+  // el backend ya está listo — se oculta sola después de un momento, sin bloquear el login si
+  // el usuario ya está ahí (auth.inicializar corre en paralelo, no espera a esta pantalla).
+  useEffect(() => {
+    if (!backendListo) return;
+    const t = setTimeout(() => setMostrarBienvenida(false), 2400);
+    return () => clearTimeout(t);
   }, [backendListo]);
 
   useEffect(() => {
@@ -95,6 +106,7 @@ export default function App() {
       />
     );
   }
+  if (mostrarBienvenida) return <PantallaBienvenida />;
   if (auth.cargando) return null;
   if (!auth.usuario) {
     return (

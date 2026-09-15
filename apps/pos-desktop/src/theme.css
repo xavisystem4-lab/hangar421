@@ -162,6 +162,15 @@ input, textarea, select {
 .h421-hoja-carta.hojeando-siguiente { animation: h421-hojear-siguiente 500ms ease-in-out; }
 .h421-hoja-carta.hojeando-anterior { animation: h421-hojear-anterior 500ms ease-in-out; }
 
+/* Presentación de bienvenida al abrir la app (ver PantallaBienvenida.tsx) — logo y texto entran
+   con un pequeño fade + deslizamiento hacia arriba, el texto un poco después que el logo. */
+@keyframes h421-bienvenida-entra {
+  0% { opacity: 0; transform: translateY(12px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.h421-bienvenida-logo { animation: h421-bienvenida-entra 600ms ease-out both; }
+.h421-bienvenida-texto { animation: h421-bienvenida-entra 600ms ease-out 200ms both; }
+
 /* Impresión del reporte (botón "Imprimir" de ReporteInventario.tsx). */
 #reporte-imprimible { display: none; }
 @media print {
