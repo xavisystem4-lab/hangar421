@@ -18,6 +18,8 @@
   --h421-red-texto: #dc2626;
   --h421-red-bg: #fee2e2;
   --h421-amber-texto: #92400e;
+  --h421-amber-bg: #fef3c7;
+  --h421-green-bg: #dcfce7;
 }
 
 /* Modo oscuro — mismos tokens y mismo criterio que apps/pos-desktop/src/theme.css: solo se
@@ -36,6 +38,8 @@
   --h421-red-texto: #f87171;  /* rojo aclarado — el rojo de marca es muy oscuro para usarse como texto sobre fondo oscuro */
   --h421-red-bg: #3a1616;     /* fondo de píldora "peligro" (Eliminar/Quitar), oscurecido en vez del rosa claro fijo */
   --h421-amber-texto: #fbbf24; /* ámbar aclarado, mismo criterio que red-texto */
+  --h421-amber-bg: #3a2a0a;   /* fondo de píldora "Bajo" (nivel de inventario), oscurecido */
+  --h421-green-bg: #0f2e1d;   /* fondo de píldora "Óptimo" (nivel de inventario), oscurecido */
 }
 
 * { box-sizing: border-box; }

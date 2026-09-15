@@ -3,6 +3,7 @@ import {
   calcularDiferenciaTraspaso,
   calcularImpuesto,
   calcularMontoDescuento,
+  calcularNivelInventario,
   calcularSubtotal,
   calcularTotalesPedido,
   deltaExistenciaInventario,
@@ -153,5 +154,36 @@ describe("calcularDiferenciaTraspaso", () => {
 describe("round2", () => {
   it("evita errores de punto flotante comunes", () => {
     expect(round2(0.1 + 0.2)).toBe(0.3);
+  });
+});
+
+describe("calcularNivelInventario", () => {
+  it("es CRITICO en o por debajo del mínimo", () => {
+    expect(calcularNivelInventario(2, 20).nivel).toBe("CRITICO");
+    expect(calcularNivelInventario(20, 20).nivel).toBe("CRITICO");
+  });
+
+  it("es BAJO entre el mínimo y 1.5x el mínimo", () => {
+    expect(calcularNivelInventario(25, 20).nivel).toBe("BAJO");
+  });
+
+  it("es OPTIMO por encima de 1.5x el mínimo", () => {
+    expect(calcularNivelInventario(35, 12).nivel).toBe("OPTIMO");
+  });
+
+  it("sin mínimo capturado siempre es OPTIMO (no hay referencia para juzgar)", () => {
+    expect(calcularNivelInventario(5, 0).nivel).toBe("OPTIMO");
+  });
+
+  it("el porcentaje usa el máximo como referencia cuando está definido", () => {
+    expect(calcularNivelInventario(50, 20, 100).porcentaje).toBe(50);
+  });
+
+  it("el porcentaje usa 2x el mínimo como referencia cuando no hay máximo", () => {
+    expect(calcularNivelInventario(12, 12).porcentaje).toBe(50);
+  });
+
+  it("el porcentaje nunca pasa de 100 aunque la existencia exceda la referencia", () => {
+    expect(calcularNivelInventario(500, 12).porcentaje).toBe(100);
   });
 });

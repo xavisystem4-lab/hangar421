@@ -86,3 +86,27 @@ export function deltaExistenciaInventario(tipo: TipoMovimientoInventario, cantid
       return cantidad;
   }
 }
+
+export type NivelInventario = "CRITICO" | "BAJO" | "OPTIMO";
+
+export interface ResultadoNivelInventario {
+  /** 0-100, qué tan llena se ve la barra de nivel. Referencia: el máximo si está definido,
+   *  o el doble del mínimo como "lleno" virtual cuando no hay máximo capturado. */
+  porcentaje: number;
+  nivel: NivelInventario;
+}
+
+/** Clasifica la existencia de un insumo para la barra de "Nivel" y la píldora de "Estado" del
+ *  módulo de inventario (mismo criterio en crm-web y pos-desktop, ver INVENTARIO_UI.md). Sin
+ *  mínimo capturado (0 o no definido) no hay forma de juzgar el nivel — siempre OPTIMO. */
+export function calcularNivelInventario(existencia: number, minimo: number, maximo?: number | null): ResultadoNivelInventario {
+  if (!minimo || minimo <= 0) return { porcentaje: 100, nivel: "OPTIMO" };
+
+  const referenciaLlena = maximo && maximo > minimo ? maximo : minimo * 2;
+  const porcentaje = Math.max(0, Math.min(100, round2((existencia / referenciaLlena) * 100)));
+
+  const ratio = existencia / minimo;
+  const nivel: NivelInventario = ratio <= 1 ? "CRITICO" : ratio <= 1.5 ? "BAJO" : "OPTIMO";
+
+  return { porcentaje, nivel };
+}
