@@ -142,6 +142,16 @@ input, textarea, select {
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
 
+/* Forma de "papel de ticket" (borde dentado arriba y abajo, como si estuviera arrancado
+   del rollo) para las vistas previas de AdminTicket.tsx — el dentado en sí se recorta con
+   un clip-path generado en JS (ver recorteTicket() en lib/ticket.ts), esta clase solo pone
+   el fondo/sombra; sin border-radius, no combina con el dentado. */
+.ticket-paper {
+  background: var(--h421-white);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  padding: 10px 0;
+}
+
 /* Efecto de "hojear" al cambiar de página en la vista previa del reporte (ver
    ReporteInventario.tsx) — un giro simple sobre el eje vertical, no un curl 3D realista, pero
    suficiente para leerse como pasar una hoja de un libro. El contenido de la página se

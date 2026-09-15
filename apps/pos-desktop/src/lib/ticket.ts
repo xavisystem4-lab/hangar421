@@ -1,5 +1,26 @@
 import type { ConfigTicket, EstiloTexto } from "@hangar421/shared";
 
+/** clip-path con borde dentado arriba y abajo (como un ticket arrancado del rollo), para
+ *  envolver la vista previa en AdminTicket.tsx — un polígono explícito en vez de un truco de
+ *  mask-image con capas: con mask, cualquier zona no cubierta por las imágenes de borde queda
+ *  fuera de todas las capas y se oculta por defecto (perdíamos el contenido del medio); el
+ *  clip-path no tiene esa ambigüedad, solo recorta la silueta que se le da. */
+export function recorteTicket(dientes = 22, profundidadPx = 8): string {
+  const n = dientes * 2;
+  const puntos: string[] = [];
+  for (let i = 0; i <= n; i++) {
+    const x = (i / n) * 100;
+    const y = i % 2 === 0 ? 0 : profundidadPx;
+    puntos.push(`${x.toFixed(3)}% ${y}px`);
+  }
+  for (let i = n; i >= 0; i--) {
+    const x = (i / n) * 100;
+    const y = i % 2 === 0 ? 0 : profundidadPx;
+    puntos.push(`${x.toFixed(3)}% calc(100% - ${y}px)`);
+  }
+  return `polygon(${puntos.join(", ")})`;
+}
+
 export interface ItemTicket {
   cantidad: number;
   nombre: string;

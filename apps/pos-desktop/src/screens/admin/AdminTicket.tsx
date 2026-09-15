@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AreaImpresion, ConfigTicket, EstiloTexto, Sucursal } from "@hangar421/shared";
 import { CONFIG_TICKET_DEFAULT } from "@hangar421/shared";
 import { apiFetch } from "../../api/http";
 import { useAuthStore } from "../../store/authStore";
-import { generarHtmlComanda, generarHtmlTicketCliente, type ItemTicket } from "../../lib/ticket";
+import { generarHtmlComanda, generarHtmlTicketCliente, recorteTicket, type ItemTicket } from "../../lib/ticket";
 
 const FUENTES = ["Courier New", "Trebuchet MS", "Arial", "Consolas", "Segoe UI", "Georgia"];
 
@@ -64,6 +64,37 @@ export function AdminTicket() {
 
   const [areas, setAreas] = useState<AreaImpresion[]>([]);
   const [nuevaArea, setNuevaArea] = useState("");
+
+  const inputLogoRef = useRef<HTMLInputElement>(null);
+  const [subiendoLogo, setSubiendoLogo] = useState(false);
+
+  async function subirLogotipo(e: React.ChangeEvent<HTMLInputElement>) {
+    const archivo = e.target.files?.[0];
+    e.target.value = "";
+    if (!archivo || !usuarioSesion) return;
+    setSubiendoLogo(true);
+    setMensaje(null);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const lector = new FileReader();
+        lector.onload = () => resolve(lector.result as string);
+        lector.onerror = () => reject(lector.error);
+        lector.readAsDataURL(archivo);
+      });
+      await apiFetch(`/empresas/${usuarioSesion.empresaId}`, { method: "PUT", body: JSON.stringify({ logoUrl: dataUrl }) });
+      setEmpresa((emp) => (emp ? { ...emp, logoUrl: dataUrl } : emp));
+    } catch (e: any) {
+      setMensaje(e.message ?? "No se pudo subir el logotipo");
+    } finally {
+      setSubiendoLogo(false);
+    }
+  }
+
+  async function quitarLogotipo() {
+    if (!usuarioSesion) return;
+    await apiFetch(`/empresas/${usuarioSesion.empresaId}`, { method: "PUT", body: JSON.stringify({ logoUrl: null }) });
+    setEmpresa((emp) => (emp ? { ...emp, logoUrl: null } : emp));
+  }
 
   async function cargarImpresoras() {
     const lista = await window.hangar.impresion.listar();
@@ -175,10 +206,25 @@ export function AdminTicket() {
               <BotonToggle activo={config.anchoImpresoraMM === 58} onClick={() => setConfig((c) => ({ ...c, anchoImpresoraMM: 58 }))}>58 mm</BotonToggle>
               <BotonToggle activo={config.anchoImpresoraMM === 80} onClick={() => setConfig((c) => ({ ...c, anchoImpresoraMM: 80 }))}>80 mm</BotonToggle>
             </div>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700, marginBottom: 14 }}>
               <input type="checkbox" checked={config.mostrarLogo} onChange={(e) => setConfig((c) => ({ ...c, mostrarLogo: e.target.checked }))} />
               Mostrar logotipo en el ticket
             </label>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 56, height: 56, borderRadius: 8, border: "1px dashed var(--h421-gray-200)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
+                {empresa?.logoUrl
+                  ? <img src={empresa.logoUrl} alt="Logotipo" style={{ maxWidth: "100%", maxHeight: "100%" }} />
+                  : <span style={{ fontSize: 11, color: "var(--h421-gray-400)", textAlign: "center" }}>Sin logo</span>}
+              </div>
+              <input ref={inputLogoRef} type="file" accept="image/*" onChange={subirLogotipo} style={{ display: "none" }} />
+              <button onClick={() => inputLogoRef.current?.click()} disabled={subiendoLogo} style={{ background: "var(--h421-navy)", color: "#fff", padding: "8px 14px" }}>
+                {subiendoLogo ? "Subiendo…" : "Subir logotipo"}
+              </button>
+              {empresa?.logoUrl && (
+                <button onClick={quitarLogotipo} style={{ background: "var(--h421-red-bg)", color: "var(--h421-red-texto)", padding: "8px 14px" }}>Quitar</button>
+              )}
+            </div>
           </div>
 
           <div className="card" style={{ marginBottom: 16 }}>
@@ -244,13 +290,13 @@ export function AdminTicket() {
         {/* --- Columna derecha: vista previa + impresoras + áreas --- */}
         <div>
           <p style={{ fontSize: 13, color: "var(--h421-gray-400)", marginBottom: 6 }}>Vista previa · Ticket cliente</p>
-          <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 16 }}>
-            <iframe title="preview-cliente" srcDoc={htmlCliente} style={{ width: "100%", height: 420, border: "none", background: "#fff" }} />
+          <div className="ticket-paper" style={{ marginBottom: 16, clipPath: recorteTicket() }}>
+            <iframe title="preview-cliente" srcDoc={htmlCliente} style={{ width: "100%", height: 420, border: "none", background: "#fff", display: "block" }} />
           </div>
 
           <p style={{ fontSize: 13, color: "var(--h421-gray-400)", marginBottom: 6 }}>Vista previa · Comanda</p>
-          <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 16 }}>
-            <iframe title="preview-comanda" srcDoc={htmlComanda} style={{ width: "100%", height: 260, border: "none", background: "#fff" }} />
+          <div className="ticket-paper" style={{ marginBottom: 16, clipPath: recorteTicket() }}>
+            <iframe title="preview-comanda" srcDoc={htmlComanda} style={{ width: "100%", height: 260, border: "none", background: "#fff", display: "block" }} />
           </div>
 
           <div className="card" style={{ marginBottom: 16 }}>
