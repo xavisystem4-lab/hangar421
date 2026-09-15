@@ -165,6 +165,10 @@ export function AdminTicket() {
   }
 
   const sucursalActual = sucursales.find((s) => s.id === sucursalId);
+  // Ancho real de la vista previa — simula el papel físico (58/80mm), no el ancho de la
+  // columna: antes el iframe se estiraba a "width:100%" del panel, viéndose como una hoja de
+  // oficina en vez de un ticket angosto.
+  const anchoPreviewPx = config.anchoImpresoraMM === 58 ? 260 : 340;
 
   const htmlCliente = generarHtmlTicketCliente(config, {
     empresaNombre: empresa?.nombre ?? "",
@@ -290,12 +294,12 @@ export function AdminTicket() {
         {/* --- Columna derecha: vista previa + impresoras + áreas --- */}
         <div>
           <p style={{ fontSize: 13, color: "var(--h421-gray-400)", marginBottom: 6 }}>Vista previa · Ticket cliente</p>
-          <div className="ticket-paper" style={{ marginBottom: 16, clipPath: recorteTicket() }}>
+          <div className="ticket-paper" style={{ width: anchoPreviewPx, margin: "0 0 16px", clipPath: recorteTicket() }}>
             <iframe title="preview-cliente" srcDoc={htmlCliente} style={{ width: "100%", height: 420, border: "none", background: "#fff", display: "block" }} />
           </div>
 
           <p style={{ fontSize: 13, color: "var(--h421-gray-400)", marginBottom: 6 }}>Vista previa · Comanda</p>
-          <div className="ticket-paper" style={{ marginBottom: 16, clipPath: recorteTicket() }}>
+          <div className="ticket-paper" style={{ width: anchoPreviewPx, margin: "0 0 16px", clipPath: recorteTicket() }}>
             <iframe title="preview-comanda" srcDoc={htmlComanda} style={{ width: "100%", height: 260, border: "none", background: "#fff", display: "block" }} />
           </div>
 
