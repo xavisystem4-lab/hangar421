@@ -33,6 +33,10 @@ declare global {
         guardarConfigNube(url: string): Promise<void>;
         onEstado(callback: (mensaje: string) => void): () => void;
       };
+      archivo: {
+        guardar(opciones: { nombreSugerido: string; datosBase64: string; filtros: { name: string; extensions: string[] }[] }): Promise<{ guardado: boolean; ruta?: string }>;
+      };
+      abrirExterno(url: string): Promise<void>;
     };
   }
 }

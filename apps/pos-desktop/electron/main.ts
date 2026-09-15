@@ -1,6 +1,7 @@
-import { app, BrowserWindow, ipcMain, Menu, screen } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, screen, shell } from "electron";
 import * as path from "path";
 import * as os from "os";
+import * as fs from "fs";
 import {
   iniciarBaseDeDatos,
   obtenerDeviceId,
@@ -235,6 +236,28 @@ function registrarIpc() {
   ipcMain.handle("backend:guardarConfigNube", (_e, url: string) => {
     guardarConfig(CLAVE_CLOUD_URL, url?.trim() ?? "");
   });
+
+  // Guardar reportes/exportaciones (PDF, Excel) con diálogo nativo de "Guardar como" — a
+  // diferencia de un navegador (que solo puede bajar a la carpeta de Descargas), Electron sí
+  // puede preguntar dónde guardar. El renderer genera los bytes (jsPDF/xlsx, ver
+  // ReporteModal.tsx) y los manda en base64 porque IPC no serializa un ArrayBuffer/Buffer tal
+  // cual entre procesos de forma confiable en todas las versiones.
+  ipcMain.handle("archivo:guardar", async (_e, opciones: { nombreSugerido: string; datosBase64: string; filtros: { name: string; extensions: string[] }[] }) => {
+    if (!ventanaPrincipal) return { guardado: false };
+    const resultado = await dialog.showSaveDialog(ventanaPrincipal, {
+      defaultPath: opciones.nombreSugerido,
+      filters: opciones.filtros,
+    });
+    if (resultado.canceled || !resultado.filePath) return { guardado: false };
+    fs.writeFileSync(resultado.filePath, Buffer.from(opciones.datosBase64, "base64"));
+    return { guardado: true, ruta: resultado.filePath };
+  });
+
+  // "Enviar por correo" del reporte (ver ReporteInventario.tsx): un mailto: navegado directo con
+  // window.location dentro del renderer no abre el cliente de correo del sistema de forma
+  // confiable en Electron — shell.openExternal sí, es el mecanismo correcto para cualquier
+  // enlace que deba abrirse fuera de la propia ventana de la app.
+  ipcMain.handle("app:abrirExterno", (_e, url: string) => shell.openExternal(url));
 }
 
 /** true si `ip` cae en un rango privado RFC1918 (192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12) —

@@ -3,6 +3,7 @@ import type { NivelInventario, Sucursal } from "@hangar421/shared";
 import { calcularNivelInventario } from "@hangar421/shared";
 import { apiFetch } from "../../api/http";
 import { useAuthStore } from "../../store/authStore";
+import { ReporteInventario } from "../../components/ReporteInventario";
 
 interface Existencia {
   insumoId: string;
@@ -119,6 +120,8 @@ export function AdminInventario() {
   const [mov, setMov] = useState({ tipo: "ENTRADA", cantidad: "", motivo: "" });
   const [modalMovimientosRecientes, setModalMovimientosRecientes] = useState(false);
   const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
+
+  const [modalReporte, setModalReporte] = useState(false);
 
   const [modalHistorial, setModalHistorial] = useState(false);
   const [historialInsumoId, setHistorialInsumoId] = useState("");
@@ -347,15 +350,6 @@ export function AdminInventario() {
     cargar(sucursalId);
   }
 
-  function generarReporte() {
-    const encabezado = ["Insumo", "Unidad", "Proveedor", "Existencia", "Mínimo", "Nivel", "Costo unitario", "Precio venta"];
-    const filasCsv = filas.map((f) => [
-      f.insumo.nombre, f.insumo.unidadMedida, f.insumo.proveedor?.nombre ?? "", f.existencia, f.minimo,
-      ETIQUETA_NIVEL[f.nivel], Number(f.insumo.costoUnitario).toFixed(2), f.insumo.precioVenta != null ? Number(f.insumo.precioVenta).toFixed(2) : "",
-    ]);
-    descargarCsv(`reporte-inventario-${new Date().toISOString().slice(0, 10)}.csv`, [encabezado, ...filasCsv]);
-  }
-
   function generarListaCompras() {
     const bajos = filas.filter((f) => f.nivel !== "OPTIMO");
     const encabezado = ["Insumo", "Unidad", "Proveedor", "Existencia", "Mínimo", "Sugerido a comprar"];
@@ -406,7 +400,7 @@ export function AdminInventario() {
           <option value="CRITICO">Crítico</option>
         </select>
         <button onClick={() => setModalConteo(true)} style={{ background: "var(--h421-amber-bg)", color: "var(--h421-amber-texto)", border: "1px solid var(--h421-amber)", padding: "10px 14px", fontSize: 13, minHeight: 0 }}>📋 Hacer Inventario</button>
-        <button onClick={generarReporte} style={{ background: "var(--h421-green-bg)", color: "var(--h421-green)", border: "1px solid var(--h421-green)", padding: "10px 14px", fontSize: 13, minHeight: 0 }}>📄 Generar Reporte</button>
+        <button onClick={() => setModalReporte(true)} style={{ background: "var(--h421-green-bg)", color: "var(--h421-green)", border: "1px solid var(--h421-green)", padding: "10px 14px", fontSize: 13, minHeight: 0 }}>📄 Generar Reporte</button>
         <button onClick={generarListaCompras} style={{ background: "var(--h421-green-bg)", color: "var(--h421-green)", border: "1px solid var(--h421-green)", padding: "10px 14px", fontSize: 13, minHeight: 0 }}>🛒 Lista de Compras</button>
         <button onClick={() => { setModalMovimientosRecientes(true); cargarMovimientosRecientes(sucursalId); }} style={{ background: "transparent", color: "var(--h421-blue)", border: "1px solid var(--h421-blue)", padding: "10px 14px", fontSize: 13, minHeight: 0 }}>🔄 Movimientos</button>
         <button onClick={() => { setModalHistorial(true); cargarMovimientosRecientes(sucursalId); }} style={{ background: "transparent", color: "#8b5cf6", border: "1px solid #8b5cf6", padding: "10px 14px", fontSize: 13, minHeight: 0 }}>🕘 Historial</button>
@@ -690,6 +684,8 @@ export function AdminInventario() {
           <button onClick={confirmarTraspaso} disabled={!traspaso.sucursalDestinoId || !traspaso.cantidad} style={{ width: "100%", background: "#8b5cf6", color: "#fff", padding: "10px 16px" }}>Enviar traspaso</button>
         </Modal>
       )}
+
+      {modalReporte && <ReporteInventario filas={filas} onCerrar={() => setModalReporte(false)} />}
     </div>
   );
 }

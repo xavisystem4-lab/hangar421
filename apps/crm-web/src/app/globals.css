@@ -82,3 +82,31 @@ table { color: inherit; }
   padding: 18px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
+
+/* Efecto de "hojear" al cambiar de página en la vista previa del reporte (ver
+   ReporteInventario.tsx) — un giro simple sobre el eje vertical, no un curl 3D realista, pero
+   suficiente para leerse como pasar una hoja de un libro. El contenido de la página se
+   intercambia a la mitad del giro (cuando está de canto, invisible), coordinado desde el
+   componente con un setTimeout a los 250ms de una animación de 500ms. */
+@keyframes h421-hojear-siguiente {
+  0% { transform: rotateY(0deg); }
+  50% { transform: rotateY(-90deg); }
+  100% { transform: rotateY(0deg); }
+}
+@keyframes h421-hojear-anterior {
+  0% { transform: rotateY(0deg); }
+  50% { transform: rotateY(90deg); }
+  100% { transform: rotateY(0deg); }
+}
+.h421-hoja-carta { transform-style: preserve-3d; backface-visibility: hidden; }
+.h421-hoja-carta.hojeando-siguiente { animation: h421-hojear-siguiente 500ms ease-in-out; }
+.h421-hoja-carta.hojeando-anterior { animation: h421-hojear-anterior 500ms ease-in-out; }
+
+/* Impresión del reporte (botón "Imprimir" de ReporteInventario.tsx): se oculta todo excepto la
+   versión completa (todas las filas, no solo la página visible en pantalla) del reporte. */
+#reporte-imprimible { display: none; }
+@media print {
+  body * { visibility: hidden; }
+  #reporte-imprimible, #reporte-imprimible * { visibility: visible; }
+  #reporte-imprimible { display: block !important; position: absolute; left: 0; top: 0; width: 100%; padding: 0.5in; }
+}

@@ -64,4 +64,14 @@ contextBridge.exposeInMainWorld("hangar", {
       return () => ipcRenderer.removeListener("updater:evento", handler);
     },
   },
+
+  archivo: {
+    /** Diálogo nativo "Guardar como" — a diferencia del navegador, aquí sí se puede elegir
+     *  carpeta/nombre reales. `datosBase64` son los bytes del PDF/Excel ya generados en el
+     *  renderer (jsPDF/xlsx). Ver ReporteModal.tsx. */
+    guardar: (opciones: { nombreSugerido: string; datosBase64: string; filtros: { name: string; extensions: string[] }[] }): Promise<{ guardado: boolean; ruta?: string }> =>
+      ipcRenderer.invoke("archivo:guardar", opciones),
+  },
+
+  abrirExterno: (url: string): Promise<void> => ipcRenderer.invoke("app:abrirExterno", url),
 });
