@@ -207,7 +207,7 @@ export function ReporteInventario({ tipo, filas: todasLasFilas, onCerrar }: { ti
           <button onClick={imprimir} style={{ background: "var(--h421-navy)", color: "#fff", padding: "10px 16px", fontSize: 13 }}>🖨️ Imprimir</button>
         </div>
 
-        <div style={{ overflowY: "auto", maxHeight: "calc(95vh - 70px)", perspective: 1600 }}>
+        <div style={{ overflowY: "auto", overflowX: "auto", maxWidth: "100%", maxHeight: "calc(95vh - 70px)", perspective: 1600 }}>
           <div
             className={`h421-hoja-carta ${animacion}`}
             style={{

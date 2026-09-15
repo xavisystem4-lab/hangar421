@@ -94,7 +94,7 @@ export default function ReportesPage() {
         <StatTile etiqueta="Productos distintos vendidos" valor={String(porProducto.length)} acento="var(--h421-amber)" />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 16, marginTop: 20 }}>
+      <div className="h421-grid-2col" style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 16, marginTop: 20 }}>
         <div className="card">
           <h3 style={{ marginTop: 0 }}>Top productos (por unidades vendidas)</h3>
           {topProductos.length > 0 ? (

@@ -110,3 +110,49 @@ table { color: inherit; }
   #reporte-imprimible, #reporte-imprimible * { visibility: visible; }
   #reporte-imprimible { display: block !important; position: absolute; left: 0; top: 0; width: 100%; padding: 0.5in; }
 }
+
+/* ---------------------------------------------------------------------------------------
+   Responsive: celular y tablet (≤860px, cubre iPad en vertical de sobra) — el layout de
+   escritorio (Sidebar.tsx) usa un <aside> de ancho fijo (220px) al lado del contenido; en un
+   celular angosto eso se comía más de la mitad de la pantalla (ver captura del reporte). Se
+   detecta el tamaño de pantalla solo con media queries (sin JS) — automático de verdad, no hay
+   que "elegir" modo celular/tablet. Por debajo del punto de corte el menú pasa a un cajón que
+   se guarda/oculta fuera de pantalla y se abre con el botón ☰; en pantallas más anchas el menú
+   se ve igual que siempre (fijo, sin este comportamiento). */
+.h421-menu-hamburguesa { display: none; }
+.h421-sidebar-fondo { display: none; }
+
+@media (max-width: 860px) {
+  .h421-menu-hamburguesa {
+    display: flex; align-items: center; justify-content: center;
+    position: fixed; top: 14px; left: 14px; z-index: 101;
+    width: 44px; height: 44px; min-height: 0; border-radius: 12px;
+    background: var(--h421-navy); color: #fff; font-size: 20px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+  }
+
+  .h421-sidebar {
+    position: fixed; top: 0; left: 0; height: 100vh; width: min(260px, 80vw);
+    transform: translateX(-100%);
+    transition: transform 220ms ease-out;
+    z-index: 100;
+  }
+  .h421-sidebar[data-abierto="true"] { transform: translateX(0); box-shadow: 6px 0 28px rgba(0,0,0,0.4); }
+
+  .h421-sidebar-fondo[data-abierto="true"] {
+    display: block; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 99;
+  }
+
+  /* Deja espacio para el botón ☰ (que ya no cabe junto al menú, guardado fuera de pantalla) y
+     angosta el padding lateral — el mismo padding:28 de escritorio dejaba muy poco ancho útil
+     en un celular. */
+  .h421-main { padding: 76px 16px 16px !important; }
+}
+
+/* Grillas de 2 columnas de proporción fija (Dashboard, Reportes, Catálogo con receta abierta,
+   Usuarios editando) — en escritorio cada página fija su propia proporción (ej. "2fr 1fr") vía
+   style inline; por debajo del punto de corte se apilan en 1 sola columna, igual que ya hacen
+   las grillas "repeat(auto-fit/auto-fill, minmax(...))" que no necesitan esta clase. */
+@media (max-width: 760px) {
+  .h421-grid-2col { grid-template-columns: 1fr !important; }
+}

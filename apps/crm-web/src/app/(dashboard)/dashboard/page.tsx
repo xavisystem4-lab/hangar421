@@ -60,7 +60,7 @@ export default function DashboardPage() {
         <StatTile etiqueta="Pedidos hoy" valor={String(data.pedidosHoy)} acento="var(--h421-amber)" />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16, marginTop: 20 }}>
+      <div className="h421-grid-2col" style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16, marginTop: 20 }}>
         <div className="card">
           <h3 style={{ marginTop: 0 }}>Ventas por hora</h3>
           <BarChart data={ventasPorHora} />

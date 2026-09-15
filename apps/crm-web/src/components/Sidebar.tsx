@@ -19,7 +19,11 @@ const ITEMS: { href: string; label: string; icon: string; roles?: RolUsuario[] }
   { href: "/usuarios", label: "Usuarios", icon: "👥", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL"] as RolUsuario[] },
 ];
 
-export function Sidebar() {
+/** `abierto`/`onCerrar`: solo importan en celular/tablet (≤860px, ver globals.css) donde el menú
+ *  se guarda fuera de pantalla y se abre con el botón ☰ de (dashboard)/layout.tsx; en escritorio
+ *  el CSS lo ignora por completo y el menú se ve fijo como siempre. Se cierra solo al elegir una
+ *  opción (`onCerrar` en cada Link) para no tapar la pantalla después de navegar. */
+export function Sidebar({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
   const { contexto, logout } = useAuthCrm();
@@ -28,7 +32,7 @@ export function Sidebar() {
   const { tema, alternar } = useThemeStore();
 
   return (
-    <aside style={{ width: 220, background: "var(--h421-navy)", color: "#fff", display: "flex", flexDirection: "column", padding: "20px 12px" }}>
+    <aside className="h421-sidebar" data-abierto={abierto} style={{ width: 220, background: "var(--h421-navy)", color: "#fff", display: "flex", flexDirection: "column", padding: "20px 12px" }}>
       <div style={{ padding: "0 8px 20px" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo-light.png" alt="HANGAR 421" style={{ height: 24, width: "auto" }} />
@@ -37,7 +41,7 @@ export function Sidebar() {
 
       <nav style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>
         {items.map((item) => (
-          <Link key={item.href} href={item.href}
+          <Link key={item.href} href={item.href} onClick={onCerrar}
             style={{
               display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10,
               background: pathname === item.href ? "rgba(255,255,255,0.12)" : "transparent",

@@ -126,7 +126,7 @@ export default function CatalogoPage() {
         </select>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: productoReceta ? "1.6fr 1fr" : "1fr", gap: 16, alignItems: "start" }}>
+      <div className="h421-grid-2col" style={{ display: "grid", gridTemplateColumns: productoReceta ? "1.6fr 1fr" : "1fr", gap: 16, alignItems: "start" }}>
         <div>
           {categorias.map((cat) => (
             <div key={cat.id} style={{ marginBottom: 20 }}>

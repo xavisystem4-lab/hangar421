@@ -150,7 +150,7 @@ export default function UsuariosPage() {
 
       {mensaje && <p style={{ color: "var(--h421-navy-texto)" }}>{mensaje}</p>}
 
-      <div style={{ display: "grid", gridTemplateColumns: usuarioEditando ? "1.4fr 1fr" : "1fr", gap: 16 }}>
+      <div className="h421-grid-2col" style={{ display: "grid", gridTemplateColumns: usuarioEditando ? "1.4fr 1fr" : "1fr", gap: 16 }}>
         <div>
           <div className="card" style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
