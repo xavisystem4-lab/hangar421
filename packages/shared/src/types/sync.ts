@@ -68,6 +68,12 @@ export const WS_EVENTS = {
    *  el heartbeat de transporte detecte la caída por timeout. Un cierre forzado (proceso
    *  terminado, apagón, red caída) NO pasa por aquí — lo detecta solo el heartbeat. */
   SERVIDOR_CERRANDO: "servidor:cerrando",
+  /** Emitido al mesero (`usuario:{meseroId}`) y a la sucursal (para el POS) al crear una
+   *  solicitud de pago con tarjeta — ver PagosService.crearSolicitud(). */
+  PAGO_SOLICITADO: "pago:solicitado",
+  /** Emitido en cada transición de estado de una solicitud de pago (ENVIADO_A_TERMINAL,
+   *  APROBADO, RECHAZADO, etc.) — a la misma sucursal y al mesero asignado. */
+  PAGO_ACTUALIZADO: "pago:actualizado",
 } as const;
 
 export type WsEventName = (typeof WS_EVENTS)[keyof typeof WS_EVENTS];

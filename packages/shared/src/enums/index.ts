@@ -123,6 +123,39 @@ export enum TipoDescuento {
   PORCENTAJE = "PORCENTAJE",
 }
 
+export enum EstadoConexionTerminal {
+  CONECTADA = "CONECTADA",
+  DESCONECTADA = "DESCONECTADA",
+  OCUPADA = "OCUPADA",
+  ERROR = "ERROR",
+}
+
+export enum AmbienteProveedorPago {
+  PRUEBAS = "PRUEBAS",
+  PRODUCCION = "PRODUCCION",
+}
+
+/** Estados del ciclo de vida de una solicitud de pago con tarjeta. El backend es la única
+ *  fuente de verdad — ni el POS ni la APK marcan APROBADO por su cuenta (ver PagosService). */
+export enum EstadoSolicitudPago {
+  PENDIENTE = "PENDIENTE",
+  ENVIADO_A_TERMINAL = "ENVIADO_A_TERMINAL",
+  EN_PROCESO = "EN_PROCESO",
+  APROBADO = "APROBADO",
+  RECHAZADO = "RECHAZADO",
+  CANCELADO = "CANCELADO",
+  EXPIRADO = "EXPIRADO",
+  ERROR = "ERROR",
+}
+
+export enum OrigenEventoPago {
+  POS = "POS",
+  APK = "APK",
+  PROVEEDOR = "PROVEEDOR",
+  WEBHOOK = "WEBHOOK",
+  SISTEMA = "SISTEMA",
+}
+
 export enum TurnoTrabajo {
   MATUTINO = "MATUTINO",
   VESPERTINO = "VESPERTINO",

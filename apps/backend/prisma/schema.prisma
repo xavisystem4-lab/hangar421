@@ -91,6 +91,42 @@ enum MetodoPago {
   OTRO
 }
 
+enum EstadoConexionTerminal {
+  CONECTADA
+  DESCONECTADA
+  OCUPADA
+  ERROR
+}
+
+enum AmbienteProveedorPago {
+  PRUEBAS
+  PRODUCCION
+}
+
+// Estados del ciclo de vida de una solicitud de pago con tarjeta (ver PaymentRequest). El
+// backend es la única fuente de verdad: ni el POS ni la APK marcan un pago como APROBADO por su
+// cuenta — siempre llega por webhook/consulta al proveedor (ver pagos/proveedores/*.adapter.ts).
+enum EstadoSolicitudPago {
+  PENDIENTE
+  ENVIADO_A_TERMINAL
+  EN_PROCESO
+  APROBADO
+  RECHAZADO
+  CANCELADO
+  EXPIRADO
+  ERROR
+}
+
+// Quién originó un PaymentEvent — para poder auditar si un cambio de estado vino de una acción
+// humana (POS/APK) o de un sistema externo (proveedor/webhook) o interno (expiración automática).
+enum OrigenEventoPago {
+  POS
+  APK
+  PROVEEDOR
+  WEBHOOK
+  SISTEMA
+}
+
 enum TipoMovimientoInventario {
   ENTRADA
   SALIDA
@@ -176,6 +212,9 @@ model Empresa {
   proveedores  Proveedor[]
   clientes     Cliente[]
   auditLogs    AuditLog[]
+  paymentProviderConfigs PaymentProviderConfig[]
+  paymentTerminals       PaymentTerminal[]
+  paymentRequests        PaymentRequest[]
 
   @@map("empresas")
 }
@@ -211,6 +250,9 @@ model Sucursal {
   traspasosDestino  Traspaso[] @relation("TraspasoDestino")
   auditLogs         AuditLog[]
   horarios          HorarioUsuario[]
+  paymentProviderConfigs PaymentProviderConfig[]
+  paymentTerminals       PaymentTerminal[]
+  paymentRequests        PaymentRequest[]
 
   @@index([empresaId])
   @@map("sucursales")
@@ -281,6 +323,10 @@ model Usuario {
   auditLogs      AuditLog[]
   refreshTokens  RefreshToken[]
   horarios       HorarioUsuario[]
+  terminalesAsignadas   PaymentTerminal[] @relation("TerminalMeseroAsignado")
+  pagosComoMesero       PaymentRequest[]  @relation("PaymentRequestMesero")
+  pagosCreados          PaymentRequest[]  @relation("PaymentRequestCreadoPor")
+  pushTokens            PushToken[]
 
   @@index([empresaId])
   @@map("usuarios")
@@ -511,6 +557,7 @@ model Mesa {
   sucursal Sucursal @relation(fields: [sucursalId], references: [id])
   area     Area?    @relation(fields: [areaId], references: [id])
   pedidos  Pedido[]
+  paymentRequests PaymentRequest[]
 
   @@index([sucursalId])
   @@map("mesas")
@@ -528,6 +575,7 @@ model Caja {
 
   sucursal Sucursal @relation(fields: [sucursalId], references: [id])
   turnos   Turno[]
+  paymentTerminals PaymentTerminal[]
 
   @@index([sucursalId])
   @@map("cajas")
@@ -616,6 +664,7 @@ model Pedido {
   items       PedidoItem[]
   pagos       Pago[]
   descuentos  Descuento[]
+  paymentRequests PaymentRequest[]
 
   @@unique([sucursalId, folio])
   @@index([sucursalId, estado])
@@ -686,6 +735,156 @@ model Pago {
 
   @@index([pedidoId])
   @@map("pagos")
+}
+
+// ---------------------------------------------------------------------------
+// Pagos con tarjeta (terminales físicas / proveedores externos, ej. Mercado Pago Point)
+//
+// Arquitectura de adaptadores: `proveedor` es un código libre (no un enum de Prisma) resuelto en
+// tiempo de ejecución contra un registro de adaptadores en el backend (ver
+// pagos/proveedores/proveedor-pago.interface.ts) — así se puede sumar un banco nuevo con un
+// adaptador de código nuevo, sin migración de base de datos.
+// ---------------------------------------------------------------------------
+
+model PaymentProviderConfig {
+  id        String   @id @default(uuid())
+  empresaId String
+  // null = aplica a toda la empresa; una sucursal puede tener su propia cuenta/credenciales
+  // (ej. dos franquicias con cuentas de Mercado Pago distintas).
+  sucursalId String?
+  // Código del adaptador (ej. "mercadopago", "mock") — ver ProveedorPagoRegistry.
+  proveedor  String
+  ambiente   AmbienteProveedorPago @default(PRUEBAS)
+  // JSON cifrado (AES-256-GCM, ver common/crypto/cifrado.service.ts) con access token, public
+  // key, client secret, webhook secret, etc. — el contenido varía por proveedor y NUNCA se manda
+  // al frontend ni a la APK; solo el backend lo descifra para llamar al proveedor.
+  credencialesCifradas String
+  identificadorComercio String? // user_id / store_id / merchant id, según el proveedor
+  webhookUrl String?
+  activo     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  empresa    Empresa           @relation(fields: [empresaId], references: [id])
+  sucursal   Sucursal?         @relation(fields: [sucursalId], references: [id])
+  terminales PaymentTerminal[]
+
+  @@unique([empresaId, sucursalId, proveedor])
+  @@index([empresaId])
+  @@map("payment_provider_configs")
+}
+
+model PaymentTerminal {
+  id                 String   @id @default(uuid())
+  empresaId          String
+  sucursalId         String
+  cajaId             String?
+  proveedorConfigId  String
+  nombre             String
+  zona               String?
+  meseroAsignadoId   String?
+  // device_id de Mercado Pago Point (u homólogo de otro proveedor) — lo que el adaptador manda
+  // en cada llamada a la API del proveedor para identificar la terminal física.
+  identificadorExterno String
+  // Overrides específicos de esta terminal, cifrados (opcional — la mayoría de la config vive en
+  // PaymentProviderConfig, a nivel cuenta).
+  configuracionCifrada String?
+  activo               Boolean  @default(true)
+  estadoConexion       EstadoConexionTerminal @default(DESCONECTADA)
+  ultimaSincronizacion DateTime?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  empresa         Empresa               @relation(fields: [empresaId], references: [id])
+  sucursal        Sucursal              @relation(fields: [sucursalId], references: [id])
+  caja            Caja?                 @relation(fields: [cajaId], references: [id])
+  meseroAsignado  Usuario?              @relation("TerminalMeseroAsignado", fields: [meseroAsignadoId], references: [id])
+  proveedorConfig PaymentProviderConfig @relation(fields: [proveedorConfigId], references: [id])
+  solicitudes     PaymentRequest[]
+
+  @@unique([proveedorConfigId, identificadorExterno])
+  @@index([sucursalId])
+  @@map("payment_terminals")
+}
+
+model PaymentRequest {
+  id         String   @id @default(uuid())
+  empresaId  String
+  sucursalId String
+  pedidoId   String
+  mesaId     String?
+  meseroId   String?
+  terminalId String
+  proveedor  String
+  // Lo que el backend manda al proveedor como "external_reference" (ej. Mercado Pago) — permite
+  // conciliar el webhook con esta solicitud sin depender de que el proveedor devuelva rápido su
+  // propio id. Es distinto del `id` (UUID interno) para tener un código corto legible en tickets.
+  referenciaInterna String  @unique
+  // payment_intent id / payment id que asigna el proveedor — llega en la respuesta de
+  // crearSolicitudDePago() y se confirma/actualiza vía webhook.
+  referenciaExterna String?
+  importe        Decimal  @db.Decimal(10, 2)
+  moneda         String   @default("MXN")
+  estado         EstadoSolicitudPago @default(PENDIENTE)
+  // Evita duplicar el cobro ante un doble tap de "Tarjeta" en el POS o un reintento de red —
+  // ver PagosService.crearSolicitud().
+  idempotencyKey String   @unique
+  creadoPorId    String
+  motivoError    String?
+  expiraEn       DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  empresa   Empresa         @relation(fields: [empresaId], references: [id])
+  sucursal  Sucursal        @relation(fields: [sucursalId], references: [id])
+  pedido    Pedido          @relation(fields: [pedidoId], references: [id])
+  mesa      Mesa?           @relation(fields: [mesaId], references: [id])
+  mesero    Usuario?        @relation("PaymentRequestMesero", fields: [meseroId], references: [id])
+  creadoPor Usuario         @relation("PaymentRequestCreadoPor", fields: [creadoPorId], references: [id])
+  terminal  PaymentTerminal @relation(fields: [terminalId], references: [id])
+  eventos   PaymentEvent[]
+
+  @@index([pedidoId])
+  @@index([terminalId])
+  @@index([estado])
+  @@map("payment_requests")
+}
+
+model PaymentEvent {
+  id                String   @id @default(uuid())
+  paymentRequestId  String
+  // Ej. "CREADA", "ENVIADA_A_TERMINAL", "WEBHOOK_APROBADO", "EXPIRADA_AUTOMATICAMENTE" — texto
+  // libre (no enum) para no tener que migrar cada vez que se agrega un matiz de auditoría nuevo.
+  tipoEvento        String
+  origen            OrigenEventoPago
+  // Nunca incluye PAN/CVV/fecha de vencimiento — solo campos no sensibles del payload del
+  // proveedor (id, status, status_detail, etc.), filtrados en el adaptador antes de guardar.
+  payloadSanitizado Json?
+  createdAt         DateTime @default(now())
+
+  paymentRequest PaymentRequest @relation(fields: [paymentRequestId], references: [id])
+
+  @@index([paymentRequestId])
+  @@map("payment_events")
+}
+
+// Token de push (FCM) por dispositivo de la app de Meseros — para poder despertarla cuando está
+// en segundo plano o cerrada. Se registra desde la APK al iniciar sesión (ver
+// waiter-mobile/src/push.ts) contra POST /pagos/push-tokens.
+model PushToken {
+  id            String   @id @default(uuid())
+  usuarioId     String
+  dispositivoId String?
+  token         String   @unique
+  plataforma    String   @default("android")
+  activo        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+
+  @@index([usuarioId])
+  @@map("push_tokens")
 }
 
 // ---------------------------------------------------------------------------
