@@ -148,6 +148,7 @@ Ver [`.env.example`](.env.example) para la lista completa y comentada. Las más 
 | `VITE_API_URL` / `VITE_WS_URL` | URL del backend para POS y cocina (Vite) |
 | `NEXT_PUBLIC_API_URL` / `NEXT_PUBLIC_WS_URL` | URL del backend para el CRM (Next.js) |
 | `EXPO_PUBLIC_API_URL` / `EXPO_PUBLIC_WS_URL` | URL del backend para la app de meseros (o `extra.apiUrl/wsUrl` en `app.json`) |
+| `PAGOS_CIFRADO_KEY` | Cifra en reposo las credenciales de proveedores de pago (Mercado Pago, etc.) — ver [`docs/pagos-tarjeta.md`](docs/pagos-tarjeta.md) |
 
 ## Comandos principales (raíz del monorepo)
 
@@ -173,6 +174,9 @@ el despliegue en la nube (backend, Postgres, CRM), respaldos y monitoreo.
 
 El backend expone **Swagger/OpenAPI** en `/api/docs` (interactivo, con "Authorize" para probar
 endpoints protegidos). Resumen de recursos en **[`docs/api.md`](docs/api.md)**.
+
+Pago con tarjeta (terminal física, Mercado Pago Point Smart): arquitectura, configuración local
+y de producción en **[`docs/pagos-tarjeta.md`](docs/pagos-tarjeta.md)**.
 
 ## Pruebas
 
