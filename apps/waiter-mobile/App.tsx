@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { Alert, SafeAreaView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useDispositivo } from "./src/hooks/useDispositivo";
-import { WS_EVENTS, type Mesa } from "@hangar421/shared";
+import { WS_EVENTS, type Mesa, type PaymentRequestDTO } from "@hangar421/shared";
 import { useAuthStore } from "./src/store/authStore";
 import { useSyncStore } from "./src/store/syncStore";
 import { useConexionStore } from "./src/store/conexionStore";
 import { useTemaStore, usarColores } from "./src/store/temaStore";
+import { usePagoStore } from "./src/store/pagoStore";
 import { iniciarSync, detenerSync } from "./src/sync/syncEngine";
 import { conectarSocket, desconectarSocket } from "./src/api/socket";
 import { LoginScreen } from "./src/screens/LoginScreen";
@@ -13,6 +14,7 @@ import { ConexionScreen } from "./src/screens/ConexionScreen";
 import { MesasScreen } from "./src/screens/MesasScreen";
 import { TomaPedidoScreen } from "./src/screens/TomaPedidoScreen";
 import { MisPedidosScreen } from "./src/screens/MisPedidosScreen";
+import { CobroTarjetaScreen } from "./src/screens/CobroTarjetaScreen";
 import { useOrderStore } from "./src/store/orderStore";
 import { BarraActualizacion } from "./src/components/BarraActualizacion";
 
@@ -88,13 +90,30 @@ export default function App() {
     const manejarConectar = () => { setSocketConectado(true); setCerradoPorServidor(false); };
     const manejarDesconectar = () => setSocketConectado(false);
     const manejarCierreServidor = () => setCerradoPorServidor(true);
+    // El backend emite pago:solicitado/pago:actualizado tanto a la sala `usuario:{meseroId}`
+    // como a `sucursal:{id}` (para que el POS que abrió la cuenta vea el estado en vivo — ver
+    // PagosService.emitir()) — este mismo socket está unido a AMBAS salas, así que recibe el
+    // evento aunque la solicitud sea de OTRO mesero de la misma sucursal. Filtrar por
+    // `meseroId === usuario.id` aquí es lo que evita que un mesero vea/cobre una cuenta ajena
+    // (mismo requisito de aislamiento que ya aplica MisPedidosScreen con `pedido.meseroId`).
+    const manejarPagoSolicitado = (payload: PaymentRequestDTO) => {
+      if (payload.meseroId === auth.usuario?.id) usePagoStore.getState().setSolicitud(payload);
+    };
+    const manejarPagoActualizado = (payload: PaymentRequestDTO) => {
+      const actual = usePagoStore.getState().solicitud;
+      if (actual && payload.id === actual.id) usePagoStore.getState().setSolicitud(payload);
+    };
     socket.on("connect", manejarConectar);
     socket.on("disconnect", manejarDesconectar);
     socket.on(WS_EVENTS.SERVIDOR_CERRANDO, manejarCierreServidor);
+    socket.on(WS_EVENTS.PAGO_SOLICITADO, manejarPagoSolicitado);
+    socket.on(WS_EVENTS.PAGO_ACTUALIZADO, manejarPagoActualizado);
     return () => {
       socket.off("connect", manejarConectar);
       socket.off("disconnect", manejarDesconectar);
       socket.off(WS_EVENTS.SERVIDOR_CERRANDO, manejarCierreServidor);
+      socket.off(WS_EVENTS.PAGO_SOLICITADO, manejarPagoSolicitado);
+      socket.off(WS_EVENTS.PAGO_ACTUALIZADO, manejarPagoActualizado);
       desconectarSocket();
     };
   }, [auth.usuario, auth.sucursalId, auth.dispositivoId, esTablet]);
@@ -218,6 +237,7 @@ export default function App() {
         <TabBoton texto="Conexión" activo={pantalla === "conexion"} onPress={() => setPantalla("conexion")} colores={colores} />
       </View>
       <BarraActualizacion />
+      <CobroTarjetaScreen />
     </SafeAreaView>
   );
 }

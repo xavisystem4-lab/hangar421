@@ -51,6 +51,13 @@ interface OrderState {
   totales: () => ReturnType<typeof calcularTotalesPedido>;
   enviarACocina: (mesaNombre?: string | null) => Promise<string>;
   cobrar: (pagos: { metodo: string; monto: number; referencia?: string }[], mesaNombre?: string | null) => Promise<void>;
+  /** Cierra localmente una cuenta que YA fue liquidada por el backend (pago con tarjeta
+   *  aprobado por el proveedor — ver PagosService.liquidarPedido()) — a diferencia de `cobrar()`,
+   *  NUNCA llama a POST /pedidos/:id/cobrar (eso ya se hizo en el servidor al recibir la
+   *  confirmación del proveedor; volver a llamarlo sería, en el mejor caso, redundante y en el
+   *  peor, una fuente de bugs si algún día ese endpoint deja de ser idempotente). Solo imprime
+   *  el ticket y limpia el carrito local. */
+  finalizarPagoExterno: (mesaNombre?: string | null) => Promise<void>;
 }
 
 export const useOrderStore = create<OrderState>((set, get) => ({
@@ -208,6 +215,34 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       () => apiFetch(`/pedidos/${pedidoId}/cobrar`, { method: "POST", body: JSON.stringify({ pagos, cajeroId: auth.usuario!.id }) }),
       { id: uuid7(), entidad: "PAGO", operacion: "CREATE", entidadId: pedidoId, idempotencyKey, payload },
     );
+
+    const t = get().totales();
+    const { config, empresaNombre, logoUrl, sucursalNombre } = await obtenerContextoTicket(auth.sucursalId!, auth.usuario!.empresaId);
+    imprimirTicketCliente(config, {
+      empresaNombre,
+      sucursalNombre,
+      logoUrl,
+      mesaNombre,
+      meseroNombre: auth.usuario!.nombre,
+      folio: folio ?? pedidoId.slice(0, 8),
+      fecha: new Date(),
+      items: items.map((i) => ({
+        cantidad: i.cantidad,
+        nombre: i.nombreProducto,
+        precioTotal: (i.precioUnitario + i.modificadores.reduce((s, m) => s + m.precioExtra, 0)) * i.cantidad,
+      })),
+      subtotal: t.subtotal,
+      impuesto: t.impuesto,
+      total: t.total,
+    }).catch((e) => console.error("[orderStore] error al imprimir ticket:", e));
+
+    get().limpiar();
+  },
+
+  finalizarPagoExterno: async (mesaNombre) => {
+    const { pedidoId, items, folio } = get();
+    if (!pedidoId) throw new Error("No hay un pedido enviado para cobrar");
+    const auth = useAuthStore.getState();
 
     const t = get().totales();
     const { config, empresaNombre, logoUrl, sucursalNombre } = await obtenerContextoTicket(auth.sucursalId!, auth.usuario!.empresaId);
