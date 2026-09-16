@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { TipoDescuento } from "@hangar421/shared";
 import { apiFetch } from "../api/http";
 import { useOrderStore } from "../store/orderStore";
@@ -27,6 +27,27 @@ export function ModalDescuento({ sucursalId, onCerrar }: { sucursalId: string; o
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [validando, setValidando] = useState(false);
+
+  const valorRef = useRef<HTMLInputElement>(null);
+  const motivoRef = useRef<HTMLInputElement>(null);
+  const pinRef = useRef<HTMLInputElement>(null);
+
+  // Navegación entre campos con ↓/Enter (avanza) y ↑ (retrocede) — en un teclado físico junto a la
+  // pantalla táctil es más rápido que usar el mouse/Tab. En el input numérico "valor" esto también
+  // evita el comportamiento nativo de ↑/↓ de incrementar/decrementar el número.
+  function irA(campo: React.RefObject<HTMLInputElement>) {
+    campo.current?.focus();
+    campo.current?.select();
+  }
+  function manejarNavegacion(e: React.KeyboardEvent<HTMLInputElement>, siguiente?: React.RefObject<HTMLInputElement>, anterior?: React.RefObject<HTMLInputElement>) {
+    if (e.key === "Enter" || e.key === "ArrowDown") {
+      e.preventDefault();
+      if (siguiente) irA(siguiente);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (anterior) irA(anterior);
+    }
+  }
 
   useEffect(() => {
     // Filtrado por `sucursalId` en el propio backend: solo trae usuarios con acceso a ESTA
@@ -73,10 +94,13 @@ export function ModalDescuento({ sucursalId, onCerrar }: { sucursalId: string; o
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
           <button onClick={() => setTipo(TipoDescuento.PORCENTAJE)} style={{ flex: 1, background: tipo === TipoDescuento.PORCENTAJE ? "var(--h421-navy)" : "var(--h421-gray-50)", color: tipo === TipoDescuento.PORCENTAJE ? "#fff" : "var(--h421-black)" }}>%</button>
           <button onClick={() => setTipo(TipoDescuento.MONTO)} style={{ flex: 1, background: tipo === TipoDescuento.MONTO ? "var(--h421-navy)" : "var(--h421-gray-50)", color: tipo === TipoDescuento.MONTO ? "#fff" : "var(--h421-black)" }}>$</button>
-          <input type="number" value={valor} onChange={(e) => setValor(e.target.value)} style={{ flex: 2, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
+          <input ref={valorRef} type="number" value={valor} onChange={(e) => setValor(e.target.value)}
+            onKeyDown={(e) => manejarNavegacion(e, motivoRef)}
+            style={{ flex: 2, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
         </div>
 
-        <input placeholder="Motivo (obligatorio)" value={motivo} onChange={(e) => setMotivo(e.target.value)}
+        <input ref={motivoRef} placeholder="Motivo (obligatorio)" value={motivo} onChange={(e) => setMotivo(e.target.value)}
+          onKeyDown={(e) => manejarNavegacion(e, pinRef, valorRef)}
           style={{ width: "100%", padding: 10, marginTop: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
 
         <div style={{ marginTop: 14, padding: 10, background: "var(--h421-gray-50)", borderRadius: 8 }}>
@@ -107,7 +131,11 @@ export function ModalDescuento({ sucursalId, onCerrar }: { sucursalId: string; o
             </div>
           )}
 
-          <input placeholder="PIN" type="password" value={pin} onChange={(e) => setPin(e.target.value)}
+          <input ref={pinRef} placeholder="PIN" type="password" value={pin} onChange={(e) => setPin(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); if (!validando) confirmar(); }
+              else if (e.key === "ArrowUp") { e.preventDefault(); irA(motivoRef); }
+            }}
             style={{ width: "100%", padding: 10, marginTop: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
         </div>
 
