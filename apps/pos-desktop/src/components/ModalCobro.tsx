@@ -48,6 +48,18 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
   const restante = Math.max(0, totalAPagar - totalConTeclaActual);
   const cambio = Math.max(0, totalConTeclaActual - totalAPagar);
 
+  // Tarjeta/Transferencia/QR son montos exactos (no hay "cambio" que calcular, a diferencia de
+  // efectivo) — se autocompleta con lo que falta cubrir para no tener que volver a teclearlo.
+  // Efectivo se deja en blanco: el cliente puede dar de más y hace falta calcular el cambio.
+  function elegirMetodo(metodo: MetodoPago) {
+    setMetodoActivo(metodo);
+    // Usa `pagadoHasta` (solo pagos ya agregados), no `restante` — `restante` ya descuenta lo que
+    // esté tecleado en este momento, así que al cambiar entre Tarjeta/Transferencia/QR con un monto
+    // ya escrito, `restante` daría 0 en vez del importe real pendiente.
+    const faltante = round2(Math.max(0, totalAPagar - pagadoHasta));
+    setMontoInput(metodo === MetodoPago.EFECTIVO ? "0" : faltante > 0 ? faltante.toFixed(2) : "0");
+  }
+
   function presionarTecla(tecla: string) {
     setMontoInput((m) => {
       if (tecla === "borrar") return m.length > 1 ? m.slice(0, -1) : "0";
@@ -159,7 +171,7 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
             <h4 style={{ marginBottom: 8, marginTop: 18 }}>Método de pago</h4>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {METODOS.map((m) => (
-                <button key={m.valor} onClick={() => setMetodoActivo(m.valor)}
+                <button key={m.valor} onClick={() => elegirMetodo(m.valor)}
                   style={{ padding: "12px 16px", background: metodoActivo === m.valor ? "var(--h421-navy)" : "var(--h421-gray-50)", color: metodoActivo === m.valor ? "#fff" : "var(--h421-black)" }}>
                   {m.icono} {m.etiqueta}
                 </button>
