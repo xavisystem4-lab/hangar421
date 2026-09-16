@@ -65,8 +65,9 @@ export class PedidosController {
     return this.pedidos.cambiarEstadoItem(id, itemId, estado);
   }
 
+  // Sin @Roles: mismo criterio que cancelar() — la autorización real es la contraseña de
+  // `autorizadoPorId`, verificada server-side dentro de PedidosService.aplicarDescuento.
   @Post(":id/descuentos")
-  @Roles(RolUsuario.SUPERVISOR, RolUsuario.ADMIN_SUCURSAL, RolUsuario.ADMIN_CORPORATIVO)
   @Audit("PEDIDO", "APLICAR_DESCUENTO")
   aplicarDescuento(@Param("id") id: string, @Body() dto: AplicarDescuentoDto) {
     return this.pedidos.aplicarDescuento(id, dto);

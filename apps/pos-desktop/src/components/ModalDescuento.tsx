@@ -5,16 +5,18 @@ import { useOrderStore } from "../store/orderStore";
 
 interface UsuarioLogin { id: string; nombre: string; rol: string | null }
 
-// Roles que pueden autorizar un descuento (deben coincidir con los que acepta el backend en
-// POST /pedidos/:id/descuentos — ver `@Roles` en pedidos.controller.ts).
+// Roles que pueden autorizar un descuento (deben coincidir con ROLES_AUTORIZAN_SUPERVISOR en
+// apps/backend/src/pedidos/pedidos.service.ts — la contraseña se valida ahí, server-side).
 const ROLES_AUTORIZAN = new Set(["SUPERVISOR", "ADMIN_SUCURSAL", "ADMIN_CORPORATIVO"]);
 const ETIQUETA_ROL: Record<string, string> = {
   ADMIN_CORPORATIVO: "Admin. corporativo", ADMIN_SUCURSAL: "Admin. sucursal", SUPERVISOR: "Supervisor",
 };
 
-/** Descuento con autorización: requiere el PIN de un Supervisor/Admin — se valida contra
- *  /auth/login-pin (sin cambiar la sesión activa, solo para confirmar identidad y rol). El
- *  cajero elige el nombre de una lista en vez de tener que teclear el ID del usuario a mano. */
+/** Descuento con autorización: requiere la CONTRASEÑA de un Supervisor/Admin (no el PIN de 4
+ *  dígitos — aplicar un descuento es más consecuente que iniciar sesión rápido). Se valida
+ *  server-side dentro de POST /pedidos/:id/descuentos (ver PedidosService.aplicarDescuento) en
+ *  el momento en que el descuento realmente se manda (enviarACocina), no aquí — este modal solo
+ *  lo captura. El cajero elige el nombre de una lista en vez de tener que teclear el ID a mano. */
 export function ModalDescuento({ sucursalId, onCerrar }: { sucursalId: string; onCerrar: () => void }) {
   const { aplicarDescuento } = useOrderStore();
   const [tipo, setTipo] = useState<TipoDescuento>(TipoDescuento.PORCENTAJE);
@@ -24,13 +26,12 @@ export function ModalDescuento({ sucursalId, onCerrar }: { sucursalId: string; o
   const [motivo, setMotivo] = useState("");
   const [autorizadores, setAutorizadores] = useState<UsuarioLogin[] | null>(null);
   const [usuarioAutorizaId, setUsuarioAutorizaId] = useState("");
-  const [pin, setPin] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [validando, setValidando] = useState(false);
 
   const valorRef = useRef<HTMLInputElement>(null);
   const motivoRef = useRef<HTMLInputElement>(null);
-  const pinRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
 
   // Navegación entre campos con ↓/Enter (avanza) y ↑ (retrocede) — en un teclado físico junto a la
   // pantalla táctil es más rápido que usar el mouse/Tab. En el input numérico "valor" esto también
@@ -52,35 +53,24 @@ export function ModalDescuento({ sucursalId, onCerrar }: { sucursalId: string; o
   useEffect(() => {
     // Filtrado por `sucursalId` en el propio backend: solo trae usuarios con acceso a ESTA
     // sucursal — antes se pedía la lista completa (sin filtro) y podía mostrar a alguien cuya
-    // única sucursal asignada fuera otra; elegirlo hacía que /auth/login-pin lo rechazara con
-    // "sin acceso a la sucursal" sin importar el PIN que se tecleara.
+    // única sucursal asignada fuera otra.
     apiFetch<UsuarioLogin[]>(`/auth/usuarios-login?sucursalId=${encodeURIComponent(sucursalId)}`)
       .then((usuarios) => setAutorizadores(usuarios.filter((u) => u.rol && ROLES_AUTORIZAN.has(u.rol))))
       .catch(() => setAutorizadores([]));
   }, [sucursalId]);
 
-  async function confirmar() {
+  // No hay una validación previa aquí (a diferencia de antes, con /auth/login-pin): la
+  // contraseña se valida server-side recién cuando el descuento se manda de verdad (ver
+  // orderStore.enviarACocina) — si es incorrecta, el error real aparece hasta ese momento
+  // (en la pantalla de cobro), no aquí. Se documenta así para no sorprender al leer el flujo.
+  function confirmar() {
     setError(null);
     if (!(Number(valor) > 0)) return setError("Indica el valor del descuento (mayor a cero)");
     if (!motivo.trim()) return setError("Indica el motivo del descuento");
     if (!usuarioAutorizaId) return setError("Elige quién autoriza el descuento");
-    setValidando(true);
-    try {
-      // valida que el PIN corresponda a un usuario con permiso en esta sucursal
-      await apiFetch("/auth/login-pin", {
-        method: "POST",
-        body: JSON.stringify({ usuarioId: usuarioAutorizaId, pin, sucursalId, dispositivoId: "validacion-descuento" }),
-      });
-      aplicarDescuento({ tipo, valor: Number(valor), motivo, autorizadoPorId: usuarioAutorizaId });
-      onCerrar();
-    } catch (e: any) {
-      // Antes tapaba cualquier error con "PIN de autorización inválido" — si la causa real era
-      // otra (sin acceso a la sucursal, PIN no configurado, etc.) parecía que NINGÚN PIN
-      // funcionaba nunca. Ahora se muestra el motivo real que manda el backend.
-      setError(e.message ?? "PIN de autorización inválido");
-    } finally {
-      setValidando(false);
-    }
+    if (!password.trim()) return setError("Indica la contraseña de autorización");
+    aplicarDescuento({ tipo, valor: Number(valor), motivo, autorizadoPorId: usuarioAutorizaId, password });
+    onCerrar();
   }
 
   return (
@@ -100,7 +90,7 @@ export function ModalDescuento({ sucursalId, onCerrar }: { sucursalId: string; o
         </div>
 
         <input ref={motivoRef} placeholder="Motivo (obligatorio)" value={motivo} onChange={(e) => setMotivo(e.target.value)}
-          onKeyDown={(e) => manejarNavegacion(e, pinRef, valorRef)}
+          onKeyDown={(e) => manejarNavegacion(e, passwordRef, valorRef)}
           style={{ width: "100%", padding: 10, marginTop: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
 
         <div style={{ marginTop: 14, padding: 10, background: "var(--h421-gray-50)", borderRadius: 8 }}>
@@ -131,9 +121,9 @@ export function ModalDescuento({ sucursalId, onCerrar }: { sucursalId: string; o
             </div>
           )}
 
-          <input ref={pinRef} placeholder="PIN" type="password" value={pin} onChange={(e) => setPin(e.target.value)}
+          <input ref={passwordRef} placeholder="Contraseña" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") { e.preventDefault(); if (!validando) confirmar(); }
+              if (e.key === "Enter") { e.preventDefault(); confirmar(); }
               else if (e.key === "ArrowUp") { e.preventDefault(); irA(motivoRef); }
             }}
             style={{ width: "100%", padding: 10, marginTop: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
@@ -144,8 +134,8 @@ export function ModalDescuento({ sucursalId, onCerrar }: { sucursalId: string; o
         {/* Cancelar cierra sin tocar nada — no se aplica ni se resta ningún descuento. */}
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button onClick={onCerrar} style={{ flex: 1, padding: 14, background: "var(--h421-gray-200)" }}>Cancelar</button>
-          <button onClick={confirmar} disabled={validando} className="btn-grande" style={{ flex: 2, background: "var(--h421-yellow)", color: "#000" }}>
-            {validando ? "Validando…" : "Aplicar descuento"}
+          <button onClick={confirmar} className="btn-grande" style={{ flex: 2, background: "var(--h421-yellow)", color: "#000" }}>
+            Aplicar descuento
           </button>
         </div>
       </div>

@@ -72,6 +72,9 @@ export class AplicarDescuentoDto {
   @ApiProperty() @IsNumber() valor!: number;
   @ApiProperty() @IsString() motivo!: string;
   @ApiProperty() @IsString() autorizadoPorId!: string;
+  /** Se valida server-side contra la contraseña real de `autorizadoPorId` (ver
+   *  AuthService.verificarAutorizacion) — ver el comentario en PedidosService.aplicarDescuento. */
+  @ApiProperty() @IsString() @MinLength(6) password!: string;
 }
 
 export class PagoDto {

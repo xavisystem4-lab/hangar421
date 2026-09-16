@@ -22,9 +22,10 @@ import {
   CrearPedidoDto,
 } from "./dto/pedido.dto";
 
-/** Roles que pueden autorizar la cancelación de una cuenta — deben coincidir con lo que muestra
- *  ModalCancelarPedido.tsx en el selector de "quién autoriza". */
-const ROLES_AUTORIZAN_CANCELACION = [RolUsuario.SUPERVISOR, RolUsuario.ADMIN_SUCURSAL, RolUsuario.ADMIN_CORPORATIVO];
+/** Roles que pueden autorizar acciones sensibles (cancelar una cuenta, aplicar un descuento) —
+ *  deben coincidir con lo que muestran ModalCancelarPedido.tsx/ModalDescuento.tsx en el selector
+ *  de "quién autoriza". */
+const ROLES_AUTORIZAN_SUPERVISOR = [RolUsuario.SUPERVISOR, RolUsuario.ADMIN_SUCURSAL, RolUsuario.ADMIN_CORPORATIVO];
 
 @Injectable()
 export class PedidosService {
@@ -220,6 +221,16 @@ export class PedidosService {
 
   async aplicarDescuento(pedidoId: string, dto: AplicarDescuentoDto) {
     const pedido = await this.prisma.pedido.findUniqueOrThrow({ where: { id: pedidoId } });
+
+    // Mismo fix que en cancelar(): este endpoint es alcanzable desde cualquier sesión del POS
+    // (cajero incluido, ver pedidos.controller.ts) — lo que de verdad autoriza el descuento es
+    // esta contraseña, validada aquí contra el usuario elegido, no el rol de quien esté
+    // logueado en la terminal. Antes el PIN se "verificaba" por separado en el frontend
+    // (/auth/login-pin) pero el resultado se descartaba y nunca se re-comprobaba en esta
+    // mutación real — con una sesión de cajero, el descuento siempre daba 403 sin importar qué
+    // PIN se tecleara, porque @Roles exigía que la SESIÓN ya fuera supervisor/admin.
+    await this.auth.verificarAutorizacion(dto.autorizadoPorId, dto.password, pedido.sucursalId, ROLES_AUTORIZAN_SUPERVISOR);
+
     const montoAplicado = calcularMontoDescuento(dto.tipo, dto.valor, Number(pedido.subtotal));
 
     await this.prisma.descuento.create({
@@ -312,7 +323,7 @@ export class PedidosService {
     // Verificación real de autorización: la sesión que llama puede ser un cajero (este endpoint
     // ya no exige rol de supervisor/admin en el propio login del POS, ver pedidos.controller.ts)
     // — lo que de verdad autoriza cancelar es esta contraseña, validada aquí contra el usuario elegido.
-    await this.auth.verificarAutorizacion(autorizadoPorId, password, pedido.sucursalId, ROLES_AUTORIZAN_CANCELACION);
+    await this.auth.verificarAutorizacion(autorizadoPorId, password, pedido.sucursalId, ROLES_AUTORIZAN_SUPERVISOR);
 
     await this.prisma.$transaction(async (tx) => {
       await tx.pedido.update({ where: { id: pedidoId }, data: { estado: EstadoPedido.CANCELADO } });

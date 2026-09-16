@@ -144,6 +144,7 @@ export class SyncService {
           valor: p.valor,
           motivo: p.motivo,
           autorizadoPorId: p.autorizadoPorId,
+          password: p.password,
         });
         break;
 

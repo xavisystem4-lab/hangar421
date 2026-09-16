@@ -29,6 +29,10 @@ export interface DescuentoCarrito {
   valor: number;
   motivo: string;
   autorizadoPorId: string;
+  /** Contraseña de `autorizadoPorId` — el backend la valida server-side recién cuando este
+   *  descuento se manda de verdad (ver enviarACocina abajo), no en el momento de aplicarlo aquí.
+   *  Solo vive en memoria (este store no persiste a localStorage), nunca se guarda en disco. */
+  password: string;
 }
 
 interface OrderState {
