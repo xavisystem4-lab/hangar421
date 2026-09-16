@@ -3,6 +3,7 @@ import { EstadoPedido, type Pedido } from "@hangar421/shared";
 import { apiFetch } from "../api/http";
 import { useOrderStore } from "../store/orderStore";
 import { ModalCobro } from "../components/ModalCobro";
+import { ModalCancelarPedido } from "../components/ModalCancelarPedido";
 
 // Incluye ABIERTO como red de seguridad: el POS de escritorio nunca persiste un pedido en
 // ABIERTO antes de cobrar/enviar (el carrito vive solo en memoria, ver orderStore.ts), así que
@@ -34,6 +35,7 @@ export function PedidosPorCobrar({ sucursalId }: { sucursalId: string }) {
   const [pedidos, setPedidos] = useState<Pedido[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pedidoActivo, setPedidoActivo] = useState<Pedido | null>(null);
+  const [pedidoACancelar, setPedidoACancelar] = useState<Pedido | null>(null);
 
   async function cargar() {
     try {
@@ -72,18 +74,31 @@ export function PedidosPorCobrar({ sucursalId }: { sucursalId: string }) {
           {pedidos.map((p) => {
             const est = ETIQUETA_ESTADO[p.estado] ?? { texto: p.estado, color: "var(--h421-gray-400)" };
             return (
-              <button
+              // div (no <button>) porque adentro va un botón real de "Cancelar" — un <button>
+              // anidado dentro de otro no es HTML válido y además dispara el onClick de afuera
+              // por burbujeo, incluso con stopPropagation en algunos navegadores.
+              <div
                 key={p.id}
                 onClick={() => abrirCobro(p)}
                 className="btn-grande"
                 style={{
                   background: "var(--h421-white)", borderRadius: 14, padding: 16, textAlign: "left",
                   display: "flex", flexDirection: "column", gap: 6, border: `2px solid ${est.color}`,
+                  cursor: "pointer",
                 }}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <strong style={{ fontSize: 16 }}>{p.mesa?.nombre ?? "Mostrador"}</strong>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: est.color }}>{est.texto}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: est.color }}>{est.texto}</span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setPedidoACancelar(p); }}
+                      title="Cancelar cuenta"
+                      style={{ background: "var(--h421-red-bg)", color: "var(--h421-red-texto)", padding: "4px 8px", fontSize: 11, minHeight: 0 }}
+                    >
+                      ✕ Cancelar
+                    </button>
+                  </div>
                 </div>
                 <span style={{ fontSize: 13, color: "var(--h421-gray-400)" }}>Folio {p.folio}</span>
                 {p.mesero?.nombre && <span style={{ fontSize: 13 }}>🧑‍🍳 Mesero: {p.mesero.nombre}</span>}
@@ -99,7 +114,7 @@ export function PedidosPorCobrar({ sucursalId }: { sucursalId: string }) {
                       `Number(pedido.total).toFixed(2)` en la notificación de pedido nuevo. */}
                   <span style={{ fontSize: 18, fontWeight: 800, color: "var(--h421-navy-texto)" }}>${Number(p.total).toFixed(2)}</span>
                 </div>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -110,6 +125,16 @@ export function PedidosPorCobrar({ sucursalId }: { sucursalId: string }) {
           mesaNombre={pedidoActivo.mesa?.nombre ?? null}
           onCerrar={() => { setPedidoActivo(null); useOrderStore.getState().limpiar(); }}
           onCobrado={() => { setPedidoActivo(null); cargar(); }}
+        />
+      )}
+
+      {pedidoACancelar && (
+        <ModalCancelarPedido
+          pedidoId={pedidoACancelar.id}
+          sucursalId={sucursalId}
+          etiqueta={`${pedidoACancelar.mesa?.nombre ?? "Mostrador"} · Folio ${pedidoACancelar.folio} · $${Number(pedidoACancelar.total).toFixed(2)}`}
+          onCerrar={() => setPedidoACancelar(null)}
+          onCancelado={() => { setPedidoACancelar(null); cargar(); }}
         />
       )}
     </div>

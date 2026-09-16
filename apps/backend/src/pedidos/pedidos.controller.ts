@@ -79,10 +79,13 @@ export class PedidosController {
     return this.pedidos.cobrar(id, dto);
   }
 
+  // Sin @Roles: alcanzable desde cualquier sesión del POS (cajero incluido) — la autorización
+  // real es el PIN de supervisor/admin, verificado server-side dentro de PedidosService.cancelar
+  // (ver AuthService.verificarAutorizacion). Restringir esto por el rol de la sesión activa
+  // haría que un cajero nunca pudiera cancelar una cuenta aunque tuviera el PIN correcto.
   @Post(":id/cancelar")
-  @Roles(RolUsuario.SUPERVISOR, RolUsuario.ADMIN_SUCURSAL, RolUsuario.ADMIN_CORPORATIVO)
   @Audit("PEDIDO", "CANCELAR")
   cancelar(@Param("id") id: string, @Body() dto: CancelarPedidoDto) {
-    return this.pedidos.cancelar(id, dto.motivo, dto.autorizadoPorId);
+    return this.pedidos.cancelar(id, dto.motivo, dto.autorizadoPorId, dto.pin);
   }
 }

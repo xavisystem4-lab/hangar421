@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsString,
   Min,
+  MinLength,
   ValidateNested,
 } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
@@ -92,4 +93,9 @@ export class CobrarPedidoDto {
 export class CancelarPedidoDto {
   @ApiProperty() @IsString() motivo!: string;
   @ApiProperty() @IsString() autorizadoPorId!: string;
+  /** Se valida server-side contra el PIN real de `autorizadoPorId` (ver
+   *  AuthService.verificarAutorizacion) — este endpoint es alcanzable desde cualquier sesión
+   *  del POS (cajero incluido), así que el PIN es la autorización real, no el rol de quien
+   *  esté logueado en la terminal. */
+  @ApiProperty() @IsString() @MinLength(4) pin!: string;
 }

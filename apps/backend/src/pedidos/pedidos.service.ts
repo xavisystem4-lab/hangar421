@@ -3,6 +3,7 @@ import {
   EstadoMesa,
   EstadoPedido,
   EstadoPedidoItem,
+  RolUsuario,
   TipoDescuento,
   TipoMovimientoInventario,
   WS_EVENTS,
@@ -12,6 +13,7 @@ import {
 } from "@hangar421/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { RealtimeGateway } from "../realtime/realtime.gateway";
+import { AuthService } from "../auth/auth.service";
 import { resolverDispositivoId } from "../common/dispositivo.util";
 import {
   AgregarItemsDto,
@@ -20,9 +22,13 @@ import {
   CrearPedidoDto,
 } from "./dto/pedido.dto";
 
+/** Roles que pueden autorizar la cancelación de una cuenta — deben coincidir con lo que muestra
+ *  ModalCancelarPedido.tsx en el selector de "quién autoriza". */
+const ROLES_AUTORIZAN_CANCELACION = [RolUsuario.SUPERVISOR, RolUsuario.ADMIN_SUCURSAL, RolUsuario.ADMIN_CORPORATIVO];
+
 @Injectable()
 export class PedidosService {
-  constructor(private prisma: PrismaService, private realtime: RealtimeGateway) {}
+  constructor(private prisma: PrismaService, private realtime: RealtimeGateway, private auth: AuthService) {}
 
   /** `estados` (plural) filtra por una LISTA de estados — lo usa el POS para la cola de
    *  "Pedidos por cobrar" (ENVIADO/EN_PREPARACION/LISTO a la vez; no existe un único valor de
@@ -296,8 +302,18 @@ export class PedidosService {
     return actualizado;
   }
 
-  async cancelar(pedidoId: string, motivo: string, autorizadoPorId: string) {
+  async cancelar(pedidoId: string, motivo: string, autorizadoPorId: string, pin: string) {
     const pedido = await this.obtener(pedidoId);
+    if (pedido.estado === EstadoPedido.COBRADO) {
+      throw new BadRequestException("Esta cuenta ya está cobrada — no se puede cancelar (para eso hace falta una devolución).");
+    }
+    if (pedido.estado === EstadoPedido.CANCELADO) return pedido; // idempotente ante un doble toque
+
+    // Verificación real de autorización: la sesión que llama puede ser un cajero (este endpoint
+    // ya no exige rol de supervisor/admin en el propio login del POS, ver pedidos.controller.ts)
+    // — lo que de verdad autoriza cancelar es este PIN, validado aquí contra el usuario elegido.
+    await this.auth.verificarAutorizacion(autorizadoPorId, pin, pedido.sucursalId, ROLES_AUTORIZAN_CANCELACION);
+
     await this.prisma.$transaction(async (tx) => {
       await tx.pedido.update({ where: { id: pedidoId }, data: { estado: EstadoPedido.CANCELADO } });
       await tx.pedidoItem.updateMany({ where: { pedidoId }, data: { estado: EstadoPedidoItem.CANCELADO } });
