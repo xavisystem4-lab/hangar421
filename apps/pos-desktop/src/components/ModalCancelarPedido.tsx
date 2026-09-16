@@ -4,7 +4,7 @@ import { apiFetch } from "../api/http";
 interface UsuarioLogin { id: string; nombre: string; rol: string | null }
 
 // Roles que pueden autorizar cancelar una cuenta — deben coincidir con ROLES_AUTORIZAN_CANCELACION
-// en apps/backend/src/pedidos/pedidos.service.ts (el PIN se valida ahí, server-side).
+// en apps/backend/src/pedidos/pedidos.service.ts (la contraseña se valida ahí, server-side).
 const ROLES_AUTORIZAN = new Set(["SUPERVISOR", "ADMIN_SUCURSAL", "ADMIN_CORPORATIVO"]);
 const ETIQUETA_ROL: Record<string, string> = {
   ADMIN_CORPORATIVO: "Admin. corporativo", ADMIN_SUCURSAL: "Admin. sucursal", SUPERVISOR: "Supervisor",
@@ -12,10 +12,11 @@ const ETIQUETA_ROL: Record<string, string> = {
 
 const inputStyle = { width: "100%", padding: 10, marginTop: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" } as const;
 
-/** Cancelar una cuenta ya enviada — requiere PIN de un Supervisor/Admin, verificado en el
- *  servidor (POST /pedidos/:id/cancelar ya no exige que la sesión del POS misma sea admin: el
- *  cajero puede estar logueado y de todos modos cancelar, siempre que teclee el PIN correcto de
- *  alguien autorizado). Mismo patrón de UI que ModalDescuento. */
+/** Cancelar una cuenta ya enviada — requiere la CONTRASEÑA de un Supervisor/Admin (no el PIN de
+ *  4 dígitos: cancelar es más consecuente que iniciar sesión rápido), verificada en el servidor
+ *  (POST /pedidos/:id/cancelar ya no exige que la sesión del POS misma sea admin: el cajero
+ *  puede estar logueado y de todos modos cancelar, siempre que teclee la contraseña correcta de
+ *  alguien autorizado). Mismo patrón de UI que ModalDescuento, con contraseña en vez de PIN. */
 export function ModalCancelarPedido({
   pedidoId,
   sucursalId,
@@ -32,12 +33,12 @@ export function ModalCancelarPedido({
   const [motivo, setMotivo] = useState("");
   const [autorizadores, setAutorizadores] = useState<UsuarioLogin[] | null>(null);
   const [usuarioAutorizaId, setUsuarioAutorizaId] = useState("");
-  const [pin, setPin] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [procesando, setProcesando] = useState(false);
 
   const motivoRef = useRef<HTMLInputElement>(null);
-  const pinRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
 
   function irA(campo: React.RefObject<HTMLInputElement>) {
     campo.current?.focus();
@@ -63,12 +64,12 @@ export function ModalCancelarPedido({
     setError(null);
     if (!motivo.trim()) return setError("Indica el motivo de la cancelación");
     if (!usuarioAutorizaId) return setError("Elige quién autoriza la cancelación");
-    if (!pin.trim()) return setError("Indica el PIN de autorización");
+    if (!password.trim()) return setError("Indica la contraseña de autorización");
     setProcesando(true);
     try {
       await apiFetch(`/pedidos/${pedidoId}/cancelar`, {
         method: "POST",
-        body: JSON.stringify({ motivo, autorizadoPorId: usuarioAutorizaId, pin }),
+        body: JSON.stringify({ motivo, autorizadoPorId: usuarioAutorizaId, password }),
       });
       onCancelado();
     } catch (e: any) {
@@ -91,7 +92,7 @@ export function ModalCancelarPedido({
         </p>
 
         <input ref={motivoRef} placeholder="Motivo de la cancelación (obligatorio)" value={motivo} onChange={(e) => setMotivo(e.target.value)}
-          onKeyDown={(e) => manejarNavegacion(e, pinRef)}
+          onKeyDown={(e) => manejarNavegacion(e, passwordRef)}
           style={inputStyle} />
 
         <div style={{ marginTop: 14, padding: 10, background: "var(--h421-gray-50)", borderRadius: 8 }}>
@@ -122,7 +123,7 @@ export function ModalCancelarPedido({
             </div>
           )}
 
-          <input ref={pinRef} placeholder="PIN" type="password" value={pin} onChange={(e) => setPin(e.target.value)}
+          <input ref={passwordRef} placeholder="Contraseña" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") { e.preventDefault(); if (!procesando) confirmar(); }
               else if (e.key === "ArrowUp") { e.preventDefault(); irA(motivoRef); }

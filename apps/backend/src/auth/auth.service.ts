@@ -83,14 +83,15 @@ export class AuthService {
     return this.emitirSesion(usuario.id, usuario.empresaId, usuario.nombre, accesos, sucursalId, rol, dto.dispositivoId);
   }
 
-  /** Verifica que `usuarioId` tenga el PIN correcto Y un rol autorizado en `sucursalId` — sin
-   *  emitir sesión (a diferencia de `loginConPin`). Pensado para acciones que requieren
-   *  autorización de un supervisor/admin DESDE una sesión de menor privilegio ya abierta en el
-   *  POS (ej. cancelar una cuenta, aplicar un descuento): la sesión activa puede ser un CAJERO,
-   *  el PIN es lo que realmente autoriza la acción, y se valida aquí mismo en el servidor — no
-   *  basta con que el frontend haya llamado antes a /auth/login-pin y descartado el resultado,
-   *  porque eso no ata esa verificación a la acción concreta que se ejecuta después. */
-  async verificarAutorizacion(usuarioId: string, pin: string, sucursalId: string, rolesPermitidos: RolUsuario[]): Promise<void> {
+  /** Verifica que `usuarioId` tenga la CONTRASEÑA correcta Y un rol autorizado en `sucursalId`
+   *  — sin emitir sesión (a diferencia de `loginConCredenciales`). Pensado para acciones que
+   *  requieren autorización de un supervisor/admin DESDE una sesión de menor privilegio ya
+   *  abierta en el POS (ej. cancelar una cuenta, aplicar un descuento): la sesión activa puede
+   *  ser un CAJERO, la contraseña es lo que realmente autoriza la acción, y se valida aquí mismo
+   *  en el servidor. Se usa contraseña (no PIN) a propósito para esta autorización — 4 dígitos
+   *  es cómodo para iniciar sesión rápido en una terminal compartida, pero es un candado
+   *  demasiado débil para algo tan consecuente como cancelar una cuenta. */
+  async verificarAutorizacion(usuarioId: string, password: string, sucursalId: string, rolesPermitidos: RolUsuario[]): Promise<void> {
     const usuarioSucursal = await this.prisma.usuarioSucursal.findUnique({
       where: { usuarioId_sucursalId: { usuarioId, sucursalId } },
       include: { usuario: true },
@@ -102,11 +103,11 @@ export class AuthService {
       throw new UnauthorizedException("El usuario que autoriza no tiene un rol permitido para esta acción");
     }
     const usuario = usuarioSucursal.usuario;
-    if (!usuario.activo || usuario.eliminado || !usuario.pinHash) {
-      throw new UnauthorizedException("El usuario que autoriza no tiene PIN configurado");
+    if (!usuario.activo || usuario.eliminado || !usuario.passwordHash) {
+      throw new UnauthorizedException("El usuario que autoriza no tiene contraseña configurada");
     }
-    const ok = await bcrypt.compare(pin, usuario.pinHash);
-    if (!ok) throw new UnauthorizedException("PIN de autorización inválido");
+    const ok = await bcrypt.compare(password, usuario.passwordHash);
+    if (!ok) throw new UnauthorizedException("Contraseña de autorización inválida");
   }
 
   /** Login rápido por PIN en terminal compartida (mesero/cajero), ligado a un dispositivo. */

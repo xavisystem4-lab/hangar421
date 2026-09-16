@@ -302,7 +302,7 @@ export class PedidosService {
     return actualizado;
   }
 
-  async cancelar(pedidoId: string, motivo: string, autorizadoPorId: string, pin: string) {
+  async cancelar(pedidoId: string, motivo: string, autorizadoPorId: string, password: string) {
     const pedido = await this.obtener(pedidoId);
     if (pedido.estado === EstadoPedido.COBRADO) {
       throw new BadRequestException("Esta cuenta ya está cobrada — no se puede cancelar (para eso hace falta una devolución).");
@@ -311,8 +311,8 @@ export class PedidosService {
 
     // Verificación real de autorización: la sesión que llama puede ser un cajero (este endpoint
     // ya no exige rol de supervisor/admin en el propio login del POS, ver pedidos.controller.ts)
-    // — lo que de verdad autoriza cancelar es este PIN, validado aquí contra el usuario elegido.
-    await this.auth.verificarAutorizacion(autorizadoPorId, pin, pedido.sucursalId, ROLES_AUTORIZAN_CANCELACION);
+    // — lo que de verdad autoriza cancelar es esta contraseña, validada aquí contra el usuario elegido.
+    await this.auth.verificarAutorizacion(autorizadoPorId, password, pedido.sucursalId, ROLES_AUTORIZAN_CANCELACION);
 
     await this.prisma.$transaction(async (tx) => {
       await tx.pedido.update({ where: { id: pedidoId }, data: { estado: EstadoPedido.CANCELADO } });
@@ -340,7 +340,16 @@ export class PedidosService {
   // -- privados ---------------------------------------------------------------
 
   private async resolverItem(item: { productoId: string; cantidad: number; notas?: string; modificadores?: { opcionModificadorId: string }[] }) {
-    const producto = await this.prisma.producto.findUniqueOrThrow({ where: { id: item.productoId } });
+    // findUniqueOrThrow revienta con un NotFoundError si el productoId no existe (ej. el POS
+    // tenía el catálogo cacheado y alguien borró/desactivó ese producto entre medias) — sin este
+    // try/catch se iba como 500 genérico ("Error interno del servidor"), sin decir cuál producto
+    // ni qué hacer al respecto.
+    const producto = await this.prisma.producto.findUnique({ where: { id: item.productoId } });
+    if (!producto) {
+      throw new BadRequestException(
+        `Uno de los productos del pedido ya no existe en el catálogo (id: ${item.productoId}). Actualiza la app (F5 o reinicia el POS) y vuelve a agregarlo.`,
+      );
+    }
     const opciones = item.modificadores?.length
       ? await this.prisma.opcionModificador.findMany({
           where: { id: { in: item.modificadores.map((m) => m.opcionModificadorId) } },

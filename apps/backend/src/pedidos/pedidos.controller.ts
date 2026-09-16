@@ -86,6 +86,6 @@ export class PedidosController {
   @Post(":id/cancelar")
   @Audit("PEDIDO", "CANCELAR")
   cancelar(@Param("id") id: string, @Body() dto: CancelarPedidoDto) {
-    return this.pedidos.cancelar(id, dto.motivo, dto.autorizadoPorId, dto.pin);
+    return this.pedidos.cancelar(id, dto.motivo, dto.autorizadoPorId, dto.password);
   }
 }

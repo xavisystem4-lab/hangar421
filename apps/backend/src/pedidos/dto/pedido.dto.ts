@@ -93,9 +93,10 @@ export class CobrarPedidoDto {
 export class CancelarPedidoDto {
   @ApiProperty() @IsString() motivo!: string;
   @ApiProperty() @IsString() autorizadoPorId!: string;
-  /** Se valida server-side contra el PIN real de `autorizadoPorId` (ver
+  /** Se valida server-side contra la contraseña real de `autorizadoPorId` (ver
    *  AuthService.verificarAutorizacion) — este endpoint es alcanzable desde cualquier sesión
-   *  del POS (cajero incluido), así que el PIN es la autorización real, no el rol de quien
-   *  esté logueado en la terminal. */
-  @ApiProperty() @IsString() @MinLength(4) pin!: string;
+   *  del POS (cajero incluido), así que la contraseña es la autorización real, no el rol de
+   *  quien esté logueado en la terminal. Contraseña (no PIN) a propósito: cancelar una cuenta
+   *  es más consecuente que iniciar sesión rápido, así que pide un candado más fuerte. */
+  @ApiProperty() @IsString() @MinLength(6) password!: string;
 }
