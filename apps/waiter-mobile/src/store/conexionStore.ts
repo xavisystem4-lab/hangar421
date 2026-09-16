@@ -50,13 +50,25 @@ let temporizador: ReturnType<typeof setInterval> | null = null;
  *  servidor HTTP/HTTPS que responda `/api/v1/health`), pero nunca es el comportamiento de
  *  fábrica. */
 function estacionPorDefecto(): { host: string; puerto: string } {
-  const apiUrl: string = Constants.expoConfig?.extra?.apiUrl ?? "http://localhost:3000/api/v1";
+  return resolverHostPuerto(Constants.expoConfig?.extra?.apiUrl ?? "http://localhost:3000/api/v1");
+}
+
+function resolverHostPuerto(apiUrl: string): { host: string; puerto: string } {
   try {
     const u = new URL(apiUrl);
     return { host: u.hostname, puerto: u.port || (u.protocol === "https:" ? "443" : "80") };
   } catch {
     return { host: "localhost", puerto: "3000" };
   }
+}
+
+/** Host/puerto del backend en la nube (Railway) — para el botón "Usar backend en la nube" de
+ *  ConexionScreen.tsx. Es el mismo backend que la mayoría de los POS Windows del sistema usan
+ *  en modo "Nube" (ver AdminConexion.tsx del POS): cuando un POS está en ese modo, NUNCA levanta
+ *  su backend embebido local, así que ninguna IP:puerto de esa PC responde jamás — la app de
+ *  Meseros necesita poder saltarse la Estación local y hablar directo con la nube en ese caso. */
+export function datosNube(): { host: string; puerto: string } {
+  return resolverHostPuerto(Constants.expoConfig?.extra?.nubeApiUrl ?? "https://hangar421backend-production.up.railway.app/api/v1");
 }
 
 /** El backend en la nube (Railway) sirve por HTTPS en 443; un servidor propio en la red local

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ActivityIndicator, ImageBackground, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { baseUrl, useConexionStore, validarHost, validarPuerto } from "../store/conexionStore";
+import { baseUrl, datosNube, useConexionStore, validarHost, validarPuerto } from "../store/conexionStore";
 import { useAuthStore } from "../store/authStore";
 import { useTemaStore, usarColores } from "../store/temaStore";
 import { actualizarMenu } from "../sync/actualizarMenu";
@@ -48,11 +48,15 @@ export function ConexionScreen({ onConectado, onCancelar }: { onConectado?: () =
 
   /** Prueba la IP/puerto TAL COMO están escritos, sin guardarlos todavía — separado de
    *  "Guardar" a propósito (el spec lo pide así): se puede probar varias veces antes de decidir
-   *  quedarse con una configuración. */
-  async function probarConexion() {
+   *  quedarse con una configuración. Acepta un host/puerto explícitos (en vez de leerlos del
+   *  estado) para "Usar backend en la nube" — si solo actualizara `ip`/`pto` y llamara a esta
+   *  función acto seguido, probaría con el valor VIEJO (setState de React no es inmediato). */
+  async function probarConexion(hostForzado?: string, puertoForzado?: string) {
+    const hostAProbar = hostForzado ?? ip;
+    const puertoAProbar = puertoForzado ?? pto;
     setMensajeGuardado(null);
-    const errorIp = validarHost(ip.trim());
-    const errorPuerto = validarPuerto(pto.trim());
+    const errorIp = validarHost(hostAProbar.trim());
+    const errorPuerto = validarPuerto(puertoAProbar.trim());
     if (errorIp || errorPuerto) {
       setResultadoPrueba({ ok: false, mensaje: errorIp ?? errorPuerto! });
       return;
@@ -61,7 +65,7 @@ export function ConexionScreen({ onConectado, onCancelar }: { onConectado?: () =
     try {
       const controlador = new AbortController();
       const limite = setTimeout(() => controlador.abort(), 5000);
-      const res = await fetch(`${baseUrl(ip.trim(), pto.trim())}/api/v1/health`, { signal: controlador.signal });
+      const res = await fetch(`${baseUrl(hostAProbar.trim(), puertoAProbar.trim())}/api/v1/health`, { signal: controlador.signal });
       clearTimeout(limite);
       if (!res.ok) throw new Error(`La Estación respondió con error ${res.status}`);
       const body = await res.json().catch(() => ({}));
@@ -77,6 +81,19 @@ export function ConexionScreen({ onConectado, onCancelar }: { onConectado?: () =
     } finally {
       setProbando(false);
     }
+  }
+
+  /** Autocompleta host/puerto con el backend en la nube y prueba de inmediato — para cuando el
+   *  POS Windows del local está en modo "Nube" (ver Administración → Conexión del POS): en ese
+   *  modo el backend embebido local nunca arranca, así que ninguna IP de esa PC va a responder
+   *  jamás; la app de Meseros necesita poder saltarse la Estación local y hablar directo con
+   *  Railway. */
+  function usarBackendNube() {
+    const { host: hostNube, puerto: puertoNube } = datosNube();
+    setIp(hostNube);
+    setPto(puertoNube);
+    setResultadoPrueba(null);
+    probarConexion(hostNube, puertoNube);
   }
 
   async function guardar() {
@@ -141,9 +158,17 @@ export function ConexionScreen({ onConectado, onCancelar }: { onConectado?: () =
           {resultadoPrueba?.ok === false && <Text style={estilos.error}>✕ No se pudo establecer la conexión{"\n"}{resultadoPrueba.mensaje}</Text>}
           {mensajeGuardado && <Text style={estilos.ok}>{mensajeGuardado}</Text>}
 
-          <TouchableOpacity style={estilos.botonSecundario} onPress={probarConexion} disabled={probando || !ip.trim() || !pto.trim()}>
+          <TouchableOpacity style={estilos.botonSecundario} onPress={() => probarConexion()} disabled={probando || !ip.trim() || !pto.trim()}>
             {probando ? <ActivityIndicator color={colores.navyTexto} /> : <Text style={estilos.botonSecundarioTexto}>Probar conexión</Text>}
           </TouchableOpacity>
+
+          <TouchableOpacity style={estilos.botonNube} onPress={usarBackendNube} disabled={probando}>
+            <Text style={estilos.botonNubeTexto}>🌐 Usar backend en la nube</Text>
+          </TouchableOpacity>
+          <Text style={estilos.ayudaNube}>
+            Si el POS de tu local está en modo "Nube" (Administración → Conexión), su backend local nunca
+            arranca — usa este botón para conectarte directo, en vez de la IP de esa PC.
+          </Text>
 
           {usuario && (
             <>
@@ -228,6 +253,12 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
       padding: 14, marginTop: 10, minHeight: 50, alignItems: "center", justifyContent: "center",
     },
     botonSecundarioTexto: { color: colores.navyTexto, fontWeight: "700", fontSize: 15 },
+    botonNube: {
+      backgroundColor: colores.fondo, borderWidth: 1, borderColor: colores.blue, borderRadius: 12,
+      padding: 12, marginTop: 8, minHeight: 46, alignItems: "center", justifyContent: "center",
+    },
+    botonNubeTexto: { color: colores.blue, fontWeight: "700", fontSize: 14 },
+    ayudaNube: { color: colores.textoSecundario, fontSize: 11, lineHeight: 15, marginTop: 6 },
     metaMenu: { marginTop: 8 },
     metaMenuTexto: { color: colores.textoSecundario, fontSize: 12, marginTop: 2 },
     boton: { backgroundColor: colores.navy, borderRadius: 12, padding: 16, marginTop: 18, minHeight: 56, alignItems: "center", justifyContent: "center" },

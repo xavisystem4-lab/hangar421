@@ -22,7 +22,8 @@
       ]
     },
     "extra": {
-      "apiUrl": "http://localhost:3000/api/v1"
+      "apiUrl": "http://localhost:3000/api/v1",
+      "nubeApiUrl": "https://hangar421backend-production.up.railway.app/api/v1"
     },
     "plugins": [
       [
