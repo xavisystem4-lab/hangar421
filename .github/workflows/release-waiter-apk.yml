@@ -23,7 +23,11 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@v3
+      # `android-actions/setup-android@v3` intenta instalar el paquete SDK legado "tools" (Google
+      # lo removió del repositorio hace tiempo, reemplazado por cmdline-tools) — falla siempre con
+      # "Failed to find package 'tools'" y tumba el job antes de tocar el proyecto. No hace falta:
+      # los runners `ubuntu-latest` de GitHub Actions ya traen un Android SDK completo preinstalado
+      # ($ANDROID_HOME), Gradle lo detecta solo.
 
       - name: Instalar dependencias (waiter-mobile + shared)
         run: npm install --workspace=apps/waiter-mobile --workspace=packages/shared --no-audit --no-fund
