@@ -194,7 +194,7 @@ export function AdminTicket() {
     subtotal: SUBTOTAL_DEMO,
     impuesto: IMPUESTO_DEMO,
     total: TOTAL_DEMO,
-  });
+  }, { vistaPrevia: true });
 
   const htmlComanda = generarHtmlComanda(config, {
     mesaNombre: "T4",

@@ -74,13 +74,17 @@ function envolverHtml(anchoMM: number, cuerpo: string): string {
      conserva la proporción; los topes de ancho/alto evitan que un logo panorámico o muy
      grande empuje el resto del ticket). */
   .logo { display: block; margin: 0 auto 6px; max-width: 65%; max-height: 70px; width: auto; height: auto; object-fit: contain; }
+  /* Solo en la vista previa de Administración → Ticket, cuando "Mostrar logotipo" está
+     activo pero todavía no se ha subido uno — nunca en un ticket real impreso (ver
+     generarHtmlTicketCliente, parámetro vistaPrevia). */
+  .logo-placeholder { margin: 0 0 10px; padding: 22px 0; background: #e5e7eb; color: #9ca3af; text-align: center; font-family: sans-serif; font-size: 13px; }
 </style>
 </head>
 <body>${cuerpo}</body>
 </html>`;
 }
 
-export function generarHtmlTicketCliente(config: ConfigTicket, d: DatosTicketCliente): string {
+export function generarHtmlTicketCliente(config: ConfigTicket, d: DatosTicketCliente, opciones?: { vistaPrevia?: boolean }): string {
   const c = config.cliente;
   const items = d.items.map((i) => `
     <div class="fila" style="${estiloCss(c.estiloCuerpo)}">
@@ -88,8 +92,16 @@ export function generarHtmlTicketCliente(config: ConfigTicket, d: DatosTicketCli
       <span>$${(i.precioTotal ?? 0).toFixed(2)}</span>
     </div>`).join("");
 
+  const logo = config.mostrarLogo
+    ? d.logoUrl
+      ? `<img class="logo" src="${d.logoUrl}" />`
+      : opciones?.vistaPrevia
+        ? `<div class="logo-placeholder">Logotipo</div>`
+        : ""
+    : "";
+
   const cuerpo = `
-    ${config.mostrarLogo && d.logoUrl ? `<img class="logo" src="${d.logoUrl}" />` : ""}
+    ${logo}
     <div class="centro" style="${estiloCss(c.estiloEncabezado)}">
       <div>${escaparHtml(c.encabezadoLinea1 || d.empresaNombre)}</div>
       ${(c.encabezadoLinea2 || d.sucursalNombre) ? `<div>${escaparHtml(c.encabezadoLinea2 || d.sucursalNombre)}</div>` : ""}
