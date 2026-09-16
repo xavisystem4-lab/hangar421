@@ -3,6 +3,7 @@ import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { ConfigService } from "@nestjs/config";
+import { json, urlencoded } from "express";
 import { AppModule } from "./app.module";
 import { PrismaService } from "./prisma/prisma.service";
 import { autoBootstrap } from "./bootstrap/auto-bootstrap";
@@ -10,6 +11,14 @@ import { autoBootstrap } from "./bootstrap/auto-bootstrap";
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
+
+  // El límite por defecto de Express (100kb) rechaza en silencio cualquier body más grande —
+  // sin esto, subir un logotipo real desde Administración → Ticket (se manda como data URL
+  // base64 dentro del JSON, ver AdminTicket.tsx `subirLogotipo`) fallaba con cualquier imagen
+  // de más de ~75KB, que es casi cualquier logo real (probado y reproducido: una imagen de
+  // prueba de unos bytes sí pasaba, un logo de verdad no).
+  app.use(json({ limit: "10mb" }));
+  app.use(urlencoded({ extended: true, limit: "10mb" }));
 
   // Solo en el backend embebido del POS Windows (modo standalone) — nunca en cloud.
   if (config.get<string>("AUTO_BOOTSTRAP") === "true") {

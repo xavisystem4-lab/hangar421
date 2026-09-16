@@ -16,6 +16,22 @@ const SUBTOTAL_DEMO = 375;
 const IMPUESTO_DEMO = 60;
 const TOTAL_DEMO = 435;
 
+/** El iframe mide su propio contenido y ajusta su alto real — antes tenía una altura fija
+ *  (420/260px) que dejaba una franja blanca de más debajo del pie cuando el ticket
+ *  terminaba antes; ahora el "papel" termina justo donde termina el contenido. */
+function IframeTicket({ titulo, html }: { titulo: string; html: string }) {
+  const ref = useRef<HTMLIFrameElement>(null);
+  const [alto, setAlto] = useState(200);
+  function medir() {
+    const alto = ref.current?.contentDocument?.documentElement.scrollHeight;
+    if (alto) setAlto(alto);
+  }
+  return (
+    <iframe ref={ref} title={titulo} srcDoc={html} onLoad={medir} scrolling="no"
+      style={{ width: "100%", height: alto, border: "none", background: "#fff", display: "block" }} />
+  );
+}
+
 function BotonToggle({ activo, onClick, children }: { activo: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button onClick={onClick} style={{ padding: "10px 16px", background: activo ? "var(--h421-navy)" : "var(--h421-gray-50)", color: activo ? "#fff" : "var(--h421-black)" }}>
@@ -84,6 +100,13 @@ export function AdminTicket() {
     const archivo = e.target.files?.[0];
     e.target.value = "";
     if (!archivo || !usuarioSesion) return;
+    // Tope del lado del cliente antes de intentar subir — el backend acepta hasta 10MB de
+    // body (ver main.ts), pero una imagen pesada no aporta nada en un ticket térmico de
+    // 58/80mm; se avisa aquí en vez de esperar a que el servidor la rechace.
+    if (archivo.size > 5 * 1024 * 1024) {
+      setMensaje("La imagen pesa demasiado (máx. 5MB). Usa una versión más ligera del logotipo.");
+      return;
+    }
     setSubiendoLogo(true);
     setMensaje(null);
     try {
@@ -316,12 +339,12 @@ export function AdminTicket() {
         <div>
           <p style={{ fontSize: 13, color: "var(--h421-gray-400)", marginBottom: 6 }}>Vista previa · Ticket cliente</p>
           <div className="ticket-paper" style={{ width: anchoPreviewPx, margin: "0 0 16px", clipPath: recorteTicket() }}>
-            <iframe title="preview-cliente" srcDoc={htmlCliente} style={{ width: "100%", height: 420, border: "none", background: "#fff", display: "block" }} />
+            <IframeTicket titulo="preview-cliente" html={htmlCliente} />
           </div>
 
           <p style={{ fontSize: 13, color: "var(--h421-gray-400)", marginBottom: 6 }}>Vista previa · Comanda</p>
           <div className="ticket-paper" style={{ width: anchoPreviewPx, margin: "0 0 16px", clipPath: recorteTicket() }}>
-            <iframe title="preview-comanda" srcDoc={htmlComanda} style={{ width: "100%", height: 260, border: "none", background: "#fff", display: "block" }} />
+            <IframeTicket titulo="preview-comanda" html={htmlComanda} />
           </div>
 
           <div className="card" style={{ marginBottom: 16 }}>
