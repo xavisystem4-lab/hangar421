@@ -3,21 +3,21 @@
 [![Repo en GitHub](https://img.shields.io/badge/GitHub-hangar421-0B1E33?logo=github&logoColor=white)](https://github.com/xavisystem4-lab/hangar421)
 [![CI](https://github.com/xavisystem4-lab/hangar421/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/xavisystem4-lab/hangar421/actions/workflows/ci.yml)
 [![License: Proprietary](https://img.shields.io/badge/license-proprietary-E8A33D.svg)](LICENSE)
-[![Descargar POS Windows](https://img.shields.io/badge/Descargar-POS%20Windows%20.exe-1F9D55?logo=windows&logoColor=white)](https://github.com/xavisystem4-lab/hangar421/releases/tag/v0.2.59)
-[![Descargar app Meseros](https://img.shields.io/badge/Descargar-Meseros%20.apk-3DDC84?logo=android&logoColor=white)](https://github.com/xavisystem4-lab/hangar421/releases/tag/waiter-v0.1.10)
+[![Descargar POS Windows](https://img.shields.io/badge/Descargar-POS%20Windows%20.exe-1F9D55?logo=windows&logoColor=white)](https://github.com/xavisystem4-lab/hangar421/releases/tag/v0.2.60)
+[![Descargar app Meseros](https://img.shields.io/badge/Descargar-Meseros%20.apk-3DDC84?logo=android&logoColor=white)](https://github.com/xavisystem4-lab/hangar421/releases/tag/waiter-v0.1.12)
 
 Plataforma de punto de venta para cafeterías, **offline-first** y **multisucursal**, con POS
 Windows táctil, app Android para meseros, pantalla de cocina en tiempo real y CRM/panel
 administrativo en la nube.
 
 📥 **Instaladores** (compilados automáticamente por GitHub Actions, no builds locales sin probar):
-- **POS Windows**: [descargar `.exe`](https://github.com/xavisystem4-lab/hangar421/releases/tag/v0.2.59)
+- **POS Windows**: [descargar `.exe`](https://github.com/xavisystem4-lab/hangar421/releases/tag/v0.2.60)
   ([`release-pos.yml`](.github/workflows/release-pos.yml), runner Windows). **Autocontenido: al
   instalarlo, la app trae su propio backend y base de datos (PostgreSQL embebido) — funciona de
   inmediato, sin instalar nada más ni configurar nada** (ver "POS standalone" abajo). Incluye
   además auto-actualización: el footer de la app avisa cuando hay una versión nueva, la descarga
   con barra de progreso y ofrece reiniciar para instalarla.
-- **App de meseros**: [descargar `.apk`](https://github.com/xavisystem4-lab/hangar421/releases/tag/waiter-v0.1.10)
+- **App de meseros**: [descargar `.apk`](https://github.com/xavisystem4-lab/hangar421/releases/tag/waiter-v0.1.12)
   ([`release-waiter-apk.yml`](.github/workflows/release-waiter-apk.yml), `expo prebuild` + Gradle).
   Instalación directa en tablet/celular Android (habilita "orígenes desconocidos" para instalarlo);
   se conecta al backend del POS Windows de la sucursal (o a uno cloud, si ya hay uno desplegado).
