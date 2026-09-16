@@ -22,6 +22,17 @@ export class RealtimeController {
     return this.gateway.listarConectados(sucursalId);
   }
 
+  /** ¿Hay un POS Windows con sesión iniciada ahora mismo en esta sucursal? Público a propósito
+   *  (ver conexionStore.ts de la app de Meseros): se consulta ANTES de iniciar sesión, en la
+   *  propia pantalla de Conexión, para no confundir "el backend en la nube responde" con "el
+   *  local está abierto ahora mismo" — Railway sigue en línea 24/7 aunque nadie esté usando
+   *  el POS. No expone datos, solo un booleano. */
+  @Public()
+  @Get("pos-activo")
+  posActivo(@Query("sucursalId") sucursalId: string) {
+    return { activo: this.gateway.posActivo(sucursalId) };
+  }
+
   /** Aviso de cierre LIMPIO del software de PC — lo llama electron/backend-manager.ts
    *  (`detener()`) justo antes de matar el proceso del backend embebido, para que la app de
    *  Meseros pueda mostrar "Software cerrado" de inmediato en vez de esperar el timeout del

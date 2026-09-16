@@ -15,7 +15,11 @@ let socket: Socket | null = null;
 export function conectarSocket(sucursalId: string): Socket {
   if (socket) socket.disconnect();
   socket = io(wsUrlResuelta ?? WS_URL_POR_DEFECTO, { path: "/realtime", transports: ["websocket"] });
-  socket.on("connect", () => socket?.emit("join", { sucursalId }));
+  // tipo:"pos" — la app de Meseros usa esto (ver RealtimeGateway.posActivo / GET
+  // /realtime/pos-activo) para saber si el POS de esta sucursal tiene sesión iniciada AHORA
+  // MISMO, sin confundirlo con "el backend en la nube responde" (Railway sigue en línea 24/7
+  // aunque nadie esté usando el POS).
+  socket.on("connect", () => socket?.emit("join", { sucursalId, tipo: "pos" }));
   return socket;
 }
 

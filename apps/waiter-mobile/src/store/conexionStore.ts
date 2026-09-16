@@ -7,7 +7,7 @@ const CLAVE_MENU = "hangar421_menu_meta";
 const INTERVALO_HEARTBEAT_MS = 15_000;
 const TIMEOUT_MS = 5_000;
 
-export type EstadoConexion = "verificando" | "conectado" | "error";
+export type EstadoConexion = "verificando" | "conectado" | "cerrado" | "error";
 
 interface ConexionState {
   host: string;
@@ -125,6 +125,35 @@ function clasificarError(e: any): string {
   return "No se pudo conectar. Revisa que: la IP y el puerto sean correctos, el software de PC esté corriendo (servicio no disponible), y el equipo esté en la misma red.";
 }
 
+/** true si hay un POS Windows con sesión iniciada ahora mismo en ALGUNA de las sucursales que
+ *  sirve este host:puerto (ver RealtimeGateway.posActivo / GET /realtime/pos-activo en el
+ *  backend) — se resuelven las sucursales candidatas con la misma lista pública que usa
+ *  LoginScreen (GET /auth/usuarios-login), sin necesitar sesión todavía. */
+export async function verificarSistemaAbierto(host: string, puerto: string): Promise<boolean> {
+  const base = `${baseUrl(host, puerto)}/api/v1`;
+  const controlador = new AbortController();
+  const limite = setTimeout(() => controlador.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(`${base}/auth/usuarios-login`, { signal: controlador.signal });
+    if (!res.ok) return true; // no se pudo resolver sucursales — no bloquear por esto
+    const usuarios: { sucursalId: string }[] = await res.json();
+    const sucursales = Array.from(new Set(usuarios.map((u) => u.sucursalId)));
+    if (sucursales.length === 0) return true;
+
+    const resultados = await Promise.all(
+      sucursales.map((id) =>
+        fetch(`${base}/realtime/pos-activo?sucursalId=${id}`)
+          .then((r) => r.json())
+          .then((j) => !!j?.activo)
+          .catch(() => false),
+      ),
+    );
+    return resultados.some(Boolean);
+  } finally {
+    clearTimeout(limite);
+  }
+}
+
 export const useConexionStore = create<ConexionState>((set, get) => ({
   host: "",
   puerto: "",
@@ -195,6 +224,18 @@ export const useConexionStore = create<ConexionState>((set, get) => ({
       clearTimeout(limite);
       if (!resultado.ok) throw new Error(`La Estación respondió con error ${resultado.status}`);
       const body = await resultado.json().catch(() => ({}));
+
+      // El servidor responde, pero eso NO significa que alguien esté usando el POS ahora mismo
+      // (con "Backend en la nube", Railway sigue en línea 24/7 sin importar si el POS está
+      // abierto) — se verifica aparte si hay una sesión de POS realmente activa en alguna
+      // sucursal de esta empresa. Si esta verificación en sí falla (ej. un backend viejo sin
+      // estas rutas todavía), no se bloquea la conexión por eso — solo se salta el chequeo.
+      const abierto = await verificarSistemaAbierto(host, puerto).catch(() => true);
+      if (!abierto) {
+        set({ estado: "cerrado", ultimoError: null, ultimaVerificacion: Date.now(), nombreEstacion: body?.empresa ?? null });
+        return false;
+      }
+
       set({ estado: "conectado", ultimoError: null, ultimaVerificacion: Date.now(), nombreEstacion: body?.empresa ?? null });
       return true;
     } catch (e: any) {

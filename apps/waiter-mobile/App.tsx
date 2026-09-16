@@ -39,9 +39,9 @@ export default function App() {
   useEffect(() => {
     if (conexion.cargando) return;
     if (conexion.estado === "conectado") setMostrarConexion(false);
-    else if (conexion.estado === "error") setMostrarConexion(true);
+    else if (conexion.estado === "error" || conexion.estado === "cerrado") setMostrarConexion(true);
     // "verificando" no toca `mostrarConexion` — se queda como estaba hasta que el heartbeat
-    // resuelva a uno de los otros dos estados.
+    // resuelva a uno de los otros estados definitivos.
   }, [conexion.estado, conexion.cargando]);
 
   useEffect(() => {
@@ -107,7 +107,8 @@ export default function App() {
   // volver a preguntarle al servidor. `conexion.estado` verifica de verdad cada 15s (heartbeat
   // de conexionStore), pero la señal más rápida y confiable es la sesión de socket en sí
   // (`socketConectado`, arriba) — se combinan las tres para nunca depender de una sola.
-  const desconectadoDeVeras = !socketConectado || conexion.estado === "error" || sync.estado === "OFFLINE";
+  const sistemaCerrado = conexion.estado === "cerrado";
+  const desconectadoDeVeras = !socketConectado || conexion.estado === "error" || sistemaCerrado || sync.estado === "OFFLINE";
 
   function cerrarSesion() {
     // Confirmación simple — un toque accidental en medio de un pedido perdería lo que el mesero
@@ -180,8 +181,8 @@ export default function App() {
             ]}
           >
             {desconectadoDeVeras
-              ? cerradoPorServidor
-                ? "● Software cerrado"
+              ? cerradoPorServidor || sistemaCerrado
+                ? "● Sistema cerrado"
                 : `● Desconectado (${sync.pendientes})`
               : sync.estado === "SYNCING"
                 ? "● Sincronizando…"

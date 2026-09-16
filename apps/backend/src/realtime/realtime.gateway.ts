@@ -141,6 +141,19 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
    *  mismo dispositivo tiene más de un socket vivo, por ejemplo tras una reconexión que tardó en
    *  cerrar la anterior, se queda con la más reciente), ordenadas por tiempo de conexión
    *  descendente. */
+  /** true si hay un POS Windows con sesión iniciada AHORA MISMO en esa sucursal — el POS solo
+   *  conecta este socket (ver api/socket.ts, `conectarSocket`) dentro de un useEffect que
+   *  depende de `auth.usuario`, así que un POS con la app abierta pero sin nadie logueado (o
+   *  cerrado del todo) NO cuenta como activo. Lo usa la app de Meseros (ver conexionStore.ts)
+   *  para que "backend en la nube" no se confunda con "el local está abierto": Railway sigue
+   *  respondiendo 24/7 aunque nadie esté usando el POS en ese momento. */
+  posActivo(sucursalId: string): boolean {
+    for (const c of this.clientes.values()) {
+      if (c.tipo === "pos" && c.sucursalId === sucursalId) return true;
+    }
+    return false;
+  }
+
   listarConectados(sucursalId: string): ClienteConectado[] {
     const porDispositivo = new Map<string, ClienteConectado>();
     for (const c of this.clientes.values()) {

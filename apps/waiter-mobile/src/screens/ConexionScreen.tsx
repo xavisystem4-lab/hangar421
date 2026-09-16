@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ActivityIndicator, ImageBackground, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { baseUrl, datosNube, useConexionStore, validarHost, validarPuerto } from "../store/conexionStore";
+import { baseUrl, datosNube, useConexionStore, validarHost, validarPuerto, verificarSistemaAbierto } from "../store/conexionStore";
 import { useAuthStore } from "../store/authStore";
 import { useTemaStore, usarColores } from "../store/temaStore";
 import { actualizarMenu } from "../sync/actualizarMenu";
@@ -10,7 +10,7 @@ import { confirmarCerrarApp } from "../utils/cerrarApp";
 // — pedido explícito para que la app de mesero se sienta parte del mismo sistema.
 const fondoLogin = require("../../assets/login-fondo.jpg");
 
-type ResultadoPrueba = { ok: true; nombre: string | null } | { ok: false; mensaje: string } | null;
+type ResultadoPrueba = { ok: true; nombre: string | null } | { ok: false; cerrado?: boolean; mensaje: string } | null;
 
 function formatearFecha(ms: number): string {
   const d = new Date(ms);
@@ -69,6 +69,16 @@ export function ConexionScreen({ onConectado, onCancelar }: { onConectado?: () =
       clearTimeout(limite);
       if (!res.ok) throw new Error(`La Estación respondió con error ${res.status}`);
       const body = await res.json().catch(() => ({}));
+
+      // El servidor responde, pero eso no significa que alguien esté usando el POS ahora mismo
+      // (ver useConexionStore.verificar, mismo criterio) — con "Backend en la nube" Railway
+      // sigue en línea 24/7 sin importar si el POS está abierto.
+      const abierto = await verificarSistemaAbierto(hostAProbar.trim(), puertoAProbar.trim()).catch(() => true);
+      if (!abierto) {
+        setResultadoPrueba({ ok: false, cerrado: true, mensaje: "El servidor responde, pero el sistema (POS) está cerrado en el local ahora mismo — nadie vería este pedido." });
+        return;
+      }
+
       setResultadoPrueba({ ok: true, nombre: body?.empresa ?? null });
     } catch (e: any) {
       const mensaje =
@@ -115,8 +125,10 @@ export function ConexionScreen({ onConectado, onCancelar }: { onConectado?: () =
     );
   }
 
-  const estadoColor = estado === "conectado" ? colores.green : estado === "verificando" ? colores.amber : colores.red;
-  const estadoTexto = estado === "conectado" ? "🟢 Conectado" : estado === "verificando" ? "🟡 Verificando…" : "🔴 Desconectado";
+  const estadoColor =
+    estado === "conectado" ? colores.green : estado === "verificando" ? colores.amber : estado === "cerrado" ? colores.amber : colores.red;
+  const estadoTexto =
+    estado === "conectado" ? "🟢 Conectado" : estado === "verificando" ? "🟡 Verificando…" : estado === "cerrado" ? "🟠 Sistema cerrado" : "🔴 Desconectado";
 
   return (
     <ImageBackground source={fondoLogin} resizeMode="cover" style={estilos.fondo}>
@@ -155,7 +167,12 @@ export function ConexionScreen({ onConectado, onCancelar }: { onConectado?: () =
           {resultadoPrueba?.ok === true && (
             <Text style={estilos.ok}>✓ Conexión exitosa{resultadoPrueba.nombre ? ` — ${resultadoPrueba.nombre}` : ""}</Text>
           )}
-          {resultadoPrueba?.ok === false && <Text style={estilos.error}>✕ No se pudo establecer la conexión{"\n"}{resultadoPrueba.mensaje}</Text>}
+          {resultadoPrueba?.ok === false && resultadoPrueba.cerrado && (
+            <Text style={estilos.avisoCerrado}>🟠 Sistema cerrado{"\n"}{resultadoPrueba.mensaje}</Text>
+          )}
+          {resultadoPrueba?.ok === false && !resultadoPrueba.cerrado && (
+            <Text style={estilos.error}>✕ No se pudo establecer la conexión{"\n"}{resultadoPrueba.mensaje}</Text>
+          )}
           {mensajeGuardado && <Text style={estilos.ok}>{mensajeGuardado}</Text>}
 
           <TouchableOpacity style={estilos.botonSecundario} onPress={() => probarConexion()} disabled={probando || !ip.trim() || !pto.trim()}>
@@ -248,6 +265,7 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     input: { borderWidth: 1, borderColor: colores.borde, borderRadius: 10, padding: 14, marginTop: 8, fontSize: 16, color: colores.texto },
     ok: { color: colores.green, marginTop: 10, fontWeight: "600", fontSize: 13, lineHeight: 18 },
     error: { color: colores.red, marginTop: 10, fontSize: 13, lineHeight: 18 },
+    avisoCerrado: { color: colores.amber, marginTop: 10, fontWeight: "600", fontSize: 13, lineHeight: 18 },
     botonSecundario: {
       backgroundColor: colores.fondo, borderWidth: 1, borderColor: colores.borde, borderRadius: 12,
       padding: 14, marginTop: 10, minHeight: 50, alignItems: "center", justifyContent: "center",
