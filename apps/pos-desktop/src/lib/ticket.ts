@@ -69,7 +69,11 @@ function envolverHtml(anchoMM: number, cuerpo: string): string {
   .fila { display: flex; justify-content: space-between; gap: 6px; }
   .centro { text-align: center; }
   .linea { border-top: 1px dashed #000; margin: 6px 0; }
-  .logo { max-width: 100%; max-height: 60px; display: block; margin: 0 auto 6px; }
+  /* Arriba del ticket cliente únicamente (nunca en la comanda, ver generarHtmlComanda) — se
+     ajusta solo sin importar las medidas originales de la imagen subida (object-fit:contain
+     conserva la proporción; los topes de ancho/alto evitan que un logo panorámico o muy
+     grande empuje el resto del ticket). */
+  .logo { display: block; margin: 0 auto 6px; max-width: 65%; max-height: 70px; width: auto; height: auto; object-fit: contain; }
 </style>
 </head>
 <body>${cuerpo}</body>

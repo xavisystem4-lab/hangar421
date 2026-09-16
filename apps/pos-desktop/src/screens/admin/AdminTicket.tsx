@@ -67,6 +67,18 @@ export function AdminTicket() {
 
   const inputLogoRef = useRef<HTMLInputElement>(null);
   const [subiendoLogo, setSubiendoLogo] = useState(false);
+  const [logoDimensiones, setLogoDimensiones] = useState<{ ancho: number; alto: number } | null>(null);
+
+  // El logotipo se sube en cualquier tamaño/proporción — el software lo ajusta solo (ver
+  // .logo en lib/ticket.ts, con max-width/max-height y object-fit:contain) para que siempre
+  // quepa arriba del ticket sin deformarse; aquí solo se informan sus medidas originales.
+  useEffect(() => {
+    if (!empresa?.logoUrl) { setLogoDimensiones(null); return; }
+    const img = new Image();
+    img.onload = () => setLogoDimensiones({ ancho: img.naturalWidth, alto: img.naturalHeight });
+    img.onerror = () => setLogoDimensiones(null);
+    img.src = empresa.logoUrl;
+  }, [empresa?.logoUrl]);
 
   async function subirLogotipo(e: React.ChangeEvent<HTMLInputElement>) {
     const archivo = e.target.files?.[0];
@@ -221,13 +233,22 @@ export function AdminTicket() {
                   ? <img src={empresa.logoUrl} alt="Logotipo" style={{ maxWidth: "100%", maxHeight: "100%" }} />
                   : <span style={{ fontSize: 11, color: "var(--h421-gray-400)", textAlign: "center" }}>Sin logo</span>}
               </div>
-              <input ref={inputLogoRef} type="file" accept="image/*" onChange={subirLogotipo} style={{ display: "none" }} />
-              <button onClick={() => inputLogoRef.current?.click()} disabled={subiendoLogo} style={{ background: "var(--h421-navy)", color: "#fff", padding: "8px 14px" }}>
-                {subiendoLogo ? "Subiendo…" : "Subir logotipo"}
-              </button>
-              {empresa?.logoUrl && (
-                <button onClick={quitarLogotipo} style={{ background: "var(--h421-red-bg)", color: "var(--h421-red-texto)", padding: "8px 14px" }}>Quitar</button>
-              )}
+              <div>
+                <input ref={inputLogoRef} type="file" accept="image/*" onChange={subirLogotipo} style={{ display: "none" }} />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => inputLogoRef.current?.click()} disabled={subiendoLogo} style={{ background: "var(--h421-navy)", color: "#fff", padding: "8px 14px" }}>
+                    {subiendoLogo ? "Subiendo…" : "Subir logotipo"}
+                  </button>
+                  {empresa?.logoUrl && (
+                    <button onClick={quitarLogotipo} style={{ background: "var(--h421-red-bg)", color: "var(--h421-red-texto)", padding: "8px 14px" }}>Quitar</button>
+                  )}
+                </div>
+                {logoDimensiones && (
+                  <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--h421-gray-400)" }}>
+                    Medidas originales: {logoDimensiones.ancho} × {logoDimensiones.alto} px — se ajusta solo al tamaño del ticket, sin deformarse.
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 
