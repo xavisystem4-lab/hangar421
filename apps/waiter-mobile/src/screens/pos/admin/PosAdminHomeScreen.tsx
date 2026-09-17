@@ -10,11 +10,10 @@ import { PosAdminUsuarios } from "./PosAdminUsuarios";
 import { PosAdminReportes } from "./PosAdminReportes";
 import { PosAdminInventario } from "./PosAdminInventario";
 import { PosAdminTicket } from "./PosAdminTicket";
+import { PosAdminConexion } from "./PosAdminConexion";
 
-// Los módulos se agregan por fase (2a: Sucursales/Mesas/Terminales/Plataformas; 2b: Catálogo/
-// Usuarios; 2c: Reportes; 2d: Inventario; 2e: Ticket). La fase siguiente (2f Conexión, opcional)
-// se suma aquí mismo, sin tocar el patrón.
-type Modulo = "sucursales" | "mesas" | "terminales" | "plataformas" | "catalogo" | "usuarios" | "reportes" | "inventario" | "ticket";
+// Los 9 submódulos de Administración, completos (2a-2f del plan de "Punto de Venta").
+type Modulo = "sucursales" | "mesas" | "terminales" | "plataformas" | "catalogo" | "usuarios" | "reportes" | "inventario" | "ticket" | "conexion";
 
 const MODULOS: { id: Modulo; etiqueta: string }[] = [
   { id: "reportes", etiqueta: "Reportes" },
@@ -26,6 +25,7 @@ const MODULOS: { id: Modulo; etiqueta: string }[] = [
   { id: "ticket", etiqueta: "Ticket" },
   { id: "terminales", etiqueta: "Terminales" },
   { id: "plataformas", etiqueta: "Plataformas" },
+  { id: "conexion", etiqueta: "Conexión" },
 ];
 
 /** Contenedor de Administración dentro de Punto de Venta — mismo patrón de tabs por `useState`
@@ -54,6 +54,7 @@ export function PosAdminHomeScreen() {
         {modulo === "catalogo" && <PosAdminCatalogo />}
         {modulo === "inventario" && <PosAdminInventario />}
         {modulo === "ticket" && <PosAdminTicket />}
+        {modulo === "conexion" && <PosAdminConexion />}
         {modulo === "sucursales" && <PosAdminSucursales />}
         {modulo === "mesas" && <PosAdminMesas />}
         {modulo === "usuarios" && <PosAdminUsuarios />}
