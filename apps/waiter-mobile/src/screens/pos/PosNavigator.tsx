@@ -2,14 +2,18 @@ import { useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import type { Mesa, Pedido } from "@hangar421/shared";
 import { usePosOrderStore } from "../../store/posOrderStore";
+import { useAuthStore } from "../../store/authStore";
 import { usarColores } from "../../store/temaStore";
 import { PosMesasScreen } from "./PosMesasScreen";
 import { PosVentaScreen } from "./PosVentaScreen";
 import { PosCobroScreen } from "./PosCobroScreen";
 import { PosPorCobrarScreen } from "./PosPorCobrarScreen";
 import { PosCajaScreen } from "./PosCajaScreen";
+import { PosAdminHomeScreen } from "./admin/PosAdminHomeScreen";
 
-type PantallaPos = "mesas" | "venta" | "cobro" | "porCobrar" | "caja";
+type PantallaPos = "mesas" | "venta" | "cobro" | "porCobrar" | "caja" | "admin";
+
+const ROLES_ADMINISTRACION = new Set(["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL"]);
 
 const TABS: { id: PantallaPos; etiqueta: string }[] = [
   { id: "mesas", etiqueta: "Mesas" },
@@ -23,11 +27,13 @@ const TABS: { id: PantallaPos; etiqueta: string }[] = [
  *  una pestaña: es una pantalla de paso a la que se llega desde Mesas/Venta/Por cobrar y siempre
  *  regresa a Venta (Cancelar) o a Mesas (pago confirmado). */
 export function PosNavigator() {
+  const { rol } = useAuthStore();
   const colores = usarColores();
   const estilos = crearEstilos(colores);
   const [pantalla, setPantalla] = useState<PantallaPos>("mesas");
   const [pantallaAlCancelar, setPantallaAlCancelar] = useState<PantallaPos>("mesas");
   const [nombreCuenta, setNombreCuenta] = useState<string | null>(null);
+  const tabs = rol && ROLES_ADMINISTRACION.has(rol) ? [...TABS, { id: "admin" as PantallaPos, etiqueta: "Admin" }] : TABS;
 
   function abrirMesa(mesa: Mesa) {
     // `posOrderStore.iniciar` ya se llamó dentro de PosMesasScreen al tocar la mesa.
@@ -68,11 +74,12 @@ export function PosNavigator() {
         )}
         {pantalla === "porCobrar" && <PosPorCobrarScreen onCobrarPedido={cobrarPedidoExistente} />}
         {pantalla === "caja" && <PosCajaScreen />}
+        {pantalla === "admin" && <PosAdminHomeScreen />}
       </View>
 
       {pantalla !== "cobro" && (
         <View style={estilos.tabBar}>
-          {TABS.map((tab) => (
+          {tabs.map((tab) => (
             <TouchableOpacity key={tab.id} onPress={() => setPantalla(tab.id)} style={[estilos.tabBoton, pantalla === tab.id && estilos.tabBotonActivo]}>
               <Text style={[estilos.tabTexto, pantalla === tab.id && estilos.tabTextoActivo]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
                 {tab.etiqueta}
