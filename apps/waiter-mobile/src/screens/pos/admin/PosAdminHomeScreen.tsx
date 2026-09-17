@@ -7,13 +7,15 @@ import { PosAdminTerminales } from "./PosAdminTerminales";
 import { PosAdminPlataformas } from "./PosAdminPlataformas";
 import { PosAdminCatalogo } from "./PosAdminCatalogo";
 import { PosAdminUsuarios } from "./PosAdminUsuarios";
+import { PosAdminReportes } from "./PosAdminReportes";
 
 // Los módulos se agregan por fase (2a: Sucursales/Mesas/Terminales/Plataformas; 2b: Catálogo/
-// Usuarios). Las fases siguientes (2c Reportes, 2d Inventario, 2e Ticket, 2f Conexión) se suman
-// aquí mismo, sin tocar el patrón.
-type Modulo = "sucursales" | "mesas" | "terminales" | "plataformas" | "catalogo" | "usuarios";
+// Usuarios; 2c: Reportes). Las fases siguientes (2d Inventario, 2e Ticket, 2f Conexión) se
+// suman aquí mismo, sin tocar el patrón.
+type Modulo = "sucursales" | "mesas" | "terminales" | "plataformas" | "catalogo" | "usuarios" | "reportes";
 
 const MODULOS: { id: Modulo; etiqueta: string }[] = [
+  { id: "reportes", etiqueta: "Reportes" },
   { id: "catalogo", etiqueta: "Catálogo" },
   { id: "sucursales", etiqueta: "Sucursales" },
   { id: "mesas", etiqueta: "Mesas" },
@@ -28,7 +30,7 @@ const MODULOS: { id: Modulo; etiqueta: string }[] = [
 export function PosAdminHomeScreen() {
   const colores = usarColores();
   const estilos = crearEstilos(colores);
-  const [modulo, setModulo] = useState<Modulo>("catalogo");
+  const [modulo, setModulo] = useState<Modulo>("reportes");
 
   return (
     <View style={{ flex: 1, backgroundColor: colores.fondo }}>
@@ -44,6 +46,7 @@ export function PosAdminHomeScreen() {
       </ScrollView>
 
       <View style={{ flex: 1 }}>
+        {modulo === "reportes" && <PosAdminReportes />}
         {modulo === "catalogo" && <PosAdminCatalogo />}
         {modulo === "sucursales" && <PosAdminSucursales />}
         {modulo === "mesas" && <PosAdminMesas />}
