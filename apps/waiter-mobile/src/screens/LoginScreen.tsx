@@ -29,19 +29,21 @@ export function LoginScreen({ onConfigurarEstacion }: { onConfigurarEstacion?: (
   const colores = usarColores();
   const { esTablet } = useDispositivo();
   const estilos = crearEstilos(colores, esTablet);
-  const [meseros, setMeseros] = useState<UsuarioLogin[] | null>(null);
-  const [errorMeseros, setErrorMeseros] = useState<string | null>(null);
+  const [personal, setPersonal] = useState<UsuarioLogin[] | null>(null);
+  const [errorPersonal, setErrorPersonal] = useState<string | null>(null);
   const [seleccionado, setSeleccionado] = useState<UsuarioLogin | null>(null);
   const [pin, setPin] = useState("");
   const [cargando, setCargando] = useState(false);
 
-  // Lista pública de personal activo (`/auth/usuarios-login`, sin autenticar — ver auth.service.ts)
-  // filtrada a solo MESERO: el mesero ya no necesita saber ni escribir su ID de usuario ni el ID
-  // de sucursal, elige su nombre en la lista y la sucursal viaja con el registro elegido.
+  // Lista pública de personal activo (`/auth/usuarios-login`, sin autenticar — ver auth.service.ts):
+  // ya no se filtra a solo MESERO — desde que existe el modo "Punto de Venta" (ver
+  // SeleccionModoScreen.tsx), un CAJERO/SUPERVISOR/ADMIN_* también necesita poder elegir su
+  // nombre aquí para entrar. El usuario no necesita saber ni escribir su ID ni el de sucursal:
+  // elige su nombre en la lista y la sucursal viaja con el registro elegido, igual que antes.
   useEffect(() => {
     apiFetch<UsuarioLogin[]>("/auth/usuarios-login")
-      .then((usuarios) => setMeseros(usuarios.filter((u) => u.rol === "MESERO")))
-      .catch((e) => setErrorMeseros(e.message ?? "No se pudo cargar la lista de meseros"));
+      .then(setPersonal)
+      .catch((e) => setErrorPersonal(e.message ?? "No se pudo cargar la lista de personal"));
   }, []);
 
   function elegir(usuario: UsuarioLogin) {
@@ -75,13 +77,13 @@ export function LoginScreen({ onConfigurarEstacion }: { onConfigurarEstacion?: (
         <Text style={estilos.titulo}>HANGAR 421</Text>
         <Text style={estilos.subtitulo}>Meseros</Text>
 
-        {!meseros && !errorMeseros && <ActivityIndicator color={colores.navyTexto} style={{ marginVertical: 16 }} />}
-        {errorMeseros && <Text style={estilos.error}>{errorMeseros}</Text>}
-        {meseros && meseros.length === 0 && <Text style={estilos.ayuda}>No hay meseros dados de alta todavía.</Text>}
+        {!personal && !errorPersonal && <ActivityIndicator color={colores.navyTexto} style={{ marginVertical: 16 }} />}
+        {errorPersonal && <Text style={estilos.error}>{errorPersonal}</Text>}
+        {personal && personal.length === 0 && <Text style={estilos.ayuda}>No hay personal dado de alta todavía.</Text>}
 
-        {meseros && meseros.length > 0 && (
+        {personal && personal.length > 0 && (
           <View style={estilos.grilla}>
-            {meseros.map((u) => {
+            {personal.map((u) => {
               const activo = seleccionado?.id === u.id;
               return (
                 <TouchableOpacity key={u.id} onPress={() => elegir(u)} style={[estilos.usuario, activo && estilos.usuarioActivo]}>

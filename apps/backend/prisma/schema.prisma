@@ -82,6 +82,7 @@ enum CanalOrigen {
   APP_MESERO
   CRM
   PLATAFORMA_DELIVERY
+  APP_POS_MOVIL
 }
 
 enum MetodoPago {

@@ -66,6 +66,7 @@ export enum CanalOrigen {
   APP_MESERO = "APP_MESERO",
   CRM = "CRM",
   PLATAFORMA_DELIVERY = "PLATAFORMA_DELIVERY",
+  APP_POS_MOVIL = "APP_POS_MOVIL",
 }
 
 export enum MetodoPago {

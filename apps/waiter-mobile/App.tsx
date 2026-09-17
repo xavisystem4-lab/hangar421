@@ -6,6 +6,7 @@ import { useAuthStore } from "./src/store/authStore";
 import { useSyncStore } from "./src/store/syncStore";
 import { useConexionStore } from "./src/store/conexionStore";
 import { useTemaStore, usarColores } from "./src/store/temaStore";
+import { useModoStore } from "./src/store/modoStore";
 import { usePagoStore } from "./src/store/pagoStore";
 import { iniciarSync, detenerSync } from "./src/sync/syncEngine";
 import { conectarSocket, desconectarSocket } from "./src/api/socket";
@@ -15,6 +16,7 @@ import { MesasScreen } from "./src/screens/MesasScreen";
 import { TomaPedidoScreen } from "./src/screens/TomaPedidoScreen";
 import { MisPedidosScreen } from "./src/screens/MisPedidosScreen";
 import { CobroTarjetaScreen } from "./src/screens/CobroTarjetaScreen";
+import { SeleccionModoScreen } from "./src/screens/SeleccionModoScreen";
 import { useOrderStore } from "./src/store/orderStore";
 import { BarraActualizacion } from "./src/components/BarraActualizacion";
 
@@ -25,6 +27,7 @@ export default function App() {
   const sync = useSyncStore();
   const conexion = useConexionStore();
   const tema = useTemaStore();
+  const modo = useModoStore();
   const colores = usarColores();
   const [pantalla, setPantalla] = useState<Pantalla>("mesas");
   const [mesaActiva, setMesaActiva] = useState<Mesa | null>(null);
@@ -58,6 +61,10 @@ export default function App() {
 
   useEffect(() => {
     tema.cargar();
+  }, []);
+
+  useEffect(() => {
+    modo.cargar();
   }, []);
 
   useEffect(() => {
@@ -148,7 +155,14 @@ export default function App() {
     ]);
   }
 
-  if (auth.cargando || conexion.cargando || tema.cargando) return null;
+  function cambiarDeModo() {
+    Alert.alert("Cambiar de modo", "¿Volver a elegir entre Comandero y Punto de Venta?", [
+      { text: "Cancelar", style: "cancel" },
+      { text: "Cambiar", onPress: () => modo.olvidar() },
+    ]);
+  }
+
+  if (auth.cargando || conexion.cargando || tema.cargando || modo.cargando) return null;
 
   if (!auth.usuario) {
     // Antes de poder iniciar sesión hace falta saber a qué Estación (servidor) conectarse —
@@ -187,6 +201,14 @@ export default function App() {
     );
   }
 
+  // Se pregunta una sola vez por dispositivo (ver modoStore) — "Comandero" (toma de pedidos, el
+  // flujo de siempre, sin ningún cambio abajo) o "Punto de Venta" (mesas+venta+cobro+caja+
+  // administración, réplica del POS Windows). No se resetea en cerrarSesion(): una tablet
+  // dedicada a caja debe reabrir directo en Punto de Venta la próxima vez que alguien entre.
+  if (!modo.modo) {
+    return <SeleccionModoScreen rol={auth.rol} onElegir={modo.elegir} />;
+  }
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colores.fondo }}>
       <StatusBar barStyle="light-content" backgroundColor={colores.navy} />
@@ -210,32 +232,54 @@ export default function App() {
           <TouchableOpacity onPress={tema.alternar} style={estilos.botonTema}>
             <Text style={estilos.botonTemaTexto}>{tema.tema === "oscuro" ? "☀️" : "🌙"}</Text>
           </TouchableOpacity>
+          <TouchableOpacity onPress={cambiarDeModo} style={estilos.botonTema} accessibilityLabel="Cambiar de modo">
+            <Text style={estilos.botonTemaTexto}>🔀</Text>
+          </TouchableOpacity>
           <TouchableOpacity onPress={cerrarSesion} style={estilos.botonTema} accessibilityLabel="Cerrar sesión">
             <Text style={estilos.botonTemaTexto}>🚪</Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      <View style={{ flex: 1 }}>
-        {pantalla === "mesas" && (
-          <MesasScreen
-            onAbrirMesa={(mesa) => { setMesaActiva(mesa); setPantalla("pedido"); }}
-            onMostrador={() => { useOrderStore.getState().iniciar(null, 1); setMesaActiva(null); setPantalla("pedido"); }}
-          />
-        )}
-        {pantalla === "pedido" && (
-          <TomaPedidoScreen mesaNombre={mesaActiva?.nombre ?? null} onEnviado={() => setPantalla("mesas")} />
-        )}
-        {pantalla === "mispedidos" && <MisPedidosScreen />}
-        {pantalla === "conexion" && <ConexionScreen />}
-      </View>
+      {modo.modo === "comandero" ? (
+        <>
+          <View style={{ flex: 1 }}>
+            {pantalla === "mesas" && (
+              <MesasScreen
+                onAbrirMesa={(mesa) => { setMesaActiva(mesa); setPantalla("pedido"); }}
+                onMostrador={() => { useOrderStore.getState().iniciar(null, 1); setMesaActiva(null); setPantalla("pedido"); }}
+              />
+            )}
+            {pantalla === "pedido" && (
+              <TomaPedidoScreen mesaNombre={mesaActiva?.nombre ?? null} onEnviado={() => setPantalla("mesas")} />
+            )}
+            {pantalla === "mispedidos" && <MisPedidosScreen />}
+            {pantalla === "conexion" && <ConexionScreen />}
+          </View>
 
-      <View style={estilos.tabBar}>
-        <TabBoton texto="Mesas" activo={pantalla === "mesas"} onPress={() => setPantalla("mesas")} colores={colores} />
-        <TabBoton texto="Pedido" activo={pantalla === "pedido"} onPress={() => setPantalla("pedido")} colores={colores} />
-        <TabBoton texto="Mis pedidos" activo={pantalla === "mispedidos"} onPress={() => setPantalla("mispedidos")} colores={colores} />
-        <TabBoton texto="Conexión" activo={pantalla === "conexion"} onPress={() => setPantalla("conexion")} colores={colores} />
-      </View>
+          <View style={estilos.tabBar}>
+            <TabBoton texto="Mesas" activo={pantalla === "mesas"} onPress={() => setPantalla("mesas")} colores={colores} />
+            <TabBoton texto="Pedido" activo={pantalla === "pedido"} onPress={() => setPantalla("pedido")} colores={colores} />
+            <TabBoton texto="Mis pedidos" activo={pantalla === "mispedidos"} onPress={() => setPantalla("mispedidos")} colores={colores} />
+            <TabBoton texto="Conexión" activo={pantalla === "conexion"} onPress={() => setPantalla("conexion")} colores={colores} />
+          </View>
+        </>
+      ) : (
+        // Placeholder de la Fase 0 — la Fase 1 lo reemplaza por <PosNavigator /> (Mesas/Venta/
+        // Por cobrar/Caja). Se deja aquí, en vez de bloquear el modo "pos" por completo, para que
+        // "Cambiar de modo" y el resto del shell (header, tema, sync) ya se puedan probar en un
+        // dispositivo real desde ya.
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <Text style={{ fontSize: 40, marginBottom: 12 }}>🖥️</Text>
+          <Text style={{ color: colores.texto, fontWeight: "700", fontSize: 16, textAlign: "center" }}>
+            Punto de Venta
+          </Text>
+          <Text style={{ color: colores.textoSecundario, textAlign: "center", marginTop: 6 }}>
+            Mesas, venta, cobro, caja y administración llegan en la siguiente actualización.
+          </Text>
+        </View>
+      )}
+
       <BarraActualizacion />
       <CobroTarjetaScreen />
     </SafeAreaView>
