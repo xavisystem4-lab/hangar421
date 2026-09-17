@@ -17,6 +17,7 @@ const ITEMS: { href: string; label: string; icon: string; roles?: RolUsuario[] }
   { href: "/catalogo", label: "Catálogo", icon: "☕", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL"] as RolUsuario[] },
   { href: "/inventario", label: "Inventario", icon: "📦", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL", "SUPERVISOR"] as RolUsuario[] },
   { href: "/usuarios", label: "Usuarios", icon: "👥", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL"] as RolUsuario[] },
+  { href: "/plataformas", label: "Plataformas", icon: "🛵", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL"] as RolUsuario[] },
 ];
 
 /** `abierto`/`onCerrar`: solo importan en celular/tablet (≤860px, ver globals.css) donde el menú

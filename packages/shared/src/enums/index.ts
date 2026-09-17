@@ -65,6 +65,7 @@ export enum CanalOrigen {
   POS_WINDOWS = "POS_WINDOWS",
   APP_MESERO = "APP_MESERO",
   CRM = "CRM",
+  PLATAFORMA_DELIVERY = "PLATAFORMA_DELIVERY",
 }
 
 export enum MetodoPago {
@@ -161,6 +162,33 @@ export enum TurnoTrabajo {
   VESPERTINO = "VESPERTINO",
   NOCTURNO = "NOCTURNO",
   MIXTO = "MIXTO",
+}
+
+/** Código de adaptador registrado en PlataformaDeliveryRegistry (backend) — usado para validar
+ *  el body de las rutas /plataformas/configuraciones/:plataforma. */
+export enum PlataformaDelivery {
+  DIDI = "didi",
+  UBER = "uber",
+  RAPPI = "rappi",
+}
+
+export enum AmbientePlataforma {
+  SANDBOX = "SANDBOX",
+  PRODUCCION = "PRODUCCION",
+}
+
+export enum EstadoConexionPlataforma {
+  CONECTADA = "CONECTADA",
+  DESCONECTADA = "DESCONECTADA",
+  PENDIENTE_CONFIGURACION = "PENDIENTE_CONFIGURACION",
+  ERROR = "ERROR",
+}
+
+export enum EstadoSincronizacionOrdenPlataforma {
+  RECIBIDA = "RECIBIDA",
+  SINCRONIZADA = "SINCRONIZADA",
+  ERROR = "ERROR",
+  IGNORADA = "IGNORADA",
 }
 
 /** Entidades sincronizables reconocidas por el endpoint /sync. */

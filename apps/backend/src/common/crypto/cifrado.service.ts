@@ -6,26 +6,35 @@ const ALGORITMO = "aes-256-gcm";
 const IV_BYTES = 12;
 
 /**
- * Cifra/descifra credenciales sensibles (tokens de Mercado Pago u otros proveedores de pago)
- * antes de guardarlas en `payment_provider_configs.credencialesCifradas` /
- * `payment_terminals.configuracionCifrada`. Nunca se exponen en texto plano al frontend — solo
- * el backend las descifra, y únicamente para llamar a la API del proveedor.
+ * Cifra/descifra credenciales sensibles (tokens de Mercado Pago, credenciales de plataformas de
+ * delivery, etc.) antes de guardarlas en `payment_provider_configs.credencialesCifradas` /
+ * `payment_terminals.configuracionCifrada` / `plataforma_configs.credencialesCifradas`. Nunca se
+ * exponen en texto plano al frontend — solo el backend las descifra, y únicamente para llamar a
+ * la API del proveedor/plataforma correspondiente.
  *
- * La llave sale de PAGOS_CIFRADO_KEY (variable de entorno, nunca en el repo) — se deriva con
- * scrypt a una llave de 32 bytes sin importar la longitud del secreto original.
+ * La llave sale de una variable de entorno (nunca en el repo) — se deriva con scrypt a una llave
+ * de 32 bytes sin importar la longitud del secreto original. Por defecto usa PAGOS_CIFRADO_KEY
+ * (retrocompatible con el uso original en `pagos/`); un módulo distinto puede pedir su propia
+ * llave (ej. PLATAFORMAS_CIFRADO_KEY) pasando un segundo argumento al construirlo — así un
+ * problema/fuga en un dominio no expone el material de cifrado del otro. El salt de
+ * PAGOS_CIFRADO_KEY se mantiene literal (no depende del nombre de la variable) para no invalidar
+ * las credenciales de pagos ya cifradas en producción.
  */
 @Injectable()
 export class CifradoService {
   private readonly llave: Buffer;
 
-  constructor(config: ConfigService) {
-    const secreto = config.get<string>("PAGOS_CIFRADO_KEY");
+  constructor(config: ConfigService, private readonly nombreVariableEntorno: string = "PAGOS_CIFRADO_KEY") {
+    const secreto = config.get<string>(this.nombreVariableEntorno);
     if (!secreto) {
       throw new InternalServerErrorException(
-        "Falta configurar PAGOS_CIFRADO_KEY — requerida para cifrar credenciales de proveedores de pago.",
+        `Falta configurar ${this.nombreVariableEntorno} — requerida para cifrar credenciales sensibles.`,
       );
     }
-    this.llave = scryptSync(secreto, "hangar421-pagos-salt", 32);
+    const salt = this.nombreVariableEntorno === "PAGOS_CIFRADO_KEY"
+      ? "hangar421-pagos-salt"
+      : `hangar421-${this.nombreVariableEntorno.toLowerCase()}-salt`;
+    this.llave = scryptSync(secreto, salt, 32);
   }
 
   cifrar(texto: string): string {

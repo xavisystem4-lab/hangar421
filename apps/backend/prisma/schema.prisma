@@ -81,6 +81,7 @@ enum CanalOrigen {
   POS_WINDOWS
   APP_MESERO
   CRM
+  PLATAFORMA_DELIVERY
 }
 
 enum MetodoPago {
@@ -187,6 +188,25 @@ enum TurnoTrabajo {
   MIXTO
 }
 
+enum AmbientePlataforma {
+  SANDBOX
+  PRODUCCION
+}
+
+enum EstadoConexionPlataforma {
+  CONECTADA
+  DESCONECTADA
+  PENDIENTE_CONFIGURACION
+  ERROR
+}
+
+enum EstadoSincronizacionOrdenPlataforma {
+  RECIBIDA
+  SINCRONIZADA
+  ERROR
+  IGNORADA
+}
+
 // ---------------------------------------------------------------------------
 // Jerarquía organizacional
 // ---------------------------------------------------------------------------
@@ -215,6 +235,7 @@ model Empresa {
   paymentProviderConfigs PaymentProviderConfig[]
   paymentTerminals       PaymentTerminal[]
   paymentRequests        PaymentRequest[]
+  plataformaConfigs      PlataformaConfig[]
 
   @@map("empresas")
 }
@@ -253,6 +274,7 @@ model Sucursal {
   paymentProviderConfigs PaymentProviderConfig[]
   paymentTerminals       PaymentTerminal[]
   paymentRequests        PaymentRequest[]
+  plataformaConfigs      PlataformaConfig[]
 
   @@index([empresaId])
   @@map("sucursales")
@@ -665,6 +687,7 @@ model Pedido {
   pagos       Pago[]
   descuentos  Descuento[]
   paymentRequests PaymentRequest[]
+  plataformaOrdenSyncs PlataformaOrdenSync[]
 
   @@unique([sucursalId, folio])
   @@index([sucursalId, estado])
@@ -866,6 +889,108 @@ model PaymentEvent {
 
   @@index([paymentRequestId])
   @@map("payment_events")
+}
+
+// ---------------------------------------------------------------------------
+// Plataformas de delivery (DiDi / Uber / Rappi)
+//
+// Misma arquitectura de adaptadores que "Pagos con tarjeta" arriba: `plataforma` es un código
+// libre (no un enum de Prisma) resuelto en tiempo de ejecución contra PlataformaDeliveryRegistry
+// (ver plataformas/proveedores/plataforma-delivery.interface.ts) — así se puede sumar una
+// plataforma nueva con un adaptador de código nuevo, sin migración de base de datos. El valor
+// esperado hoy ("didi"|"uber"|"rappi") sí se valida a nivel API contra el enum compartido
+// PlataformaDelivery (@hangar421/shared).
+// ---------------------------------------------------------------------------
+
+model PlataformaConfig {
+  id        String   @id @default(uuid())
+  empresaId String
+  // null = aplica a toda la empresa (único caso que ofrece la UI v1 del CRM); una sucursal
+  // puede tener su propia cuenta/credenciales si más adelante se necesita.
+  sucursalId String?
+  // Código del adaptador (ej. "didi", "uber", "rappi") — ver PlataformaDeliveryRegistry.
+  plataforma String
+  ambiente   AmbientePlataforma @default(SANDBOX)
+  activo     Boolean            @default(false)
+  estadoConexion EstadoConexionPlataforma @default(PENDIENTE_CONFIGURACION)
+  // JSON cifrado (AES-256-GCM, ver common/crypto/cifrado.service.ts) con apiKey/clientId,
+  // clientSecret, webhookSecret, etc. — el contenido varía por plataforma y NUNCA se manda al
+  // frontend; solo el backend lo descifra para llamar a la API de la plataforma. null hasta el
+  // primer guardado.
+  credencialesCifradas String?
+  // Últimos 4 caracteres del campo principal (apiKey/clientId), en claro — no es secreto por sí
+  // solo y es lo que el CRM muestra como "•••• 1234" en vez de pedir de nuevo la credencial.
+  credencialesUltimos4 String?
+  clientSecretConfigurado Boolean @default(false)
+  identificadorTienda String? // store/restaurant id en la plataforma externa
+  // Segmento rotable de la URL de webhook — "Regenerar URL" reemplaza este valor por uno nuevo.
+  webhookSlug String @unique @default(uuid())
+  ultimaSincronizacion DateTime?
+  ultimoErrorMensaje   String?
+  ultimoErrorEn        DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  empresa  Empresa  @relation(fields: [empresaId], references: [id])
+  sucursal Sucursal? @relation(fields: [sucursalId], references: [id])
+
+  webhookEvents PlataformaWebhookEvent[]
+  ordenSyncs    PlataformaOrdenSync[]
+
+  @@unique([empresaId, sucursalId, plataforma])
+  @@index([empresaId])
+  @@index([sucursalId])
+  @@map("plataforma_configs")
+}
+
+// Registro de cada evento de webhook recibido, con el id externo de evento como clave de
+// idempotencia — un reintento del mismo evento (misma plataforma/config) choca contra el
+// @@unique y se descarta sin reprocesar (ver PlataformasService.manejarWebhook()).
+model PlataformaWebhookEvent {
+  id                 String   @id @default(uuid())
+  plataformaConfigId String
+  eventoExternoId    String
+  tipoEvento         String
+  payloadSanitizado  Json?
+  procesadoOk        Boolean  @default(true)
+  motivoError        String?
+  createdAt          DateTime @default(now())
+
+  plataformaConfig PlataformaConfig @relation(fields: [plataformaConfigId], references: [id])
+
+  @@unique([plataformaConfigId, eventoExternoId])
+  @@index([plataformaConfigId, createdAt])
+  @@map("plataforma_webhook_events")
+}
+
+// Rastreo de pedidos recibidos desde una plataforma de delivery. No crea un `Pedido` real
+// todavía (falta definir el mapeo de productos/SKU contra el catálogo propio, ver
+// docs/pagos-tarjeta.md-style pendiente en plataformas — pendiente documentado) — solo garantiza
+// que un mismo pedido externo nunca se procese dos veces y deja rastro para el panel de
+// "pedidos recibidos/sincronizados" y errores recientes.
+model PlataformaOrdenSync {
+  id                 String   @id @default(uuid())
+  plataformaConfigId String
+  ordenExternaId     String
+  estado             EstadoSincronizacionOrdenPlataforma @default(RECIBIDA)
+  pedidoId           String?
+  motivoError        String?
+  // Extraídos del payload del webhook (ver *.adapter.ts -> procesarWebhook) para poder listar la
+  // bandeja de "Pedidos entrantes" sin tener que parsear payloadSanitizado en cada fila — los
+  // items completos (nombre/cantidad tal como los mandó la plataforma) siguen viviendo dentro de
+  // payloadSanitizado.items, ya que su forma varía por plataforma y no necesitan índice propio.
+  clienteNombre      String?
+  totalExterno       Decimal? @db.Decimal(10, 2)
+  payloadSanitizado  Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  plataformaConfig PlataformaConfig @relation(fields: [plataformaConfigId], references: [id])
+  pedido           Pedido?          @relation(fields: [pedidoId], references: [id])
+
+  @@unique([plataformaConfigId, ordenExternaId])
+  @@index([plataformaConfigId, estado])
+  @@map("plataforma_orden_syncs")
 }
 
 // Token de push (FCM) por dispositivo de la app de Meseros — para poder despertarla cuando está

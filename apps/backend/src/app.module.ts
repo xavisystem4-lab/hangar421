@@ -24,6 +24,7 @@ import { ClientesModule } from "./clientes/clientes.module";
 import { ReportesModule } from "./reportes/reportes.module";
 import { SyncModule } from "./sync/sync.module";
 import { PagosModule } from "./pagos/pagos.module";
+import { PlataformasModule } from "./plataformas/plataformas.module";
 
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { RolesGuard } from "./common/guards/roles.guard";
@@ -55,6 +56,7 @@ import { AuditInterceptor } from "./common/interceptors/audit.interceptor";
     ReportesModule,
     SyncModule,
     PagosModule,
+    PlataformasModule,
   ],
   providers: [
     // Orden: JWT primero, luego roles — ambos globales; @Public() los sortea.

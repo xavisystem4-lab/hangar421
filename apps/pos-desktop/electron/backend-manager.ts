@@ -26,6 +26,8 @@ interface Secretos {
   dbPassword: string;
   jwtAccessSecret: string;
   jwtRefreshSecret: string;
+  pagosCifradoKey: string;
+  plataformasCifradoKey: string;
 }
 
 export interface BackendEmbebido {
@@ -150,6 +152,9 @@ export async function iniciarBackendEmbebido(logIn: (msg: string) => void, puert
     DATABASE_URL: `postgresql://hangar:${secretos.dbPassword}@127.0.0.1:${pgPort}/hangar421?schema=public`,
     JWT_ACCESS_SECRET: secretos.jwtAccessSecret,
     JWT_REFRESH_SECRET: secretos.jwtRefreshSecret,
+    PAGOS_CIFRADO_KEY: secretos.pagosCifradoKey,
+    PLATAFORMAS_CIFRADO_KEY: secretos.plataformasCifradoKey,
+    PLATAFORMAS_PUBLIC_BASE_URL: `http://127.0.0.1:${backendPort}/api/v1`,
     JWT_ACCESS_EXPIRES_IN: "15m",
     JWT_REFRESH_EXPIRES_IN: "30d",
     PORT: String(backendPort),
@@ -490,12 +495,30 @@ function esperarSalud(url: string, proceso: ChildProcess, log: (msg: string) => 
 
 function obtenerOCrearSecretos(rutaArchivo: string): Secretos {
   if (fs.existsSync(rutaArchivo)) {
-    return JSON.parse(fs.readFileSync(rutaArchivo, "utf-8"));
+    const secretos: Secretos = JSON.parse(fs.readFileSync(rutaArchivo, "utf-8"));
+    // Instalaciones creadas antes de que existiera cada llave de cifrado no la tienen — se
+    // completa aquí en vez de regenerar todo el archivo (perdería la contraseña de la BD ya
+    // usada). Sin esto, una instalación existente dejaría de arrancar por completo al actualizar
+    // (PlataformasModule/PagosModule lanzan en el arranque si falta su llave — ver
+    // cifrado.service.ts).
+    let cambio = false;
+    if (!secretos.pagosCifradoKey) {
+      secretos.pagosCifradoKey = crypto.randomBytes(48).toString("hex");
+      cambio = true;
+    }
+    if (!secretos.plataformasCifradoKey) {
+      secretos.plataformasCifradoKey = crypto.randomBytes(48).toString("hex");
+      cambio = true;
+    }
+    if (cambio) fs.writeFileSync(rutaArchivo, JSON.stringify(secretos, null, 2), { mode: 0o600 });
+    return secretos;
   }
   const secretos: Secretos = {
     dbPassword: crypto.randomBytes(24).toString("hex"),
     jwtAccessSecret: crypto.randomBytes(48).toString("hex"),
     jwtRefreshSecret: crypto.randomBytes(48).toString("hex"),
+    pagosCifradoKey: crypto.randomBytes(48).toString("hex"),
+    plataformasCifradoKey: crypto.randomBytes(48).toString("hex"),
   };
   fs.writeFileSync(rutaArchivo, JSON.stringify(secretos, null, 2), { mode: 0o600 });
   return secretos;
