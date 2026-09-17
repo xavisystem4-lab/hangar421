@@ -5,15 +5,19 @@ import { PosAdminSucursales } from "./PosAdminSucursales";
 import { PosAdminMesas } from "./PosAdminMesas";
 import { PosAdminTerminales } from "./PosAdminTerminales";
 import { PosAdminPlataformas } from "./PosAdminPlataformas";
+import { PosAdminCatalogo } from "./PosAdminCatalogo";
+import { PosAdminUsuarios } from "./PosAdminUsuarios";
 
-// Los módulos se agregan por fase (2a: Sucursales/Mesas/Terminales/Plataformas). Las fases
-// siguientes (2b Catálogo/Usuarios, 2c Reportes, 2d Inventario, 2e Ticket, 2f Conexión) se
-// suman aquí mismo, sin tocar el patrón.
-type Modulo = "sucursales" | "mesas" | "terminales" | "plataformas";
+// Los módulos se agregan por fase (2a: Sucursales/Mesas/Terminales/Plataformas; 2b: Catálogo/
+// Usuarios). Las fases siguientes (2c Reportes, 2d Inventario, 2e Ticket, 2f Conexión) se suman
+// aquí mismo, sin tocar el patrón.
+type Modulo = "sucursales" | "mesas" | "terminales" | "plataformas" | "catalogo" | "usuarios";
 
 const MODULOS: { id: Modulo; etiqueta: string }[] = [
+  { id: "catalogo", etiqueta: "Catálogo" },
   { id: "sucursales", etiqueta: "Sucursales" },
   { id: "mesas", etiqueta: "Mesas" },
+  { id: "usuarios", etiqueta: "Usuarios" },
   { id: "terminales", etiqueta: "Terminales" },
   { id: "plataformas", etiqueta: "Plataformas" },
 ];
@@ -24,7 +28,7 @@ const MODULOS: { id: Modulo; etiqueta: string }[] = [
 export function PosAdminHomeScreen() {
   const colores = usarColores();
   const estilos = crearEstilos(colores);
-  const [modulo, setModulo] = useState<Modulo>("sucursales");
+  const [modulo, setModulo] = useState<Modulo>("catalogo");
 
   return (
     <View style={{ flex: 1, backgroundColor: colores.fondo }}>
@@ -40,8 +44,10 @@ export function PosAdminHomeScreen() {
       </ScrollView>
 
       <View style={{ flex: 1 }}>
+        {modulo === "catalogo" && <PosAdminCatalogo />}
         {modulo === "sucursales" && <PosAdminSucursales />}
         {modulo === "mesas" && <PosAdminMesas />}
+        {modulo === "usuarios" && <PosAdminUsuarios />}
         {modulo === "terminales" && <PosAdminTerminales />}
         {modulo === "plataformas" && <PosAdminPlataformas />}
       </View>
