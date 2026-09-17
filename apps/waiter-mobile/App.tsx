@@ -17,6 +17,7 @@ import { TomaPedidoScreen } from "./src/screens/TomaPedidoScreen";
 import { MisPedidosScreen } from "./src/screens/MisPedidosScreen";
 import { CobroTarjetaScreen } from "./src/screens/CobroTarjetaScreen";
 import { SeleccionModoScreen } from "./src/screens/SeleccionModoScreen";
+import { PosNavigator } from "./src/screens/pos/PosNavigator";
 import { useOrderStore } from "./src/store/orderStore";
 import { BarraActualizacion } from "./src/components/BarraActualizacion";
 
@@ -265,19 +266,9 @@ export default function App() {
           </View>
         </>
       ) : (
-        // Placeholder de la Fase 0 — la Fase 1 lo reemplaza por <PosNavigator /> (Mesas/Venta/
-        // Por cobrar/Caja). Se deja aquí, en vez de bloquear el modo "pos" por completo, para que
-        // "Cambiar de modo" y el resto del shell (header, tema, sync) ya se puedan probar en un
-        // dispositivo real desde ya.
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24 }}>
-          <Text style={{ fontSize: 40, marginBottom: 12 }}>🖥️</Text>
-          <Text style={{ color: colores.texto, fontWeight: "700", fontSize: 16, textAlign: "center" }}>
-            Punto de Venta
-          </Text>
-          <Text style={{ color: colores.textoSecundario, textAlign: "center", marginTop: 6 }}>
-            Mesas, venta, cobro, caja y administración llegan en la siguiente actualización.
-          </Text>
-        </View>
+        // Fase 1: Mesas/Venta/Cobro/Caja/Por cobrar. Administración (9 submódulos) es la Fase 2,
+        // todavía pendiente — ver docs/plan de "Punto de Venta" en la conversación original.
+        <PosNavigator />
       )}
 
       <BarraActualizacion />
