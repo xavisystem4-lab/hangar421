@@ -62,6 +62,7 @@ interface PosOrderState {
   totales: () => ReturnType<typeof calcularTotalesPedido>;
   enviarACocina: () => Promise<string>;
   cobrar: (pagos: PagoCarrito[]) => Promise<void>;
+  finalizarPagoExterno: () => Promise<void>;
 }
 
 export const usePosOrderStore = create<PosOrderState>((set, get) => ({
@@ -179,6 +180,14 @@ export const usePosOrderStore = create<PosOrderState>((set, get) => ({
       { id: uuid7(), entidad: "PAGO", operacion: "CREATE", entidadId: pedidoId, idempotencyKey, sucursalId: auth.sucursalId!, dispositivoId: auth.dispositivoId!, usuarioId: auth.usuario!.id, payload },
     );
 
+    get().limpiar();
+  },
+
+  /** Se llama cuando el backend ya confirmó APROBADO un pago con terminal (ver PosCobroScreen —
+   *  socket "pago:actualizado"). El Pago y el estado COBRADO del pedido ya los registró el
+   *  backend al procesar la solicitud; aquí solo queda limpiar el carrito local — sin impresión
+   *  de ticket (exclusiva de Electron, ver orderStore.ts del POS Windows). */
+  finalizarPagoExterno: async () => {
     get().limpiar();
   },
 }));

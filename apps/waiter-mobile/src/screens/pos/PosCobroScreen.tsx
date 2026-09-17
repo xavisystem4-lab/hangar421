@@ -1,16 +1,30 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { MetodoPago } from "@hangar421/shared";
+import { MetodoPago, WS_EVENTS, uuid7, type PaymentRequestDTO } from "@hangar421/shared";
 import { usePosOrderStore } from "../../store/posOrderStore";
 import { useAuthStore } from "../../store/authStore";
 import { usarColores } from "../../store/temaStore";
+import { apiFetch } from "../../api/http";
+import { obtenerSocket } from "../../api/socket";
 import { PosModalDescuento } from "./PosModalDescuento";
 
-// TARJETA se agrega en la Fase 1b (terminal Mercado Pago) — requiere una PaymentTerminal ya
-// configurada y un lector físico, no verificable en este entorno. Por ahora solo métodos con
-// monto manual, igual que ModalCobro.tsx (POS Windows) para Efectivo/Transferencia/QR.
+interface TerminalPago { id: string; nombre: string; zona: string | null; activo: boolean; estadoConexion: string }
+
+const ETIQUETA_ESTADO_PAGO: Record<string, string> = {
+  PENDIENTE: "Esperando confirmación…",
+  ENVIADO_A_TERMINAL: "Enviado a la terminal — esperando al cliente…",
+  EN_PROCESO: "Procesando en la terminal…",
+  APROBADO: "Pago aprobado ✓",
+  RECHAZADO: "Pago rechazado",
+  CANCELADO: "Cobro cancelado",
+  EXPIRADO: "La solicitud expiró",
+  ERROR: "Error al procesar el pago",
+};
+const ESTADOS_FINALES_CON_ERROR = new Set(["RECHAZADO", "CANCELADO", "EXPIRADO", "ERROR"]);
+
 const METODOS: { valor: MetodoPago; etiqueta: string; icono: string }[] = [
   { valor: MetodoPago.EFECTIVO, etiqueta: "Efectivo", icono: "💵" },
+  { valor: MetodoPago.TARJETA, etiqueta: "Tarjeta", icono: "💳" },
   { valor: MetodoPago.TRANSFERENCIA, etiqueta: "Transferencia", icono: "🏦" },
   { valor: MetodoPago.QR, etiqueta: "QR", icono: "▦" },
 ];
@@ -22,19 +36,101 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-/** Pantalla completa de cobro — equivalente a `ModalCobro.tsx` del POS Windows (sin la parte de
- *  terminal de tarjeta, ver Fase 1b): método de pago, propina, descuento, pagos divididos/mixtos
- *  con teclado numérico en pantalla, y confirmar. Si el pedido todavía no existe en el servidor
- *  (se armó aquí mismo, no viene de "Por cobrar"), lo crea al confirmar — mismo criterio que el
- *  POS de escritorio: "pagar" es lo que manda el pedido, no hay un paso separado. */
+/** Pantalla completa de cobro — equivalente a `ModalCobro.tsx` del POS Windows: método de pago
+ *  (incluida Tarjeta vía terminal, misma solicitud PENDIENTE→ENVIADO_A_TERMINAL→APROBADO por
+ *  WebSocket que ya usa el escritorio), propina, descuento, pagos divididos/mixtos con teclado
+ *  numérico en pantalla, y confirmar. Si el pedido todavía no existe en el servidor (se armó
+ *  aquí mismo, no viene de "Por cobrar"), lo crea al confirmar — mismo criterio que el POS de
+ *  escritorio: "pagar" es lo que manda el pedido, no hay un paso separado. */
 export function PosCobroScreen({ nombreCuenta, onCerrar, onCobrado }: { nombreCuenta: string | null; onCerrar: () => void; onCobrado: () => void }) {
-  const { items, totales, descuentos, pedidoId, enviarACocina, cobrar } = usePosOrderStore();
+  const { items, totales, descuentos, pedidoId, enviarACocina, cobrar, finalizarPagoExterno } = usePosOrderStore();
   const sucursalId = useAuthStore((s) => s.sucursalId)!;
   const colores = usarColores();
   const estilos = crearEstilos(colores);
   const t = totales();
   const [mostrarDescuento, setMostrarDescuento] = useState(false);
   const [metodoActivo, setMetodoActivo] = useState<MetodoPago>(MetodoPago.EFECTIVO);
+
+  // --- Pago con tarjeta (terminal física/mock, coordinado por el backend — ver
+  // apps/backend/src/pagos/, mismo flujo que ModalCobro.tsx del POS Windows) ---
+  const [terminales, setTerminales] = useState<TerminalPago[]>([]);
+  const [terminalId, setTerminalId] = useState("");
+  const [solicitudPago, setSolicitudPago] = useState<PaymentRequestDTO | null>(null);
+  const [procesandoTarjeta, setProcesandoTarjeta] = useState(false);
+  const [errorTarjeta, setErrorTarjeta] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (metodoActivo !== MetodoPago.TARJETA || terminales.length > 0) return;
+    apiFetch<TerminalPago[]>(`/pagos/terminales?sucursalId=${sucursalId}`)
+      .then((ts) => {
+        const activas = ts.filter((x) => x.activo);
+        setTerminales(activas);
+        if (activas[0]) setTerminalId(activas[0].id);
+      })
+      .catch(() => setErrorTarjeta("No se pudieron cargar las terminales de pago"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metodoActivo]);
+
+  useEffect(() => {
+    const socket = obtenerSocket();
+    if (!socket) return;
+    function onActualizado(payload: PaymentRequestDTO) {
+      setSolicitudPago((actual) => (actual && payload.id === actual.id ? payload : actual));
+    }
+    socket.on(WS_EVENTS.PAGO_ACTUALIZADO, onActualizado);
+    return () => { socket.off(WS_EVENTS.PAGO_ACTUALIZADO, onActualizado); };
+  }, []);
+
+  useEffect(() => {
+    if (solicitudPago?.estado !== "APROBADO") return;
+    finalizarPagoExterno().then(onCobrado).catch((e) => setErrorTarjeta(e.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [solicitudPago?.estado]);
+
+  async function crearSolicitudTarjeta() {
+    setErrorTarjeta(null);
+    setProcesandoTarjeta(true);
+    try {
+      let idPedido = pedidoId;
+      if (!idPedido) idPedido = await enviarACocina();
+      const solicitud = await apiFetch<PaymentRequestDTO>("/pagos/solicitudes", {
+        method: "POST",
+        body: JSON.stringify({ pedidoId: idPedido, terminalId, importe: Number(montoInput), idempotencyKey: uuid7() }),
+      });
+      setSolicitudPago(solicitud);
+    } catch (e: any) {
+      setErrorTarjeta(e.message ?? "No se pudo crear la solicitud de pago");
+    } finally {
+      setProcesandoTarjeta(false);
+    }
+  }
+
+  async function iniciarCobroEnTerminal() {
+    if (!solicitudPago) return;
+    setErrorTarjeta(null);
+    setProcesandoTarjeta(true);
+    try {
+      const actualizada = await apiFetch<PaymentRequestDTO>(`/pagos/solicitudes/${solicitudPago.id}/iniciar-cobro`, { method: "POST" });
+      setSolicitudPago(actualizada);
+    } catch (e: any) {
+      setErrorTarjeta(e.message ?? "No se pudo iniciar el cobro en la terminal");
+    } finally {
+      setProcesandoTarjeta(false);
+    }
+  }
+
+  async function cancelarSolicitudTarjeta() {
+    if (!solicitudPago) return;
+    setProcesandoTarjeta(true);
+    try {
+      await apiFetch(`/pagos/solicitudes/${solicitudPago.id}/cancelar`, { method: "POST" });
+      setSolicitudPago(null);
+    } catch (e: any) {
+      setErrorTarjeta(e.message);
+    } finally {
+      setProcesandoTarjeta(false);
+    }
+  }
 
   const [propinaPorcentaje, setPropinaPorcentaje] = useState(0);
   const [propinaMontoTexto, setPropinaMontoTexto] = useState("");
@@ -178,24 +274,94 @@ export function PosCobroScreen({ nombreCuenta, onCerrar, onCobrado }: { nombreCu
         <View style={estilos.totalesBox}>
           <View style={estilos.filaTotal}><Text style={estilos.textoNavy}>Propina</Text><Text style={estilos.textoNavy}>${propina.toFixed(2)}</Text></View>
           <View style={estilos.filaTotal}><Text style={estilos.totalGrande}>Total a pagar</Text><Text style={estilos.totalGrande}>${totalAPagar.toFixed(2)}</Text></View>
-          <Text style={[estilos.totalGrande, { color: restante > 0 ? colores.navyTexto : colores.green, marginTop: 6 }]}>
-            {restante > 0 ? `Falta cubrir: $${restante.toFixed(2)}` : `Cambio: $${cambio.toFixed(2)}`}
-          </Text>
+          {metodoActivo !== MetodoPago.TARJETA && (
+            <Text style={[estilos.totalGrande, { color: restante > 0 ? colores.navyTexto : colores.green, marginTop: 6 }]}>
+              {restante > 0 ? `Falta cubrir: $${restante.toFixed(2)}` : `Cambio: $${cambio.toFixed(2)}`}
+            </Text>
+          )}
         </View>
 
-        <View style={estilos.tecladoContenedor}>
-          <Text style={estilos.montoIngresado}>${montoInput}</Text>
-          <View style={estilos.teclado}>
-            {TECLAS.map((k) => (
-              <TouchableOpacity key={k} onPress={() => presionarTecla(k)} style={[estilos.tecla, k === "borrar" && estilos.teclaBorrar]}>
-                <Text style={{ fontSize: 20, fontWeight: "700", color: k === "borrar" ? colores.red : colores.texto }}>{k === "borrar" ? "⌫" : k}</Text>
-              </TouchableOpacity>
-            ))}
+        {/* El pago con tarjeta tiene su propio flujo de botones (Cobrar con terminal / Iniciar
+            cobro) en vez del teclado numérico — son flujos distintos: el de tarjeta no agrega un
+            pago manual, espera la confirmación real del proveedor (vía WebSocket arriba) antes
+            de dar la cuenta por liquidada. */}
+        {metodoActivo === MetodoPago.TARJETA ? (
+          <View style={estilos.tecladoContenedor}>
+            <Text style={estilos.montoIngresado}>${montoInput}</Text>
+
+            {!solicitudPago && (
+              <>
+                <Text style={[estilos.subtitulo, { marginTop: 4 }]}>Terminal</Text>
+                {terminales.length === 0 ? (
+                  <Text style={estilos.error}>No hay terminales activas en esta sucursal — dalas de alta en Administración → Terminales de pago.</Text>
+                ) : (
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                    {terminales.map((tm) => (
+                      <TouchableOpacity key={tm.id} onPress={() => setTerminalId(tm.id)} style={[estilos.botonChip, terminalId === tm.id && estilos.botonChipActivo]}>
+                        <Text style={{ color: terminalId === tm.id ? "#fff" : colores.texto }}>{tm.nombre}{tm.zona ? ` · ${tm.zona}` : ""}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+                <TouchableOpacity onPress={crearSolicitudTarjeta} disabled={procesandoTarjeta || !terminalId || Number(montoInput) <= 0} style={estilos.botonAgregarPago}>
+                  <Text style={{ color: "#fff", fontWeight: "700" }}>{procesandoTarjeta ? "Creando solicitud…" : "Cobrar con terminal"}</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {solicitudPago && (
+              <View style={{ marginTop: 14 }}>
+                <View
+                  style={[
+                    estilos.pildoraEstado,
+                    {
+                      backgroundColor: solicitudPago.estado === "APROBADO" ? colores.green : ESTADOS_FINALES_CON_ERROR.has(solicitudPago.estado) ? colores.red + "22" : colores.superficie,
+                    },
+                  ]}
+                >
+                  <Text style={{ color: solicitudPago.estado === "APROBADO" ? "#fff" : ESTADOS_FINALES_CON_ERROR.has(solicitudPago.estado) ? colores.red : colores.navyTexto, fontWeight: "700", textAlign: "center" }}>
+                    {ETIQUETA_ESTADO_PAGO[solicitudPago.estado] ?? solicitudPago.estado}
+                  </Text>
+                </View>
+                {solicitudPago.motivoError && <Text style={[estilos.error, { textAlign: "center" }]}>{solicitudPago.motivoError}</Text>}
+
+                <View style={{ flexDirection: "row", gap: 10, marginTop: 14 }}>
+                  {solicitudPago.estado === "PENDIENTE" && (
+                    <TouchableOpacity onPress={iniciarCobroEnTerminal} disabled={procesandoTarjeta} style={[estilos.botonAccion, { flex: 1, backgroundColor: colores.navy }]}>
+                      <Text style={{ color: "#fff", fontWeight: "700" }}>{procesandoTarjeta ? "Enviando…" : "Iniciar cobro en terminal"}</Text>
+                    </TouchableOpacity>
+                  )}
+                  {!ESTADOS_FINALES_CON_ERROR.has(solicitudPago.estado) && solicitudPago.estado !== "APROBADO" && (
+                    <TouchableOpacity onPress={cancelarSolicitudTarjeta} disabled={procesandoTarjeta} style={[estilos.botonAccion, { flex: 1, backgroundColor: colores.gray200 }]}>
+                      <Text style={{ color: colores.texto }}>Cancelar cobro</Text>
+                    </TouchableOpacity>
+                  )}
+                  {ESTADOS_FINALES_CON_ERROR.has(solicitudPago.estado) && (
+                    <TouchableOpacity onPress={() => setSolicitudPago(null)} style={[estilos.botonAccion, { flex: 1, backgroundColor: colores.navy }]}>
+                      <Text style={{ color: "#fff", fontWeight: "700" }}>Reintentar</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            )}
+
+            {errorTarjeta && <Text style={estilos.error}>{errorTarjeta}</Text>}
           </View>
-          <TouchableOpacity onPress={agregarPago} style={estilos.botonAgregarPago}>
-            <Text style={{ color: "#fff", fontWeight: "700" }}>Agregar pago</Text>
-          </TouchableOpacity>
-        </View>
+        ) : (
+          <View style={estilos.tecladoContenedor}>
+            <Text style={estilos.montoIngresado}>${montoInput}</Text>
+            <View style={estilos.teclado}>
+              {TECLAS.map((k) => (
+                <TouchableOpacity key={k} onPress={() => presionarTecla(k)} style={[estilos.tecla, k === "borrar" && estilos.teclaBorrar]}>
+                  <Text style={{ fontSize: 20, fontWeight: "700", color: k === "borrar" ? colores.red : colores.texto }}>{k === "borrar" ? "⌫" : k}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity onPress={agregarPago} style={estilos.botonAgregarPago}>
+              <Text style={{ color: "#fff", fontWeight: "700" }}>Agregar pago</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {error && <Text style={estilos.error}>{error}</Text>}
 
@@ -203,9 +369,11 @@ export function PosCobroScreen({ nombreCuenta, onCerrar, onCobrado }: { nombreCu
           <TouchableOpacity onPress={onCerrar} style={[estilos.botonAccion, { backgroundColor: colores.gray200 }]}>
             <Text style={{ color: colores.texto }}>Cancelar</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={confirmar} disabled={procesando} style={[estilos.botonAccion, { flex: 2, backgroundColor: colores.green }]}>
-            <Text style={{ color: "#fff", fontWeight: "700", fontSize: 16 }}>{procesando ? "Procesando…" : "Confirmar pago"}</Text>
-          </TouchableOpacity>
+          {metodoActivo !== MetodoPago.TARJETA && (
+            <TouchableOpacity onPress={confirmar} disabled={procesando} style={[estilos.botonAccion, { flex: 2, backgroundColor: colores.green }]}>
+              <Text style={{ color: "#fff", fontWeight: "700", fontSize: 16 }}>{procesando ? "Procesando…" : "Confirmar pago"}</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
 
@@ -234,6 +402,7 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     montoIngresado: { fontSize: 30, fontWeight: "800", textAlign: "center", color: colores.texto, marginBottom: 12 },
     teclado: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
     tecla: { width: "30%", aspectRatio: 1.6, backgroundColor: colores.superficie, borderRadius: 10, borderWidth: 1, borderColor: colores.borde, alignItems: "center", justifyContent: "center" },
+    pildoraEstado: { borderRadius: 10, padding: 14, borderWidth: 1, borderColor: colores.borde },
     teclaBorrar: { backgroundColor: colores.red + "22" },
     botonAgregarPago: { backgroundColor: colores.navy, borderRadius: 10, padding: 14, alignItems: "center", marginTop: 12, minHeight: 48, justifyContent: "center" },
     error: { color: colores.red, marginTop: 12 },
