@@ -9,11 +9,12 @@ import { PosAdminCatalogo } from "./PosAdminCatalogo";
 import { PosAdminUsuarios } from "./PosAdminUsuarios";
 import { PosAdminReportes } from "./PosAdminReportes";
 import { PosAdminInventario } from "./PosAdminInventario";
+import { PosAdminTicket } from "./PosAdminTicket";
 
 // Los módulos se agregan por fase (2a: Sucursales/Mesas/Terminales/Plataformas; 2b: Catálogo/
-// Usuarios; 2c: Reportes; 2d: Inventario). Las fases siguientes (2e Ticket, 2f Conexión) se
-// suman aquí mismo, sin tocar el patrón.
-type Modulo = "sucursales" | "mesas" | "terminales" | "plataformas" | "catalogo" | "usuarios" | "reportes" | "inventario";
+// Usuarios; 2c: Reportes; 2d: Inventario; 2e: Ticket). La fase siguiente (2f Conexión, opcional)
+// se suma aquí mismo, sin tocar el patrón.
+type Modulo = "sucursales" | "mesas" | "terminales" | "plataformas" | "catalogo" | "usuarios" | "reportes" | "inventario" | "ticket";
 
 const MODULOS: { id: Modulo; etiqueta: string }[] = [
   { id: "reportes", etiqueta: "Reportes" },
@@ -22,6 +23,7 @@ const MODULOS: { id: Modulo; etiqueta: string }[] = [
   { id: "sucursales", etiqueta: "Sucursales" },
   { id: "mesas", etiqueta: "Mesas" },
   { id: "usuarios", etiqueta: "Usuarios" },
+  { id: "ticket", etiqueta: "Ticket" },
   { id: "terminales", etiqueta: "Terminales" },
   { id: "plataformas", etiqueta: "Plataformas" },
 ];
@@ -51,6 +53,7 @@ export function PosAdminHomeScreen() {
         {modulo === "reportes" && <PosAdminReportes />}
         {modulo === "catalogo" && <PosAdminCatalogo />}
         {modulo === "inventario" && <PosAdminInventario />}
+        {modulo === "ticket" && <PosAdminTicket />}
         {modulo === "sucursales" && <PosAdminSucursales />}
         {modulo === "mesas" && <PosAdminMesas />}
         {modulo === "usuarios" && <PosAdminUsuarios />}
