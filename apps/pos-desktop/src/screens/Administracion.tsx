@@ -8,8 +8,9 @@ import { AdminUsuarios } from "./admin/AdminUsuarios";
 import { AdminTicket } from "./admin/AdminTicket";
 import { AdminConexion } from "./admin/AdminConexion";
 import { AdminTerminales } from "./admin/AdminTerminales";
+import { AdminPlataformas } from "./admin/AdminPlataformas";
 
-type Modulo = "reportes" | "catalogo" | "inventario" | "sucursales" | "mesas" | "usuarios" | "ticket" | "conexion" | "terminales";
+type Modulo = "reportes" | "catalogo" | "inventario" | "sucursales" | "mesas" | "usuarios" | "ticket" | "conexion" | "terminales" | "plataformas";
 
 const MODULOS: { id: Modulo; etiqueta: string }[] = [
   { id: "reportes", etiqueta: "Reportes" },
@@ -20,6 +21,7 @@ const MODULOS: { id: Modulo; etiqueta: string }[] = [
   { id: "usuarios", etiqueta: "Usuarios" },
   { id: "ticket", etiqueta: "Ticket" },
   { id: "terminales", etiqueta: "Terminales de pago" },
+  { id: "plataformas", etiqueta: "Plataformas" },
   { id: "conexion", etiqueta: "Conexión" },
 ];
 
@@ -61,6 +63,7 @@ export function Administracion() {
         {modulo === "usuarios" && <AdminUsuarios />}
         {modulo === "ticket" && <AdminTicket />}
         {modulo === "terminales" && <AdminTerminales />}
+        {modulo === "plataformas" && <AdminPlataformas />}
         {modulo === "conexion" && <AdminConexion />}
       </div>
     </div>
