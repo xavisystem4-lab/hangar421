@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { CanalOrigen, WS_EVENTS, type Pedido } from "@hangar421/shared";
 import { useAuthStore } from "./store/authStore";
 import { useCatalogoStore } from "./store/catalogStore";
@@ -13,7 +13,6 @@ import { POSHome } from "./screens/POSHome";
 import { Caja } from "./screens/Caja";
 import { Administracion } from "./screens/Administracion";
 import { PantallaArranque } from "./screens/PantallaArranque";
-import { PantallaBienvenida } from "./screens/PantallaBienvenida";
 import { BarraSuperior, type Pantalla } from "./components/BarraSuperior";
 import { BarraActualizacion } from "./components/BarraActualizacion";
 import "./theme.css";
@@ -28,7 +27,8 @@ export default function App() {
   const [mensajeArranque, setMensajeArranque] = useState("Iniciando…");
   const [errorArranque, setErrorArranque] = useState<string | null>(null);
   const [intentoArranque, setIntentoArranque] = useState(0);
-  const [mostrarBienvenida, setMostrarBienvenida] = useState(true);
+  const [mostrarArranque, setMostrarArranque] = useState(true);
+  const [saliendoArranque, setSaliendoArranque] = useState(false);
 
   // Primero se resuelve dónde vive el backend (embebido, cloud, o dev) — recién entonces
   // se configuran los clientes HTTP/WebSocket y se puede intentar cualquier login. Si falla
@@ -58,13 +58,15 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [backendListo]);
 
-  // Presentación de bienvenida (ver PantallaBienvenida.tsx): una sola vez por arranque, apenas
-  // el backend ya está listo — se oculta sola después de un momento, sin bloquear el login si
-  // el usuario ya está ahí (auth.inicializar corre en paralelo, no espera a esta pantalla).
+  // Ya no hay una pantalla de "Bienvenida" aparte (logo + texto, ver PantallaArranque.tsx) — la
+  // misma pantalla de arranque hace de bienvenida: al llegar a 100% se queda un instante quieta
+  // (el usuario alcanza a leerla, no es un parpadeo) y luego se desvanece hacia el login/app real,
+  // que ya se monta detrás en paralelo (auth.inicializar corre sin esperar a esta transición).
   useEffect(() => {
     if (!backendListo) return;
-    const t = setTimeout(() => setMostrarBienvenida(false), 2800);
-    return () => clearTimeout(t);
+    const tPausa = setTimeout(() => setSaliendoArranque(true), 800);
+    const tDesmontar = setTimeout(() => setMostrarArranque(false), 800 + 450);
+    return () => { clearTimeout(tPausa); clearTimeout(tDesmontar); };
   }, [backendListo]);
 
   // La pantalla inicial es "Venta" (mostrador, sin mesa) — antes onCambiarPantalla era el único
@@ -107,22 +109,49 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth.usuario, auth.sucursalId]);
 
-  if (!backendListo) {
-    return (
-      <PantallaArranque
-        mensaje={mensajeArranque}
-        error={errorArranque}
-        onReintentar={() => setIntentoArranque((n) => n + 1)}
-      />
-    );
-  }
-  if (mostrarBienvenida) return <PantallaBienvenida />;
-  if (auth.cargando) return null;
-  if (!auth.usuario) {
-    return (
+  // El contenido real (login o pantallas del POS) se calcula y se monta siempre que el backend
+  // ya esté listo, aunque la pantalla de arranque todavía se esté viendo/desvaneciendo encima
+  // (ver overlay más abajo) — así ya está armado y con datos cargados para cuando el fundido
+  // termine, en vez de aparecer en blanco un instante.
+  let contenido: ReactNode = null;
+  if (backendListo && !auth.cargando) {
+    contenido = !auth.usuario ? (
       <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
         <div style={{ flex: 1, overflow: "hidden" }}>
           <Login />
+        </div>
+        <BarraActualizacion />
+      </div>
+    ) : (
+      <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
+        <BarraSuperior
+          sucursalNombre={sucursalNombre || auth.sucursalId || ""}
+          pantallaActual={pantalla}
+          onCambiarPantalla={(p) => {
+            if (p === "venta" && !mesaActiva) useOrderStore.getState().iniciar(null, 1);
+            setPantalla(p);
+          }}
+        />
+        <div style={{ flex: 1, overflow: "hidden" }}>
+          {pantalla === "mesas" && (
+            <Mesas
+              sucursalId={auth.sucursalId!}
+              onAbrirMesa={(id, nombre) => { setMesaActiva({ id, nombre }); setPantalla("venta"); }}
+            />
+          )}
+          {pantalla === "venta" && (
+            <POSHome
+              mesaNombre={mesaActiva?.nombre ?? null}
+              onVentaCobrada={() => {
+                setMesaActiva(null);
+                procesarColaSalida();
+                setPantalla("mesas");
+              }}
+            />
+          )}
+          {pantalla === "cobros" && <PedidosPorCobrar sucursalId={auth.sucursalId!} />}
+          {pantalla === "caja" && <Caja sucursalId={auth.sucursalId!} />}
+          {pantalla === "administracion" && <Administracion />}
         </div>
         <BarraActualizacion />
       </div>
@@ -130,37 +159,16 @@ export default function App() {
   }
 
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
-      <BarraSuperior
-        sucursalNombre={sucursalNombre || auth.sucursalId || ""}
-        pantallaActual={pantalla}
-        onCambiarPantalla={(p) => {
-          if (p === "venta" && !mesaActiva) useOrderStore.getState().iniciar(null, 1);
-          setPantalla(p);
-        }}
-      />
-      <div style={{ flex: 1, overflow: "hidden" }}>
-        {pantalla === "mesas" && (
-          <Mesas
-            sucursalId={auth.sucursalId!}
-            onAbrirMesa={(id, nombre) => { setMesaActiva({ id, nombre }); setPantalla("venta"); }}
-          />
-        )}
-        {pantalla === "venta" && (
-          <POSHome
-            mesaNombre={mesaActiva?.nombre ?? null}
-            onVentaCobrada={() => {
-              setMesaActiva(null);
-              procesarColaSalida();
-              setPantalla("mesas");
-            }}
-          />
-        )}
-        {pantalla === "cobros" && <PedidosPorCobrar sucursalId={auth.sucursalId!} />}
-        {pantalla === "caja" && <Caja sucursalId={auth.sucursalId!} />}
-        {pantalla === "administracion" && <Administracion />}
-      </div>
-      <BarraActualizacion />
-    </div>
+    <>
+      {contenido}
+      {mostrarArranque && (
+        <PantallaArranque
+          mensaje={mensajeArranque}
+          error={errorArranque}
+          onReintentar={() => setIntentoArranque((n) => n + 1)}
+          saliendo={saliendoArranque}
+        />
+      )}
+    </>
   );
 }

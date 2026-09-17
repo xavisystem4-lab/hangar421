@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useThemeStore } from "../store/themeStore";
 import logoOscuro from "../assets/logo-dark.png";
 import logoClaro from "../assets/logo-light.png";
+import fondo from "../assets/login-fondo.jpg";
 import { BarraActualizacion } from "../components/BarraActualizacion";
 
 /** Hitos del arranque del backend embebido, en el orden real en que los emite
@@ -37,27 +38,51 @@ function usarProgreso(mensaje: string): number {
 /** Se muestra mientras Electron levanta el backend embebido (Postgres + API local) — solo
  *  toma unos segundos, y solo la primera vez que se abre la app crea la base de datos.
  *  Si algo falla (por ejemplo, el antivirus bloqueando un binario), muestra el error con
- *  un botón para reintentar en vez de quedarse cargando para siempre sin explicación. */
+ *  un botón para reintentar en vez de quedarse cargando para siempre sin explicación.
+ *
+ *  También hace de "bienvenida": ya no hay una pantalla aparte con el logo y "Bienvenidos"
+ *  (ver App.tsx) — esta misma, al llegar la barra a 100%, la reemplaza por el saludo
+ *  "Bienvenidos" un instante y se desvanece (prop `saliendo`) hacia el login/app real que se
+ *  monta detrás, en vez de cortar en seco de una pantalla a otra. Por eso vive en un overlay de
+ *  pantalla completa (`position: fixed`) en vez de ocupar el flujo normal — lo de abajo ya se
+ *  está armando mientras esta se ve. */
 export function PantallaArranque({
   mensaje,
   error,
   onReintentar,
+  saliendo,
 }: {
   mensaje: string;
   error?: string | null;
   onReintentar?: () => void;
+  saliendo?: boolean;
 }) {
   const tema = useThemeStore((s) => s.tema);
   const progreso = usarProgreso(mensaje);
+  // Mismo velo que la pantalla de Login sobre la misma foto de fondo — ambas pantallas deben
+  // sentirse como parte de la misma app, no una genérica y otra con identidad.
+  const velo = tema === "oscuro" ? "rgba(11,30,51,0.65)" : "rgba(255,255,255,0.45)";
+  // Mismo criterio que la selección de logo (logoClaro/logoOscuro arriba): el texto necesita
+  // contraste contra la foto de fondo velada, que cambia de tono con el tema.
+  const colorBienvenida = tema === "oscuro" ? "#fff" : "var(--h421-navy)";
 
   return (
-    // Antes, si el arranque se quedaba trabado en error (ej. este mismo bug de Postgres —
-    // "se cerró inesperadamente al arrancar"), no había forma de actualizar a una versión que
-    // ya lo trajera arreglado: la barra de actualización solo vivía en las pantallas de después
-    // del login (ver App.tsx), a las que nunca se llega si el backend no arranca. Ahora vive
-    // aquí también, siempre visible — como en la pantalla de Conexión de la app de Meseros.
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "var(--h421-gray-50)", gap: 24, padding: 24, overflow: "hidden" }}>
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 1000,
+        height: "100vh", display: "flex", flexDirection: "column",
+        opacity: saliendo ? 0 : 1,
+        transition: "opacity 450ms ease",
+        pointerEvents: saliendo ? "none" : "auto",
+      }}
+    >
+      <div
+        style={{
+          flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          background: `linear-gradient(${velo}, ${velo}), url(${fondo}) center/cover no-repeat`,
+          gap: 24, padding: 24, overflow: "hidden",
+        }}
+      >
           <div style={{ position: "relative", width: "50vw", maxWidth: 640 }}>
             <img src={tema === "oscuro" ? logoClaro : logoOscuro} alt="HANGAR 421" style={{ width: "100%", height: "auto", display: "block" }} />
             {/* "POS" sobre el "421" del logo — distingue esta pantalla de la app de Meseros, que
@@ -72,13 +97,19 @@ export function PantallaArranque({
             </span>
           </div>
 
-          {!error && (
-            <>
-              <div style={{ width: 260, height: 8, borderRadius: 4, background: "var(--h421-gray-200)", overflow: "hidden" }}>
-                <div style={{ width: `${progreso}%`, height: "100%", background: "var(--h421-blue)", transition: "width 0.3s ease-out" }} />
-              </div>
-              <p style={{ color: "var(--h421-gray-400)", fontSize: 14 }}>{mensaje}</p>
-            </>
+          {!error && progreso < 100 && (
+            <div style={{ width: 260, height: 8, borderRadius: 4, background: "var(--h421-gray-200)", overflow: "hidden" }}>
+              <div style={{ width: `${progreso}%`, height: "100%", background: "var(--h421-blue)", transition: "width 0.3s ease-out" }} />
+            </div>
+          )}
+
+          {!error && progreso >= 100 && (
+            <p
+              className="h421-bienvenida-texto"
+              style={{ color: colorBienvenida, fontSize: "clamp(20px, 2.6vw, 32px)", fontWeight: 600, letterSpacing: 1, margin: 0 }}
+            >
+              Bienvenidos
+            </p>
           )}
 
           {error && (
