@@ -38,7 +38,14 @@ const coloresOscuro = {
   ...marca,
   black: "#E8EBF0",
   white: "#1A212C",
-  gray50: "#10141C",
+  // Distinto de `fondo` a propósito — el POS Windows usa el mismo valor que la página porque
+  // ahí un botón "gray-50" siempre vive dentro de una tarjeta/modal más clara (var(--h421-white))
+  // y se ve recesado contra ESA superficie. Muchas pantallas de Punto de Venta en la APK (Cobro,
+  // Venta, etc.) ponen sus chips/botones directo sobre `fondo`, sin tarjeta de por medio — con el
+  // mismo valor que allá, esos botones quedaban invisibles (fundidos con el fondo de la pantalla,
+  // solo se veía el borde). Un tono apenas más claro que `fondo` los hace visibles ahí también,
+  // sin dejar de leerse "recesado" dentro de una tarjeta (`superficie` sigue siendo más claro).
+  gray50: "#161C27",
   gray200: "#2B3444",
   gray400: "#8B95A8",
   superficie: "#1A212C",
