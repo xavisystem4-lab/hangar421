@@ -3,13 +3,14 @@ import { ActivityIndicator, SafeAreaView, StatusBar, Text, View } from "react-na
 import { useTemaStore, usarColores } from "./src/store/temaStore";
 import { useAuthLocalStore } from "./src/store/authLocalStore";
 import { abrirBaseDeDatos } from "./src/db/database";
+import { iniciarSync, detenerSync } from "./src/sync/syncEngine";
 import { LoginLocalScreen } from "./src/screens/LoginLocalScreen";
 import { PosNavigator } from "./src/screens/PosNavigator";
 
-/** Fase 1: BD local → login offline → venta/cobro/caja, todo sin red. La configuración inicial
- *  real de sucursal + conexión ERP opcional (Fase 2b) y el motor de sync (Fase 2a) todavía no
- *  existen — por ahora la sucursal/empresa/dispositivo son placeholders locales (ver
- *  dispositivoLocal.ts) que se reemplazan sin tocar ninguna venta ya guardada. */
+/** Fase 2a: BD local → login offline → venta/cobro/caja (todo sin red) + motor de sync en
+ *  segundo plano hacia el ERP (opcional — ver ConexionErpScreen, nunca requerido para vender).
+ *  La configuración inicial completa de sucursal (fiscal/ticket/impresora, crear una sucursal
+ *  NUEVA en vez de conectar a una existente) sigue pendiente en Fase 2b. */
 export default function App() {
   const tema = useTemaStore();
   const auth = useAuthLocalStore();
@@ -30,6 +31,14 @@ export default function App() {
   useEffect(() => {
     if (dbLista) auth.cargarUsuarios();
   }, [dbLista]);
+
+  // El motor de sync corre solo mientras haya alguien logeado localmente — no tiene sentido
+  // drenar la cola sin una sesión activa, y así se detiene solo al cerrar sesión.
+  useEffect(() => {
+    if (!auth.usuario) return;
+    iniciarSync();
+    return () => detenerSync();
+  }, [auth.usuario]);
 
   if (errorDb) {
     return (

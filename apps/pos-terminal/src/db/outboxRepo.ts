@@ -1,5 +1,21 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 import { uuid7, type SyncEntidad, type SyncOperacion } from "@hangar421/shared";
+import { calcularProximoReintentoIso, yaPuedeReintentar } from "../sync/backoff";
+
+export interface ItemOutbox {
+  localId: string;
+  entidad: string;
+  operacion: string;
+  entidadId: string;
+  idempotencyKey: string;
+  sucursalId: string;
+  dispositivoId: string;
+  usuarioId: string | null;
+  payload: unknown;
+  estado: "PENDING" | "SYNCING" | "SYNCED" | "ERROR";
+  intentos: number;
+  createdAt: string;
+}
 
 export interface NuevoItemOutbox {
   entidad: SyncEntidad;
@@ -32,4 +48,51 @@ export async function encolarSync(db: SQLiteDatabase, item: NuevoItemOutbox): Pr
   );
 
   return localId;
+}
+
+/** Filas listas para drenar, en el orden en que se crearon (`orden_secuencia`) — respeta el
+ *  backoff: una fila con `next_retry_at` en el futuro no se incluye todavía. El botón manual
+ *  "Sincronizar ahora" pasa `ignorarBackoff: true` para saltárselo por completo. */
+export async function pendientesParaDrenar(db: SQLiteDatabase, ignorarBackoff = false): Promise<ItemOutbox[]> {
+  const filas = await db.getAllAsync<any>(
+    "SELECT * FROM sync_outbox WHERE estado IN ('PENDING', 'ERROR') ORDER BY orden_secuencia ASC",
+  );
+  const candidatas = ignorarBackoff ? filas : filas.filter((f) => yaPuedeReintentar(f.next_retry_at));
+  return candidatas.map((f) => ({
+    localId: f.local_id,
+    entidad: f.entidad,
+    operacion: f.operacion,
+    entidadId: f.entidad_id,
+    idempotencyKey: f.idempotency_key,
+    sucursalId: f.sucursal_id,
+    dispositivoId: f.dispositivo_id,
+    usuarioId: f.usuario_id,
+    payload: JSON.parse(f.payload),
+    estado: f.estado,
+    intentos: f.intentos,
+    createdAt: f.created_at,
+  }));
+}
+
+export async function marcarSincronizado(db: SQLiteDatabase, localId: string): Promise<void> {
+  await db.runAsync("UPDATE sync_outbox SET estado = 'SYNCED', synced_at = ?, next_retry_at = NULL WHERE local_id = ?", new Date().toISOString(), localId);
+}
+
+export async function marcarError(db: SQLiteDatabase, localId: string, mensaje: string, intentosPrevios: number): Promise<void> {
+  const proximoReintento = calcularProximoReintentoIso(intentosPrevios);
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      "UPDATE sync_outbox SET estado = 'ERROR', ultimo_error = ?, intentos = intentos + 1, next_retry_at = ? WHERE local_id = ?",
+      mensaje, proximoReintento, localId,
+    );
+    await db.runAsync(
+      "INSERT INTO sync_error_log (id, outbox_local_id, entidad, mensaje, payload_snapshot, created_at) SELECT ?, local_id, entidad, ?, payload, ? FROM sync_outbox WHERE local_id = ?",
+      uuid7(), mensaje, new Date().toISOString(), localId,
+    );
+  });
+}
+
+export async function contarPendientes(db: SQLiteDatabase): Promise<number> {
+  const fila = await db.getFirstAsync<{ total: number }>("SELECT COUNT(*) as total FROM sync_outbox WHERE estado IN ('PENDING', 'ERROR')");
+  return fila?.total ?? 0;
 }

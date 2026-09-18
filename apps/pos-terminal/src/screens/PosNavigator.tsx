@@ -1,10 +1,13 @@
 import { useState } from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useAuthLocalStore } from "../store/authLocalStore";
+import { useSyncStatusStore, type EstadoSync } from "../store/syncStatusStore";
 import { usarColores } from "../store/temaStore";
+import { procesarCola } from "../sync/syncEngine";
 import { PosVentaScreen } from "./PosVentaScreen";
 import { PosCobroScreen } from "./PosCobroScreen";
 import { PosCajaScreen } from "./PosCajaScreen";
+import { ConexionErpScreen } from "./ConexionErpScreen";
 
 type Pantalla = "venta" | "cobro" | "caja";
 
@@ -13,12 +16,37 @@ const TABS: { id: Pantalla; etiqueta: string }[] = [
   { id: "caja", etiqueta: "Caja" },
 ];
 
+const ETIQUETA_SYNC: Record<EstadoSync, string> = {
+  SIN_CONEXION: "○ Sin conexión",
+  PENDIENTE: "◐ Pendiente de sincronizar",
+  SINCRONIZADO: "● Sincronizado",
+  ERROR: "✕ Error de sync",
+};
+
 export function PosNavigator() {
   const { usuario, salir } = useAuthLocalStore();
+  const sync = useSyncStatusStore();
   const colores = usarColores();
   const estilos = crearEstilos(colores);
   const [pantalla, setPantalla] = useState<Pantalla>("venta");
   const [ultimoFolio, setUltimoFolio] = useState<{ folio: number; total: number } | null>(null);
+  const [mostrarConexion, setMostrarConexion] = useState(false);
+
+  function tocarIndicadorSync() {
+    if (!sync.conectadoAlErp) {
+      setMostrarConexion(true);
+      return;
+    }
+    Alert.alert(
+      "Sincronización",
+      `${ETIQUETA_SYNC[sync.estado]}${sync.pendientes > 0 ? `\n${sync.pendientes} evento(s) pendiente(s)` : ""}${sync.ultimoError ? `\n\n${sync.ultimoError}` : ""}`,
+      [
+        { text: "Cerrar", style: "cancel" },
+        { text: "Sincronizar ahora", onPress: () => procesarCola(true) },
+        { text: "Configurar conexión", onPress: () => setMostrarConexion(true) },
+      ],
+    );
+  }
 
   function confirmarSalir() {
     Alert.alert("Cerrar sesión", "¿Seguro que quieres cerrar tu sesión?", [
@@ -32,13 +60,22 @@ export function PosNavigator() {
     setPantalla("venta");
   }
 
+  if (mostrarConexion) {
+    return <ConexionErpScreen onCerrar={() => setMostrarConexion(false)} onConectado={() => setMostrarConexion(false)} />;
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: colores.fondo }}>
       <View style={estilos.header}>
         <Text style={estilos.headerTitulo}>HANGAR 421 · {usuario?.nombre}</Text>
-        <TouchableOpacity onPress={confirmarSalir} style={estilos.botonHeader} accessibilityLabel="Cerrar sesión">
-          <Text style={estilos.botonHeaderTexto}>🚪</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <TouchableOpacity onPress={tocarIndicadorSync}>
+            <Text style={estilos.indicadorSync}>{ETIQUETA_SYNC[sync.estado]}{sync.pendientes > 0 ? ` (${sync.pendientes})` : ""}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={confirmarSalir} style={estilos.botonHeader} accessibilityLabel="Cerrar sesión">
+            <Text style={estilos.botonHeaderTexto}>🚪</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {ultimoFolio && (
@@ -71,6 +108,7 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
   return StyleSheet.create({
     header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 14, backgroundColor: colores.navy },
     headerTitulo: { color: colores.amber, fontWeight: "800", fontSize: 15 },
+    indicadorSync: { color: "#fff", fontSize: 11 },
     botonHeader: { width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
     botonHeaderTexto: { fontSize: 15 },
     avisoFolio: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: colores.green, padding: 10, paddingHorizontal: 16 },
