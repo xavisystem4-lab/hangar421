@@ -35,15 +35,13 @@ export function LoginScreen({ onConfigurarEstacion }: { onConfigurarEstacion?: (
   const [pin, setPin] = useState("");
   const [cargando, setCargando] = useState(false);
 
-  // Lista pública de personal activo (`/auth/usuarios-login`, sin autenticar — ver auth.service.ts):
-  // ya no se filtra a solo MESERO — desde que existe el modo "Punto de Venta" (ver
-  // SeleccionModoScreen.tsx), un CAJERO/SUPERVISOR/ADMIN_* también necesita poder elegir su
-  // nombre aquí para entrar. El usuario no necesita saber ni escribir su ID ni el de sucursal:
-  // elige su nombre en la lista y la sucursal viaja con el registro elegido, igual que antes.
+  // Lista pública de meseros activos (`/auth/usuarios-login`, sin autenticar — ver
+  // auth.service.ts, devuelve todos los roles). El usuario no necesita saber ni escribir su ID
+  // ni el de sucursal: elige su nombre en la lista y la sucursal viaja con el registro elegido.
   useEffect(() => {
     apiFetch<UsuarioLogin[]>("/auth/usuarios-login")
-      .then(setPersonal)
-      .catch((e) => setErrorPersonal(e.message ?? "No se pudo cargar la lista de personal"));
+      .then((lista) => setPersonal(lista.filter((u) => u.rol === "MESERO")))
+      .catch((e) => setErrorPersonal(e.message ?? "No se pudo cargar la lista de meseros"));
   }, []);
 
   function elegir(usuario: UsuarioLogin) {
@@ -79,7 +77,7 @@ export function LoginScreen({ onConfigurarEstacion }: { onConfigurarEstacion?: (
 
         {!personal && !errorPersonal && <ActivityIndicator color={colores.navyTexto} style={{ marginVertical: 16 }} />}
         {errorPersonal && <Text style={estilos.error}>{errorPersonal}</Text>}
-        {personal && personal.length === 0 && <Text style={estilos.ayuda}>No hay personal dado de alta todavía.</Text>}
+        {personal && personal.length === 0 && <Text style={estilos.ayuda}>No hay meseros dados de alta todavía.</Text>}
 
         {personal && personal.length > 0 && (
           <View style={estilos.grilla}>
