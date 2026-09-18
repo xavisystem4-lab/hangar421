@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { MetodoPago } from "@hangar421/shared";
 import { useCarritoStore } from "../store/carritoStore";
@@ -7,13 +7,15 @@ import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
 import { confirmarVenta } from "../db/ventasRepo";
 import { turnoAbierto } from "../db/turnosRepo";
+import { listarMetodosPago, etiquetaMetodoPago } from "../db/metodosPagoRepo";
 
-const METODOS: { valor: MetodoPago; etiqueta: string; icono: string }[] = [
-  { valor: MetodoPago.EFECTIVO, etiqueta: "Efectivo", icono: "💵" },
-  { valor: MetodoPago.TARJETA, etiqueta: "Tarjeta", icono: "💳" },
-  { valor: MetodoPago.TRANSFERENCIA, etiqueta: "Transferencia", icono: "🏦" },
-  { valor: MetodoPago.OTRO, etiqueta: "Otro", icono: "▦" },
-];
+const ICONO: Record<MetodoPago, string> = {
+  [MetodoPago.EFECTIVO]: "💵",
+  [MetodoPago.TARJETA]: "💳",
+  [MetodoPago.TRANSFERENCIA]: "🏦",
+  [MetodoPago.QR]: "▦",
+  [MetodoPago.OTRO]: "•",
+};
 
 const TECLAS = ["7", "8", "9", "4", "5", "6", "1", "2", "3", "0", ".", "borrar"];
 
@@ -29,11 +31,21 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
   const estilos = crearEstilos(colores);
   const t = totales();
 
+  const [metodos, setMetodos] = useState<{ valor: MetodoPago; etiqueta: string; icono: string }[]>([]);
   const [metodoActivo, setMetodoActivo] = useState<MetodoPago>(MetodoPago.EFECTIVO);
   const [pagos, setPagos] = useState<{ metodo: MetodoPago; monto: number }[]>([]);
   const [montoInput, setMontoInput] = useState("0");
   const [procesando, setProcesando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const db = await abrirBaseDeDatos();
+      const habilitados = await listarMetodosPago(db, true);
+      setMetodos(habilitados.map((m) => ({ valor: m.tipo, etiqueta: etiquetaMetodoPago[m.tipo], icono: ICONO[m.tipo] })));
+      if (habilitados[0]) setMetodoActivo(habilitados[0].tipo);
+    })();
+  }, []);
 
   const pagadoHasta = pagos.reduce((s, p) => s + p.monto, 0);
   const totalConTeclaActual = pagadoHasta + Number(montoInput || 0);
@@ -105,7 +117,7 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
 
         <Text style={estilos.subtitulo}>Método de pago</Text>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-          {METODOS.map((m) => (
+          {metodos.map((m) => (
             <TouchableOpacity key={m.valor} onPress={() => elegirMetodo(m.valor)} style={[estilos.botonChip, metodoActivo === m.valor && estilos.botonChipActivo]}>
               <Text style={{ color: metodoActivo === m.valor ? "#fff" : colores.texto }}>{m.icono} {m.etiqueta}</Text>
             </TouchableOpacity>
@@ -116,7 +128,7 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
           <View style={{ marginTop: 12 }}>
             {pagos.map((p, i) => (
               <View key={i} style={estilos.filaTotal}>
-                <Text style={{ color: colores.texto }}>{METODOS.find((m) => m.valor === p.metodo)?.etiqueta ?? p.metodo}</Text>
+                <Text style={{ color: colores.texto }}>{metodos.find((m) => m.valor === p.metodo)?.etiqueta ?? p.metodo}</Text>
                 <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
                   <Text style={{ color: colores.texto }}>${p.monto.toFixed(2)}</Text>
                   <TouchableOpacity onPress={() => quitarPago(i)}><Text style={{ color: colores.red }}>🗑</Text></TouchableOpacity>
