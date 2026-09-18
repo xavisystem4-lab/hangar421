@@ -1,20 +1,29 @@
 import { useState } from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { RolUsuario } from "@hangar421/shared";
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { useSyncStatusStore, type EstadoSync } from "../store/syncStatusStore";
 import { usarColores } from "../store/temaStore";
 import { procesarCola } from "../sync/syncEngine";
+import { abrirBaseDeDatos } from "../db/database";
+import { listarTicketsPendientes } from "../db/ticketsRepo";
 import { PosVentaScreen } from "./PosVentaScreen";
 import { PosCobroScreen } from "./PosCobroScreen";
 import { PosCajaScreen } from "./PosCajaScreen";
 import { ConexionErpScreen } from "./ConexionErpScreen";
+import { PosAdminCatalogoScreen } from "./PosAdminCatalogoScreen";
+import { PosAdminReportesScreen } from "./PosAdminReportesScreen";
+import { ReciboEnPantallaScreen } from "./ReciboEnPantallaScreen";
 
-type Pantalla = "venta" | "cobro" | "caja";
+type Pantalla = "venta" | "cobro" | "caja" | "admin";
+type PantallaAdmin = "catalogo" | "reportes";
 
 const TABS: { id: Pantalla; etiqueta: string }[] = [
   { id: "venta", etiqueta: "Venta" },
   { id: "caja", etiqueta: "Caja" },
 ];
+
+const ROLES_ADMIN = new Set([RolUsuario.ADMIN_SUCURSAL, RolUsuario.ADMIN_CORPORATIVO]);
 
 const ETIQUETA_SYNC: Record<EstadoSync, string> = {
   SIN_CONEXION: "○ Sin conexión",
@@ -28,9 +37,14 @@ export function PosNavigator() {
   const sync = useSyncStatusStore();
   const colores = usarColores();
   const estilos = crearEstilos(colores);
+  const esAdmin = !!usuario && ROLES_ADMIN.has(usuario.rol as RolUsuario);
+  const tabs = esAdmin ? [...TABS, { id: "admin" as Pantalla, etiqueta: "Admin" }] : TABS;
+
   const [pantalla, setPantalla] = useState<Pantalla>("venta");
+  const [pantallaAdmin, setPantallaAdmin] = useState<PantallaAdmin>("catalogo");
   const [ultimoFolio, setUltimoFolio] = useState<{ folio: number; total: number } | null>(null);
   const [mostrarConexion, setMostrarConexion] = useState(false);
+  const [reciboPendiente, setReciboPendiente] = useState<string | null>(null);
 
   function tocarIndicadorSync() {
     if (!sync.conectadoAlErp) {
@@ -55,13 +69,22 @@ export function PosNavigator() {
     ]);
   }
 
-  function cobroConfirmado(folio: number, total: number) {
+  async function cobroConfirmado(ventaId: string, folio: number, total: number) {
     setUltimoFolio({ folio, total });
     setPantalla("venta");
+    // El ticket ya se intentó imprimir dentro de PosCobroScreen (best-effort, después de
+    // confirmar la venta) — si sigue pendiente, este es el respaldo en pantalla.
+    const db = await abrirBaseDeDatos();
+    const pendientes = await listarTicketsPendientes(db);
+    if (pendientes.some((p) => p.id === ventaId)) setReciboPendiente(ventaId);
   }
 
   if (mostrarConexion) {
     return <ConexionErpScreen onCerrar={() => setMostrarConexion(false)} onConectado={() => setMostrarConexion(false)} />;
+  }
+
+  if (reciboPendiente) {
+    return <ReciboEnPantallaScreen ventaId={reciboPendiente} onCerrar={() => setReciboPendiente(null)} />;
   }
 
   return (
@@ -89,11 +112,27 @@ export function PosNavigator() {
         {pantalla === "venta" && <PosVentaScreen onCobrar={() => setPantalla("cobro")} />}
         {pantalla === "cobro" && <PosCobroScreen onCerrar={() => setPantalla("venta")} onCobrado={cobroConfirmado} />}
         {pantalla === "caja" && <PosCajaScreen />}
+        {pantalla === "admin" && (
+          <View style={{ flex: 1 }}>
+            <View style={estilos.subTabs}>
+              <TouchableOpacity onPress={() => setPantallaAdmin("catalogo")} style={[estilos.subTab, pantallaAdmin === "catalogo" && estilos.subTabActivo]}>
+                <Text style={{ color: pantallaAdmin === "catalogo" ? "#fff" : colores.texto, fontWeight: "700" }}>Catálogo</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setPantallaAdmin("reportes")} style={[estilos.subTab, pantallaAdmin === "reportes" && estilos.subTabActivo]}>
+                <Text style={{ color: pantallaAdmin === "reportes" ? "#fff" : colores.texto, fontWeight: "700" }}>Reportes</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={{ flex: 1 }}>
+              {pantallaAdmin === "catalogo" && <PosAdminCatalogoScreen onCerrar={() => setPantalla("venta")} />}
+              {pantallaAdmin === "reportes" && <PosAdminReportesScreen onCerrar={() => setPantalla("venta")} />}
+            </View>
+          </View>
+        )}
       </View>
 
       {pantalla !== "cobro" && (
         <View style={estilos.tabBar}>
-          {TABS.map((tab) => (
+          {tabs.map((tab) => (
             <TouchableOpacity key={tab.id} onPress={() => setPantalla(tab.id)} style={[estilos.tabBoton, pantalla === tab.id && estilos.tabBotonActivo]}>
               <Text style={[estilos.tabTexto, pantalla === tab.id && estilos.tabTextoActivo]}>{tab.etiqueta}</Text>
             </TouchableOpacity>
@@ -114,6 +153,9 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     avisoFolio: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: colores.green, padding: 10, paddingHorizontal: 16 },
     avisoFolioTexto: { color: "#fff", fontWeight: "700", fontSize: 13 },
     avisoFolioCerrar: { color: "#fff", fontSize: 16 },
+    subTabs: { flexDirection: "row", gap: 8, padding: 12, backgroundColor: colores.superficie, borderBottomWidth: 1, borderBottomColor: colores.borde },
+    subTab: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, backgroundColor: colores.gray50 },
+    subTabActivo: { backgroundColor: colores.navy },
     tabBar: { flexDirection: "row", borderTopWidth: 1, borderTopColor: colores.borde, backgroundColor: colores.superficie },
     tabBoton: { flex: 1, paddingVertical: 12, alignItems: "center", minHeight: 56, justifyContent: "center" },
     tabBotonActivo: { borderTopWidth: 3, borderTopColor: colores.navy },

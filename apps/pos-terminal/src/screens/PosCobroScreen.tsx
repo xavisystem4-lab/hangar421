@@ -8,6 +8,7 @@ import { abrirBaseDeDatos } from "../db/database";
 import { confirmarVenta } from "../db/ventasRepo";
 import { turnoAbierto } from "../db/turnosRepo";
 import { listarMetodosPago, etiquetaMetodoPago } from "../db/metodosPagoRepo";
+import { imprimirTicket } from "../printing/imprimirTicket";
 
 const ICONO: Record<MetodoPago, string> = {
   [MetodoPago.EFECTIVO]: "💵",
@@ -24,7 +25,7 @@ const TECLAS = ["7", "8", "9", "4", "5", "6", "1", "2", "3", "0", ".", "borrar"]
  *  irrevocable en cuanto `confirmarVenta` resuelve: la transacción SQLite ya es atómica por sí
  *  sola. La impresión (Fase 2e) queda deliberadamente FUERA de esta pantalla — nunca bloquea ni
  *  puede hacer fallar una venta ya confirmada. */
-export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; onCobrado: (folio: number, total: number) => void }) {
+export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; onCobrado: (ventaId: string, folio: number, total: number) => void }) {
   const { items, totales, limpiar } = useCarritoStore();
   const { usuario } = useAuthLocalStore();
   const colores = usarColores();
@@ -88,7 +89,10 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
       if (!turno) throw new Error("No hay un turno de caja abierto — abre caja antes de cobrar.");
       const venta = await confirmarVenta(db, { items, pagos: pagosFinales, totales: t, turnoId: turno.id, usuarioId: usuario.id });
       limpiar();
-      onCobrado(venta.folioLocal, venta.total);
+      // La venta ya está confirmada e irrevocable en este punto — lo que pase con la impresión
+      // de aquí en adelante nunca la afecta (ver printing/imprimirTicket.ts).
+      await imprimirTicket(db, venta.id);
+      onCobrado(venta.id, venta.folioLocal, venta.total);
     } catch (e: any) {
       setError(e.message ?? "No se pudo procesar el cobro");
     } finally {

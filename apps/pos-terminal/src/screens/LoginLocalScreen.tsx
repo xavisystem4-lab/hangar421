@@ -21,6 +21,7 @@ export function LoginLocalScreen() {
   const [mostrarAlta, setMostrarAlta] = useState(false);
   const [nombreNuevo, setNombreNuevo] = useState("");
   const [pinNuevo, setPinNuevo] = useState("");
+  const [rolNuevo, setRolNuevo] = useState<RolUsuario>(RolUsuario.CAJERO);
   const [creando, setCreando] = useState(false);
 
   useEffect(() => {
@@ -44,9 +45,10 @@ export function LoginLocalScreen() {
     setCreando(true);
     try {
       const db = await abrirBaseDeDatos();
-      await crearUsuarioLocal(db, { nombre: nombreNuevo.trim(), rol: RolUsuario.CAJERO, pin: pinNuevo });
+      await crearUsuarioLocal(db, { nombre: nombreNuevo.trim(), rol: rolNuevo, pin: pinNuevo });
       setNombreNuevo("");
       setPinNuevo("");
+      setRolNuevo(RolUsuario.CAJERO);
       setMostrarAlta(false);
       await cargarUsuarios();
     } finally {
@@ -114,6 +116,14 @@ export function LoginLocalScreen() {
           <View style={estilos.panelAlta}>
             <TextInput placeholder="Nombre" placeholderTextColor={colores.textoSecundario} value={nombreNuevo} onChangeText={setNombreNuevo} style={estilos.input} />
             <TextInput placeholder="PIN (mínimo 4 dígitos)" placeholderTextColor={colores.textoSecundario} value={pinNuevo} onChangeText={setPinNuevo} secureTextEntry keyboardType="number-pad" style={estilos.input} />
+            <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+              <TouchableOpacity onPress={() => setRolNuevo(RolUsuario.CAJERO)} style={[estilos.chipRol, rolNuevo === RolUsuario.CAJERO && estilos.chipRolActivo]}>
+                <Text style={{ color: rolNuevo === RolUsuario.CAJERO ? "#fff" : colores.texto, fontSize: 13 }}>Cajero</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setRolNuevo(RolUsuario.ADMIN_SUCURSAL)} style={[estilos.chipRol, rolNuevo === RolUsuario.ADMIN_SUCURSAL && estilos.chipRolActivo]}>
+                <Text style={{ color: rolNuevo === RolUsuario.ADMIN_SUCURSAL ? "#fff" : colores.texto, fontSize: 13 }}>Admin</Text>
+              </TouchableOpacity>
+            </View>
             <TouchableOpacity onPress={crearUsuario} disabled={creando || !nombreNuevo.trim() || pinNuevo.length < 4} style={estilos.boton}>
               <Text style={estilos.botonTexto}>{creando ? "Creando…" : "Crear usuario"}</Text>
             </TouchableOpacity>
@@ -145,5 +155,7 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     enlaceAlta: { marginTop: 18, alignItems: "center" },
     enlaceAltaTexto: { color: colores.navyTexto, fontSize: 13, fontWeight: "600" },
     panelAlta: { marginTop: 14, borderTopWidth: 1, borderTopColor: colores.borde, paddingTop: 14 },
+    chipRol: { flex: 1, alignItems: "center", paddingVertical: 10, borderRadius: 10, backgroundColor: colores.gray50, borderWidth: 1, borderColor: colores.borde },
+    chipRolActivo: { backgroundColor: colores.navy, borderColor: colores.navy },
   });
 }
