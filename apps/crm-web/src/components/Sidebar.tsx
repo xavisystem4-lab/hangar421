@@ -37,7 +37,7 @@ export function Sidebar({ abierto, onCerrar }: { abierto: boolean; onCerrar: () 
       <div style={{ padding: "0 8px 20px" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo-light.png" alt="HANGAR 421" style={{ height: 24, width: "auto" }} />
-        <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>CRM</div>
+        <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>ERP</div>
       </div>
 
       <nav style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>

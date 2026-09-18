@@ -34,7 +34,7 @@ export default function LoginPage() {
       <form onSubmit={entrar} style={{ width: 380, textAlign: "center", background: "#ffffff", borderRadius: 14, padding: 32, boxShadow: "0 10px 40px rgba(0,0,0,0.35)" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.png" alt="HANGAR 421" style={{ height: 64, width: "auto", margin: "0 auto" }} />
-        <p style={{ color: "#6b7280", marginTop: 10 }}>CRM corporativo</p>
+        <p style={{ color: "#6b7280", marginTop: 10 }}>ERP corporativo</p>
 
         <input placeholder="Correo o usuario" value={email} onChange={(e) => setEmail(e.target.value)}
           style={{ width: "100%", padding: 12, marginTop: 16, borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", color: "#111318" }} />
