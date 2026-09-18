@@ -31,10 +31,11 @@ function crearServicio() {
   const pedidos = { crear: jest.fn(() => Promise.resolve({ id: "pedido-1" })) };
   const mesas = { cambiarEstado: jest.fn() };
   const inventario = { registrarMovimiento: jest.fn() };
-  const caja = { abrirTurno: jest.fn(), cerrarTurno: jest.fn() };
+  const caja = { abrirTurno: jest.fn(), cerrarTurno: jest.fn(), registrarMovimiento: jest.fn() };
+  const catalogo = { fijarPrecioSucursal: jest.fn(), fijarDisponibilidad: jest.fn() };
 
-  const service = new SyncService(prisma as any, pedidos as any, mesas as any, inventario as any, caja as any);
-  return { service, prisma, pedidos, mesas, inventario, caja, registros };
+  const service = new SyncService(prisma as any, pedidos as any, mesas as any, inventario as any, caja as any, catalogo as any);
+  return { service, prisma, pedidos, mesas, inventario, caja, catalogo, registros };
 }
 
 function envolverPedido(idempotencyKey: string) {
@@ -99,5 +100,38 @@ describe("SyncService.push — idempotencia", () => {
 
     expect(pedidos.crear).toHaveBeenCalledTimes(2);
     expect(segundo.resultados[0].estado).toBe(SyncStatus.SYNCED);
+  });
+
+  it("MOVIMIENTO_CAJA enruta a caja.registrarMovimiento (no a inventario, no a turno)", async () => {
+    const { service, caja } = crearServicio();
+    await service.push([{
+      id: "mov-1", entidad: SyncEntidad.MOVIMIENTO_CAJA, operacion: SyncOperacion.CREATE,
+      idempotencyKey: "dev-1-MOV-1", dispositivoId: "dev-1", sucursalId: "suc-1", usuarioId: "user-1",
+      createdAtLocal: new Date().toISOString(),
+      payload: { turnoId: "turno-1", tipo: "INGRESO", monto: 100, motivo: "fondo extra" },
+    } as any]);
+    expect(caja.registrarMovimiento).toHaveBeenCalledWith({ turnoId: "turno-1", tipo: "INGRESO", monto: 100, motivo: "fondo extra", usuarioId: "user-1" });
+  });
+
+  it("PRODUCTO_SUCURSAL con precio enruta a fijarPrecioSucursal", async () => {
+    const { service, catalogo } = crearServicio();
+    await service.push([{
+      id: "prod-1", entidad: SyncEntidad.PRODUCTO_SUCURSAL, operacion: SyncOperacion.UPDATE,
+      idempotencyKey: "dev-1-PROD-1", dispositivoId: "dev-1", sucursalId: "suc-1", usuarioId: "user-1",
+      createdAtLocal: new Date().toISOString(),
+      payload: { productoId: "p1", precio: 55, disponible: true },
+    } as any]);
+    expect(catalogo.fijarPrecioSucursal).toHaveBeenCalledWith("p1", "suc-1", 55, true);
+  });
+
+  it("PRODUCTO_SUCURSAL sin precio (solo disponibilidad) enruta a fijarDisponibilidad", async () => {
+    const { service, catalogo } = crearServicio();
+    await service.push([{
+      id: "prod-2", entidad: SyncEntidad.PRODUCTO_SUCURSAL, operacion: SyncOperacion.UPDATE,
+      idempotencyKey: "dev-1-PROD-2", dispositivoId: "dev-1", sucursalId: "suc-1", usuarioId: "user-1",
+      createdAtLocal: new Date().toISOString(),
+      payload: { productoId: "p1", disponible: false },
+    } as any]);
+    expect(catalogo.fijarDisponibilidad).toHaveBeenCalledWith("p1", "suc-1", false);
   });
 });

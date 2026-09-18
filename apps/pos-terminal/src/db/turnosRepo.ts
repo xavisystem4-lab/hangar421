@@ -57,17 +57,12 @@ export async function abrirTurno(db: SQLiteDatabase, datos: { usuarioId: string;
   return { id, usuarioId: datos.usuarioId, montoInicial: round2(datos.montoInicial), montoFinalDeclarado: null, estado: "ABIERTO", abiertoAt: ahora, cerradoAt: null };
 }
 
-/** NOTA (gap conocido, no de este archivo): `SyncEntidad` (packages/shared/src/enums/index.ts)
- *  y `sync.service.ts::enrutar()` (backend) todavía NO tienen una entidad para un movimiento de
- *  caja individual (ingreso/egreso) — solo `TURNO` (abrir/cerrar) y `MOVIMIENTO_INVENTARIO` (que
- *  es una cosa completamente distinta: descuenta insumos, no dinero; usarla aquí enrutaría este
- *  movimiento contra `InventarioService.registrarMovimiento()` con un payload que no le
- *  corresponde). Por eso el movimiento se persiste local pero SIN encolar todavía un evento de
- *  sync — se resuelve en Fase 2a, cuando de verdad se conecte el motor de sync, agregando
- *  `SyncEntidad.MOVIMIENTO_CAJA` + su caso en `enrutar()` (cambio mínimo, ya hay precedente
- *  exacto a copiar en `TURNO`). El monto final declarado al cerrar el turno (`cerrarTurno`,
- *  abajo) sí es suficiente para que el corte de caja cuadre en el ERP aunque los movimientos
- *  individuales lleguen después. */
+/** Un solo movimiento (ingreso/egreso) dentro de un turno ya abierto — distinto de TURNO
+ *  (abrir/cerrar el turno completo). `SyncEntidad.MOVIMIENTO_CAJA` + su caso en
+ *  `sync.service.ts::enrutar()` ya existen (antes era un gap documentado, resuelto). Nota: el
+ *  backend (`CajaService.registrarMovimiento`) exige `motivo` no vacío — un movimiento sin
+ *  motivo se guarda local igual, pero al sincronizar queda en ERROR hasta que se le ponga uno
+ *  (visible en el indicador de sync, no se pierde ni se bloquea nada). */
 export async function registrarMovimientoCaja(
   db: SQLiteDatabase,
   datos: { turnoId: string; tipo: "INGRESO" | "EGRESO"; monto: number; motivo?: string; usuarioId: string },
@@ -75,11 +70,23 @@ export async function registrarMovimientoCaja(
   const id = uuid7();
   const ahora = new Date().toISOString();
   const idempotencyKey = uuid7();
+  const [sucursalId, dispositivoId] = await Promise.all([obtenerOCrearSucursalIdLocal(db), obtenerOCrearDispositivoId(db)]);
 
-  await db.runAsync(
-    "INSERT INTO movimientos_caja (id, turno_id, tipo, monto, motivo, created_at, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    id, datos.turnoId, datos.tipo, round2(datos.monto), datos.motivo ?? null, ahora, idempotencyKey,
-  );
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      "INSERT INTO movimientos_caja (id, turno_id, tipo, monto, motivo, created_at, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      id, datos.turnoId, datos.tipo, round2(datos.monto), datos.motivo ?? null, ahora, idempotencyKey,
+    );
+    await encolarSync(db, {
+      entidad: SyncEntidad.MOVIMIENTO_CAJA,
+      operacion: SyncOperacion.CREATE,
+      entidadId: id,
+      sucursalId,
+      dispositivoId,
+      usuarioId: datos.usuarioId,
+      payload: { turnoId: datos.turnoId, tipo: datos.tipo, monto: round2(datos.monto), motivo: datos.motivo },
+    });
+  });
 }
 
 export async function listarMovimientosCaja(db: SQLiteDatabase, turnoId: string): Promise<MovimientoCajaLocal[]> {

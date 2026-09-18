@@ -41,6 +41,7 @@ enum TipoDispositivo {
   TABLET_MESERO
   CELULAR_MESERO
   PANTALLA_COCINA
+  POS_TERMINAL
   OTRO
 }
 

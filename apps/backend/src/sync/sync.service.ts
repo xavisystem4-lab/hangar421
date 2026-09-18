@@ -16,6 +16,7 @@ import { PedidosService } from "../pedidos/pedidos.service";
 import { MesasService } from "../mesas/mesas.service";
 import { InventarioService } from "../inventario/inventario.service";
 import { CajaService } from "../caja/caja.service";
+import { CatalogoService } from "../catalogo/catalogo.service";
 
 @Injectable()
 export class SyncService {
@@ -27,6 +28,7 @@ export class SyncService {
     private mesas: MesasService,
     private inventario: InventarioService,
     private caja: CajaService,
+    private catalogo: CatalogoService,
   ) {}
 
   /** Aplica un lote de operaciones offline. Idempotente: reenviar el mismo lote
@@ -170,6 +172,29 @@ export class SyncService {
           await this.caja.abrirTurno({ sucursalId: item.sucursalId, cajaId: p.cajaId, usuarioId: item.usuarioId ?? p.usuarioId, montoInicial: p.montoInicial });
         } else {
           await this.caja.cerrarTurno(p.turnoId, p.montoFinalDeclarado);
+        }
+        break;
+
+      // Ingreso/egreso individual dentro de un turno ya abierto (distinto de TURNO, que es
+      // abrir/cerrar el turno completo) — usado por apps/pos-terminal (ver turnosRepo.ts).
+      case SyncEntidad.MOVIMIENTO_CAJA:
+        await this.caja.registrarMovimiento({
+          turnoId: p.turnoId,
+          tipo: p.tipo,
+          monto: p.monto,
+          motivo: p.motivo,
+          usuarioId: item.usuarioId ?? p.usuarioId,
+        });
+        break;
+
+      // Cambio de precio/disponibilidad por sucursal (no crea un Producto nuevo — eso sigue sin
+      // ruta de sync, ver apps/pos-terminal/src/db/catalogoAdminRepo.ts). `p.precio` presente ⇒
+      // vino de editar el precio; si no, es solo un toggle de disponibilidad.
+      case SyncEntidad.PRODUCTO_SUCURSAL:
+        if (p.precio != null) {
+          await this.catalogo.fijarPrecioSucursal(p.productoId, item.sucursalId, p.precio, p.disponible ?? true);
+        } else {
+          await this.catalogo.fijarDisponibilidad(p.productoId, item.sucursalId, p.disponible);
         }
         break;
     }

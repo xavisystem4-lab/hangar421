@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { RolUsuario, type JwtPayload, type LoginResponse } from "@hangar421/shared";
+import { RolUsuario, TipoDispositivo, type JwtPayload, type LoginResponse } from "@hangar421/shared";
 import { erpFetch, guardarTokensErp } from "../api/erpHttp";
 import { decodificarJwt } from "../auth/jwt";
 import { abrirBaseDeDatos } from "../db/database";
@@ -88,11 +88,7 @@ export function ConexionErpScreen({ onConectado, onCerrar }: { onConectado: () =
       const datosFiscales = await obtenerDatosFiscales(db);
       await erpFetch(`/sucursales/${nueva.id}/dispositivos`, {
         method: "POST",
-        // "OTRO" — TipoDispositivo (packages/shared) todavía no tiene un valor propio para
-        // "terminal de Punto de Venta standalone"; se documenta aquí en vez de forzar uno de los
-        // existentes (POS_WINDOWS/TABLET_MESERO/CELULAR_MESERO/PANTALLA_COCINA) que describen
-        // otra cosa. Agregar TipoDispositivo.POS_TERMINAL es un cambio mínimo para más adelante.
-        body: JSON.stringify({ nombre: datosFiscales.nombreSucursalLocal || "Punto de Venta", tipo: "OTRO", identificador: dispositivoId }),
+        body: JSON.stringify({ nombre: datosFiscales.nombreSucursalLocal || "Punto de Venta", tipo: TipoDispositivo.POS_TERMINAL, identificador: dispositivoId }),
       }).catch(() => undefined); // el registro es informativo — no bloquea la conexión si falla
 
       await finalizarConexion(nueva.id, sesion.empresaId);

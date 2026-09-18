@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
+import { useAuthLocalStore } from "../store/authLocalStore";
 import { abrirBaseDeDatos } from "../db/database";
 import { listarCategorias, listarProductos, type CategoriaLocal, type ProductoLocal } from "../db/catalogoRepo";
 import {
@@ -13,12 +14,13 @@ import {
   contarCambiosSoloLocales,
 } from "../db/catalogoAdminRepo";
 
-/** Administración de catálogo — 100% local (ver catalogoAdminRepo.ts: todavía no hay ruta de
- *  sync para push de catálogo, es un gap de backend documentado, no de esta pantalla). Sirve
- *  igual para dar de alta productos en un dispositivo que nunca se conecta al ERP. */
+/** Administración de catálogo — crear productos/categorías nuevos es local-only (ver
+ *  catalogoAdminRepo.ts: sin ruta de sync para altas completas, gap de backend documentado);
+ *  editar precio/disponibilidad de un producto YA sincronizado sí sale por sync. */
 export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
   const colores = usarColores();
   const estilos = crearEstilos(colores);
+  const { usuario } = useAuthLocalStore();
   const [categorias, setCategorias] = useState<CategoriaLocal[]>([]);
   const [productos, setProductos] = useState<ProductoLocal[]>([]);
   const [cambiosLocales, setCambiosLocales] = useState(0);
@@ -78,16 +80,17 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
   }
 
   async function guardarProducto(id: string) {
-    if (!productoBorrador.nombre.trim()) return;
+    if (!productoBorrador.nombre.trim() || !usuario) return;
     const db = await abrirBaseDeDatos();
-    await editarProducto(db, id, { nombre: productoBorrador.nombre.trim(), precioBase: Number(productoBorrador.precio) || 0 });
+    await editarProducto(db, id, { nombre: productoBorrador.nombre.trim(), precioBase: Number(productoBorrador.precio) || 0 }, usuario.id);
     setProductoEditando(null);
     cargar();
   }
 
   async function alternarDisponibilidad(p: ProductoLocal) {
+    if (!usuario) return;
     const db = await abrirBaseDeDatos();
-    await alternarDisponibilidadProducto(db, p.id, !p.activo);
+    await alternarDisponibilidadProducto(db, p.id, !p.activo, usuario.id);
     cargar();
   }
 
@@ -99,7 +102,7 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
       </View>
 
       {cambiosLocales > 0 && (
-        <Text style={estilos.avisoLocal}>⚠ {cambiosLocales} cambio(s) solo en este dispositivo — el envío de catálogo al ERP todavía no existe, ver nota en catalogoAdminRepo.ts.</Text>
+        <Text style={estilos.avisoLocal}>⚠ {cambiosLocales} cambio(s) sin confirmar del ERP: los productos nuevos creados aquí se quedan solo en este dispositivo; los cambios de precio/disponibilidad de productos ya sincronizados sí se envían al conectar.</Text>
       )}
 
       {categorias.map((cat) => (

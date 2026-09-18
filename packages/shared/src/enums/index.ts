@@ -25,6 +25,9 @@ export enum TipoDispositivo {
   TABLET_MESERO = "TABLET_MESERO",
   CELULAR_MESERO = "CELULAR_MESERO",
   PANTALLA_COCINA = "PANTALLA_COCINA",
+  /** Terminal Punto de Venta standalone (apps/pos-terminal) — offline-first, base de datos
+   *  local propia, distinto de POS_WINDOWS (ese es el Electron con Postgres embebido). */
+  POS_TERMINAL = "POS_TERMINAL",
   OTRO = "OTRO",
 }
 
@@ -200,6 +203,9 @@ export enum SyncEntidad {
   DESCUENTO = "DESCUENTO",
   MESA = "MESA",
   TURNO = "TURNO",
+  /** Ingreso/egreso individual dentro de un turno ya abierto — distinto de TURNO (que es
+   *  abrir/cerrar el turno completo). Usado por apps/pos-terminal. */
+  MOVIMIENTO_CAJA = "MOVIMIENTO_CAJA",
   MOVIMIENTO_INVENTARIO = "MOVIMIENTO_INVENTARIO",
   PRODUCTO_SUCURSAL = "PRODUCTO_SUCURSAL",
   INVENTARIO_SUCURSAL = "INVENTARIO_SUCURSAL",
