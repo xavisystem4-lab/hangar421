@@ -13,10 +13,11 @@ import { PosCajaScreen } from "./PosCajaScreen";
 import { ConexionErpScreen } from "./ConexionErpScreen";
 import { PosAdminCatalogoScreen } from "./PosAdminCatalogoScreen";
 import { PosAdminReportesScreen } from "./PosAdminReportesScreen";
+import { PosAdminUsuariosScreen } from "./PosAdminUsuariosScreen";
 import { ReciboEnPantallaScreen } from "./ReciboEnPantallaScreen";
 
 type Pantalla = "venta" | "cobro" | "caja" | "admin";
-type PantallaAdmin = "catalogo" | "reportes";
+type PantallaAdmin = "catalogo" | "reportes" | "usuarios";
 
 const TABS: { id: Pantalla; etiqueta: string }[] = [
   { id: "venta", etiqueta: "Venta" },
@@ -121,10 +122,14 @@ export function PosNavigator() {
               <TouchableOpacity onPress={() => setPantallaAdmin("reportes")} style={[estilos.subTab, pantallaAdmin === "reportes" && estilos.subTabActivo]}>
                 <Text style={{ color: pantallaAdmin === "reportes" ? "#fff" : colores.texto, fontWeight: "700" }}>Reportes</Text>
               </TouchableOpacity>
+              <TouchableOpacity onPress={() => setPantallaAdmin("usuarios")} style={[estilos.subTab, pantallaAdmin === "usuarios" && estilos.subTabActivo]}>
+                <Text style={{ color: pantallaAdmin === "usuarios" ? "#fff" : colores.texto, fontWeight: "700" }}>Usuarios</Text>
+              </TouchableOpacity>
             </View>
             <View style={{ flex: 1 }}>
               {pantallaAdmin === "catalogo" && <PosAdminCatalogoScreen onCerrar={() => setPantalla("venta")} />}
               {pantallaAdmin === "reportes" && <PosAdminReportesScreen onCerrar={() => setPantalla("venta")} />}
+              {pantallaAdmin === "usuarios" && <PosAdminUsuariosScreen onCerrar={() => setPantalla("venta")} />}
             </View>
           </View>
         )}

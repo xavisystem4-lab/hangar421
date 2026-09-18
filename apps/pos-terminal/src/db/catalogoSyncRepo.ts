@@ -4,10 +4,9 @@ interface CategoriaRemota { id: string; nombre: string; orden: number; activo: b
 interface ProductoRemoto { id: string; categoriaId: string; nombre: string; precioBase: number; precioSucursal?: number; activo: boolean; disponibleSucursal?: boolean }
 
 /** Reemplaza el catálogo local con lo que trae el ERP — mismas filas que ya leen
- *  catalogoRepo.listarCategorias/listarProductos, así que en cuanto esto corre una vez, la
- *  siembra de ejemplo (catalogoSeed.ts) deja de ser lo que ve PosVentaScreen. No se borra nada
- *  que no venga en la respuesta por accidente: se hace upsert por id, nunca DELETE masivo (un
- *  producto que el ERP dejó de mandar por un filtro raro no debe desaparecer de golpe del POS). */
+ *  catalogoRepo.listarCategorias/listarProductos. No se borra nada que no venga en la respuesta
+ *  por accidente: se hace upsert por id, nunca DELETE masivo (un producto que el ERP dejó de
+ *  mandar por un filtro raro no debe desaparecer de golpe del POS). */
 export async function upsertCatalogo(db: SQLiteDatabase, categorias: CategoriaRemota[], productos: ProductoRemoto[]): Promise<void> {
   const ahora = new Date().toISOString();
   await db.withTransactionAsync(async () => {

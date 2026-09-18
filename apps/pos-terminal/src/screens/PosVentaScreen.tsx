@@ -3,11 +3,12 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-nati
 import { useCarritoStore } from "../store/carritoStore";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
-import { sembrarCatalogoDemo } from "../db/catalogoSeed";
 import { listarCategorias, listarProductos, type CategoriaLocal, type ProductoLocal } from "../db/catalogoRepo";
 
-/** Catálogo + carrito — lee/escribe SQLite local, nunca la red (ver catalogoSeed.ts: en Fase 1
- *  el catálogo es de ejemplo; Fase 2a lo reemplaza por lo que traiga /sync/pull real). */
+/** Catálogo + carrito — lee/escribe SQLite local, nunca la red. Sin siembra de ejemplo: el
+ *  catálogo empieza vacío y se da de alta desde Admin → Catálogo (o llega real vía
+ *  refrescarCatalogo() si se conecta al ERP) — el negocio no tiene que borrar productos de
+ *  prueba antes de cargar los suyos. */
 export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
   const { items, agregarItem, quitarItem, cambiarCantidad, totales } = useCarritoStore();
   const colores = usarColores();
@@ -16,15 +17,16 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
   const [productos, setProductos] = useState<ProductoLocal[]>([]);
   const [categoriaActiva, setCategoriaActiva] = useState<string | null>(null);
 
+  async function cargar() {
+    const db = await abrirBaseDeDatos();
+    const [cats, prods] = await Promise.all([listarCategorias(db), listarProductos(db)]);
+    setCategorias(cats);
+    setProductos(prods);
+    if (cats[0] && !categoriaActiva) setCategoriaActiva(cats[0].id);
+  }
+
   useEffect(() => {
-    (async () => {
-      const db = await abrirBaseDeDatos();
-      await sembrarCatalogoDemo(db);
-      const [cats, prods] = await Promise.all([listarCategorias(db), listarProductos(db)]);
-      setCategorias(cats);
-      setProductos(prods);
-      if (cats[0]) setCategoriaActiva(cats[0].id);
-    })();
+    cargar();
   }, []);
 
   const t = totales();
@@ -41,19 +43,23 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
       </ScrollView>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 12 }}>
-        <View style={estilos.grillaProductos}>
-          {productosVisibles.map((p) => (
-            <TouchableOpacity
-              key={p.id}
-              style={estilos.tarjetaProducto}
-              onPress={() => agregarItem({ productoId: p.id, nombreProducto: p.nombre, cantidad: 1, precioUnitario: p.precioBase })}
-            >
-              <Text style={estilos.nombreProducto} numberOfLines={2}>{p.nombre}</Text>
-              <Text style={estilos.precioProducto}>${p.precioBase.toFixed(2)}</Text>
-            </TouchableOpacity>
-          ))}
-          {productosVisibles.length === 0 && <Text style={estilos.ayuda}>Sin productos en esta categoría.</Text>}
-        </View>
+        {categorias.length === 0 ? (
+          <Text style={estilos.ayuda}>Todavía no hay catálogo — da de alta tus productos desde Admin → Catálogo, o conecta con el ERP para traerlo.</Text>
+        ) : (
+          <View style={estilos.grillaProductos}>
+            {productosVisibles.map((p) => (
+              <TouchableOpacity
+                key={p.id}
+                style={estilos.tarjetaProducto}
+                onPress={() => agregarItem({ productoId: p.id, nombreProducto: p.nombre, cantidad: 1, precioUnitario: p.precioBase })}
+              >
+                <Text style={estilos.nombreProducto} numberOfLines={2}>{p.nombre}</Text>
+                <Text style={estilos.precioProducto}>${p.precioBase.toFixed(2)}</Text>
+              </TouchableOpacity>
+            ))}
+            {productosVisibles.length === 0 && <Text style={estilos.ayuda}>Sin productos en esta categoría.</Text>}
+          </View>
+        )}
       </ScrollView>
 
       <View style={estilos.carrito}>

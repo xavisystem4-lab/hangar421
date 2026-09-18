@@ -1,3 +1,4 @@
+import type { SQLiteDatabase } from "expo-sqlite";
 import type { SyncPullResponse } from "@hangar421/shared";
 import { abrirBaseDeDatos } from "../db/database";
 import { erpFetch, obtenerTokensErp } from "../api/erpHttp";
@@ -11,6 +12,10 @@ const CLAVE_CURSOR_PULL = "cursor_pull";
 export async function guardarEmpresaErp(empresaId: string): Promise<void> {
   const db = await abrirBaseDeDatos();
   await guardarConfig(db, CLAVE_EMPRESA_ERP, empresaId);
+}
+
+export async function obtenerEmpresaErp(db: SQLiteDatabase): Promise<string | null> {
+  return obtenerConfig(db, CLAVE_EMPRESA_ERP);
 }
 
 /** Trae el catálogo completo por los mismos endpoints REST que ya usan crm-web/pos-desktop
