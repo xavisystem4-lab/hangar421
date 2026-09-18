@@ -1,0 +1,100 @@
+name: Release POS Terminal APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-android-apk:
+    name: Build .apk (expo prebuild + gradle)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # Mismo motivo que release-waiter-apk.yml: los runners ubuntu-latest ya traen Android SDK
+      # preinstalado, Gradle lo detecta solo — no hace falta android-actions/setup-android@v3.
+
+      - name: Instalar dependencias (pos-terminal + shared)
+        run: npm install --workspace=apps/pos-terminal --workspace=packages/shared --no-audit --no-fund
+
+      # Mismo patrón de auto-incremento que release-waiter-apk.yml — cada .apk publicado lleva un
+      # número distinto siempre, sin depender de editar package.json/app.json a mano.
+      - name: Auto-incrementar versión (patch + versionCode)
+        id: version
+        working-directory: apps/pos-terminal
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            const app = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+            const partes = pkg.version.split('.').map(Number);
+            const nueva = partes[0] + '.' + partes[1] + '.' + (partes[2] + 1);
+            pkg.version = nueva;
+            app.expo.version = nueva;
+            app.expo.android.versionCode = (app.expo.android.versionCode || 1) + 1;
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+            fs.writeFileSync('app.json', JSON.stringify(app, null, 2) + '\n');
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'version=' + nueva + '\n');
+          "
+
+      - name: Confirmar el bump de versión en el repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add apps/pos-terminal/package.json apps/pos-terminal/app.json
+          git commit -m "chore(pos-terminal): bump versión a ${{ steps.version.outputs.version }} [skip ci]"
+          git push origin HEAD:main
+
+      - name: Generar el proyecto nativo de Android (expo prebuild)
+        working-directory: apps/pos-terminal
+        run: npx expo prebuild --platform android --non-interactive
+
+      # release, no debug — mismo motivo que release-waiter-apk.yml: un APK debug nunca empaqueta
+      # el JS, necesita Metro corriendo en una máquina de desarrollo. "release" sí lo embebe todo
+      # (JS + módulos nativos, incluido expo-sqlite), standalone, firmado con la keystore de
+      # depuración de Gradle por defecto.
+      - name: Compilar el .apk (release standalone, JS + módulos nativos embebidos)
+        working-directory: apps/pos-terminal/android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Renombrar el .apk con la versión
+        working-directory: apps/pos-terminal/android/app/build/outputs/apk/release
+        run: mv app-release.apk HANGAR-421-PuntoDeVenta-${{ steps.version.outputs.version }}.apk
+
+      - name: Publicar como GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: pos-terminal-v${{ steps.version.outputs.version }}
+          name: HANGAR 421 Punto de Venta v${{ steps.version.outputs.version }}
+          body: |
+            APK del Punto de Venta HANGAR 421 (offline-first, base de datos local propia —
+            compilado automáticamente vía GitHub Actions, `expo prebuild` + Gradle, build
+            **release** standalone: JS y módulos nativos embebidos, no necesita ninguna máquina
+            de desarrollo corriendo ni instalar nada aparte).
+
+            Firmado con la keystore de depuración de Gradle (válido para instalación directa
+            fuera de Play Store). App completamente independiente de HANGAR 421 Meseros —
+            distinto `applicationId` (`com.hangar421.pos`), pueden instalarse ambas en el mismo
+            dispositivo sin chocar.
+          files: apps/pos-terminal/android/app/build/outputs/apk/release/HANGAR-421-PuntoDeVenta-${{ steps.version.outputs.version }}.apk
+          draft: false
+          # IMPORTANTE: prerelease: true — mismo motivo documentado en release-waiter-apk.yml
+          # (incidente real del 2026-09-04): el POS Windows resuelve "la última versión" contra
+          # GET /releases/latest, que ignora de qué app es cada release. Marcar cada release de
+          # esta app como prerelease es lo único que evita que el auto-actualizador del POS
+          # Windows intente "actualizarse" hacia este APK.
+          prerelease: true

@@ -9,7 +9,8 @@
     "apps/pos-desktop",
     "apps/kitchen-display",
     "apps/crm-web",
-    "apps/waiter-mobile"
+    "apps/waiter-mobile",
+    "apps/pos-terminal"
   ],
   "scripts": {
     "postinstall": "npm run build:shared",
@@ -18,6 +19,7 @@
     "dev:kitchen": "npm run dev --workspace=apps/kitchen-display",
     "dev:crm": "npm run dev --workspace=apps/crm-web",
     "dev:waiter": "npm run start --workspace=apps/waiter-mobile",
+    "dev:pos-terminal": "npm run start --workspace=apps/pos-terminal",
     "db:migrate": "npm run db:migrate --workspace=apps/backend",
     "db:seed": "npm run db:seed --workspace=apps/backend",
     "build:shared": "npm run build --workspace=packages/shared",
@@ -25,7 +27,8 @@
     "build:pos": "npm run build --workspace=apps/pos-desktop",
     "build:pos:win": "npm run dist:win --workspace=apps/pos-desktop",
     "build:crm": "npm run build --workspace=apps/crm-web",
-    "build:waiter:apk": "npm run build:apk --workspace=apps/waiter-mobile"
+    "build:waiter:apk": "npm run build:apk --workspace=apps/waiter-mobile",
+    "build:pos-terminal:apk": "npm run build:apk --workspace=apps/pos-terminal"
   },
   "devDependencies": {
     "typescript": "^5.5.4"
