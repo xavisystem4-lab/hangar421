@@ -6,6 +6,14 @@ on:
 permissions:
   contents: write
 
+# Dos corridas a la vez se pisarían en el `git push origin HEAD:main` del bump de versión: la
+# segunda partiría del mismo número que la primera. `cancel-in-progress: false` a propósito —
+# encolar es lo correcto; abortar un build de release a mitad deja el APK sin publicar y el
+# número de versión ya consumido.
+concurrency:
+  group: release-pos-terminal
+  cancel-in-progress: false
+
 jobs:
   build-android-apk:
     name: Build .apk (expo prebuild + gradle)
@@ -29,6 +37,14 @@ jobs:
       - name: Instalar dependencias (pos-terminal + shared)
         run: npm install --workspace=apps/pos-terminal --workspace=packages/shared --no-audit --no-fund
 
+      # Este workflow publica un APK directo a los usuarios sin pasar por ci.yml, que solo corre
+      # en push. Sin esta validación, disparar el release desde un commit roto publica el APK
+      # roto igual. Va ANTES del bump de versión para fallar sin haber tocado ningún fichero.
+      - name: Validar antes de compilar (typecheck + pruebas)
+        run: |
+          npm run typecheck --workspace=apps/pos-terminal
+          npm test --workspace=apps/pos-terminal
+
       # Mismo patrón de auto-incremento que release-waiter-apk.yml — cada .apk publicado lleva un
       # número distinto siempre, sin depender de editar package.json/app.json a mano.
       - name: Auto-incrementar versión (patch + versionCode)
@@ -49,14 +65,6 @@ jobs:
             fs.appendFileSync(process.env.GITHUB_OUTPUT, 'version=' + nueva + '\n');
           "
 
-      - name: Confirmar el bump de versión en el repo
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add apps/pos-terminal/package.json apps/pos-terminal/app.json
-          git commit -m "chore(pos-terminal): bump versión a ${{ steps.version.outputs.version }} [skip ci]"
-          git push origin HEAD:main
-
       - name: Generar el proyecto nativo de Android (expo prebuild)
         working-directory: apps/pos-terminal
         run: npx expo prebuild --platform android --non-interactive
@@ -74,6 +82,26 @@ jobs:
       - name: Renombrar el .apk con la versión
         working-directory: apps/pos-terminal/android/app/build/outputs/apk/release
         run: mv app-release.apk HANGAR-421-PuntoDeVenta-${{ steps.version.outputs.version }}.apk
+
+      # DESPUÉS de compilar, no antes: si Gradle falla, `main` no debe quedarse con una versión
+      # que nunca se publicó (y que el siguiente intento ya no volvería a usar, quemando el
+      # número). El bump de los FICHEROS sí va antes — expo prebuild lee app.json para el
+      # versionCode del APK; lo que se mueve aquí es solo el commit.
+      #
+      # Y antes de publicar el release, no después: si el push se rechaza, es preferible quedarse
+      # sin release (se reintenta limpio con el mismo número) que publicar el tag v0.1.4 con
+      # `main` todavía en 0.1.3 — ahí el siguiente intento chocaría contra un tag existente.
+      #
+      # El push puede rechazarse si alguien empuja a main durante los ~7 min del build. Es raro
+      # (y `concurrency` ya descarta el choque entre dos releases); si pasa, el job falla de
+      # forma ruidosa y limpia, sin dejar nada a medias.
+      - name: Confirmar el bump de versión en el repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add apps/pos-terminal/package.json apps/pos-terminal/app.json
+          git commit -m "chore(pos-terminal): bump versión a ${{ steps.version.outputs.version }} [skip ci]"
+          git push origin HEAD:main
 
       - name: Publicar como GitHub Release
         uses: softprops/action-gh-release@v2

@@ -6,6 +6,12 @@ on:
 permissions:
   contents: write
 
+# Ver el mismo bloque en release-pos-terminal.yml: dos corridas a la vez se pisarían en el
+# `git push` del bump y partirían del mismo número de versión.
+concurrency:
+  group: release-waiter-apk
+  cancel-in-progress: false
+
 jobs:
   build-android-apk:
     name: Build .apk (expo prebuild + gradle)
@@ -32,6 +38,14 @@ jobs:
       - name: Instalar dependencias (waiter-mobile + shared)
         run: npm install --workspace=apps/waiter-mobile --workspace=packages/shared --no-audit --no-fund
 
+      # Este workflow publica un APK directo a los usuarios sin pasar por ci.yml, que solo corre
+      # en push. Sin esta validación, disparar el release desde un commit roto publica el APK
+      # roto igual. Va ANTES del bump de versión para fallar sin haber tocado ningún fichero.
+      # Solo typecheck: waiter-mobile no tiene script `test` (ver su package.json), a diferencia
+      # de pos-terminal.
+      - name: Validar antes de compilar (typecheck)
+        run: npm run typecheck --workspace=apps/waiter-mobile
+
       # Auto-incrementa versión (patch) y versionCode en cada corrida — así cada .apk que se
       # publica en GitHub Releases lleva un número distinto SIEMPRE, sin depender de que alguien
       # se acuerde de editar app.json/package.json a mano antes de disparar el workflow. Antes de
@@ -56,14 +70,6 @@ jobs:
             fs.appendFileSync(process.env.GITHUB_OUTPUT, 'version=' + nueva + '\n');
           "
 
-      - name: Confirmar el bump de versión en el repo
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add apps/waiter-mobile/package.json apps/waiter-mobile/app.json
-          git commit -m "chore(waiter-mobile): bump versión a ${{ steps.version.outputs.version }} [skip ci]"
-          git push origin HEAD:main
-
       - name: Generar el proyecto nativo de Android (expo prebuild)
         working-directory: apps/waiter-mobile
         run: npx expo prebuild --platform android --non-interactive
@@ -86,6 +92,18 @@ jobs:
       - name: Renombrar el .apk con la versión
         working-directory: apps/waiter-mobile/android/app/build/outputs/apk/release
         run: mv app-release.apk HANGAR-421-Meseros-${{ steps.version.outputs.version }}.apk
+
+      # DESPUÉS de compilar y ANTES de publicar — mismo razonamiento, comentado en detalle, que
+      # en release-pos-terminal.yml: si Gradle falla, `main` no debe quedarse con una versión que
+      # nunca se publicó; y si el push se rechaza, es preferible quedarse sin release que
+      # publicar un tag cuyo número `main` todavía no ha consumido.
+      - name: Confirmar el bump de versión en el repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add apps/waiter-mobile/package.json apps/waiter-mobile/app.json
+          git commit -m "chore(waiter-mobile): bump versión a ${{ steps.version.outputs.version }} [skip ci]"
+          git push origin HEAD:main
 
       - name: Publicar como GitHub Release
         uses: softprops/action-gh-release@v2
