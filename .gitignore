@@ -44,3 +44,7 @@ apps/crm-web/.next/
 # IDE
 .vscode/
 .idea/
+
+# Claude Code — configuración personal y artefactos de sesión (NO el CLAUDE.md, que sí se versiona)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
