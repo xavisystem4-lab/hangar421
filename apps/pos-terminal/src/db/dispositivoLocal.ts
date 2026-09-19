@@ -10,6 +10,9 @@ const CLAVE_SUCURSAL_PLACEHOLDER = "sucursal_id_local";
 // pero esas filas de sync_outbox no van a poder sincronizar hasta que el dispositivo se conecte
 // — es esperado, no un bug (ver "Sin conexión"/"Pendiente" en el indicador de 4 estados).
 const CLAVE_SUCURSAL_ERP = "sucursal_id_erp";
+/** Solo para mostrar: el indicador de sucursal activa en la cabecera. Se guarda porque la
+ *  cabecera se pinta sin conexión y el nombre solo llega en el login/switch. */
+const CLAVE_SUCURSAL_NOMBRE = "sucursal_nombre";
 
 export async function obtenerOCrearDispositivoId(db: SQLiteDatabase): Promise<string> {
   const existente = await obtenerConfig(db, CLAVE_DISPOSITIVO);
@@ -32,9 +35,15 @@ export async function obtenerOCrearSucursalIdLocal(db: SQLiteDatabase): Promise<
   return id;
 }
 
-/** Tablas locales cuyas filas pertenecen a UNA sucursal (migración 3). El orden no importa; se
- *  recorren juntas al repuntar el placeholder. */
-const TABLAS_POR_SUCURSAL = ["ventas", "turnos", "movimientos_caja", "usuarios_locales"] as const;
+/** Tablas locales cuyas filas pertenecen a UNA sucursal. El orden no importa; se recorren juntas
+ *  al repuntar el placeholder.
+ *
+ *  `sync_outbox` ya tenía `sucursal_id` desde la migración 1 (las otras cuatro lo ganaron en la
+ *  3), pero necesita el repunte igual o más: sus eventos pendientes viajan a `POST /sync/push`
+ *  con ese id, y SucursalAccessGuard rechaza con 403 cualquiera que no sea la sucursal activa
+ *  del token. Sin esto, TODA venta registrada antes de enlazar quedaría atascada para siempre
+ *  — que es justo lo contrario de lo que promete el modo offline. */
+const TABLAS_POR_SUCURSAL = ["ventas", "turnos", "movimientos_caja", "usuarios_locales", "sync_outbox"] as const;
 
 /** Enlaza el dispositivo a una sucursal real del ERP.
  *
@@ -47,11 +56,12 @@ const TABLAS_POR_SUCURSAL = ["ventas", "turnos", "movimientos_caja", "usuarios_l
  *  Todo en una transacción: o se mueve el marcador y los datos juntos, o no se mueve nada. El
  *  índice único (sucursal_id, folio_local) no puede chocar aquí porque el placeholder deja de
  *  existir tras el primer enlace — un segundo enlace ya no encuentra filas que mover. */
-export async function guardarSucursalErp(db: SQLiteDatabase, sucursalId: string): Promise<void> {
+export async function guardarSucursalErp(db: SQLiteDatabase, sucursalId: string, nombre?: string): Promise<void> {
   const placeholder = await obtenerConfig(db, CLAVE_SUCURSAL_PLACEHOLDER);
 
   await db.withTransactionAsync(async () => {
     await guardarConfig(db, CLAVE_SUCURSAL_ERP, sucursalId);
+    if (nombre) await guardarConfig(db, CLAVE_SUCURSAL_NOMBRE, nombre);
     if (placeholder && placeholder !== sucursalId) {
       for (const tabla of TABLAS_POR_SUCURSAL) {
         await db.runAsync(`UPDATE ${tabla} SET sucursal_id = ? WHERE sucursal_id = ?`, sucursalId, placeholder);
@@ -62,4 +72,9 @@ export async function guardarSucursalErp(db: SQLiteDatabase, sucursalId: string)
 
 export async function obtenerSucursalErp(db: SQLiteDatabase): Promise<string | null> {
   return obtenerConfig(db, CLAVE_SUCURSAL_ERP);
+}
+
+/** Nombre de la sucursal activa, o null si la terminal todavía no se ha enlazado al ERP. */
+export async function obtenerNombreSucursal(db: SQLiteDatabase): Promise<string | null> {
+  return obtenerConfig(db, CLAVE_SUCURSAL_NOMBRE);
 }

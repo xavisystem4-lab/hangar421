@@ -11,6 +11,31 @@ const CLAVE_REFRESH_TOKEN = "erp_refresh_token";
 // puede quedarse colgado mucho más de lo razonable sin resolver ni rechazar la promesa.
 const TIMEOUT_MS = 10_000;
 
+/** Error del ERP que conserva el cuerpo de la respuesta, no solo el mensaje.
+ *
+ *  Hace falta porque algunos errores llevan datos que el cliente necesita para recuperarse: el
+ *  400 `SUCURSAL_REQUERIDA` del login trae la lista de sucursales a las que el usuario puede
+ *  entrar, y es la ÚNICA forma de obtenerla — en ese punto todavía no hay token con el que
+ *  consultarla. Ver `AuthService.resolverSucursalActiva` en el backend.
+ *
+ *  Sigue siendo un Error normal, así que todo lo que ya hacía `catch (e) { e.message }` funciona
+ *  igual. */
+export class ErrorErp extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly cuerpo: any,
+  ) {
+    super(message);
+    this.name = "ErrorErp";
+  }
+
+  /** Código de negocio del backend (`codigo` en el cuerpo), si lo trae. */
+  get codigo(): string | undefined {
+    return this.cuerpo?.codigo;
+  }
+}
+
 export async function obtenerErpBaseUrl(): Promise<string> {
   const db = await abrirBaseDeDatos();
   const guardada = await obtenerConfig(db, CLAVE_BASE_URL);
@@ -66,7 +91,7 @@ export async function erpFetch<T>(path: string, options: RequestInit = {}, reint
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.message ?? `Error ${res.status}`);
+    throw new ErrorErp(body.message ?? `Error ${res.status}`, res.status, body);
   }
   if (res.status === 204) return undefined as T;
   return res.json();

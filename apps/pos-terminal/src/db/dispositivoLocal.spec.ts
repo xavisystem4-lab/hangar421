@@ -31,7 +31,9 @@ function repuntes(ejecutado: Ejecutado[]): Ejecutado[] {
   return ejecutado.filter((e) => /^UPDATE \w+ SET sucursal_id = \? WHERE sucursal_id = \?$/.test(e.sql.trim()));
 }
 
-const TABLAS = ["ventas", "turnos", "movimientos_caja", "usuarios_locales"];
+// sync_outbox incluido a propósito: sus eventos pendientes viajan con ese sucursal_id y
+// SucursalAccessGuard los rechazaría con 403 si se quedaran con el placeholder.
+const TABLAS = ["ventas", "turnos", "movimientos_caja", "usuarios_locales", "sync_outbox"];
 
 describe("guardarSucursalErp", () => {
   it("guarda el id de la sucursal del ERP", async () => {

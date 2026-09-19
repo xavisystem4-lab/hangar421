@@ -3,20 +3,19 @@ import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcryptjs";
 import * as crypto from "crypto";
-import { AuthUserContext, JwtPayload, LoginResponse, RolUsuario } from "@hangar421/shared";
+import { AccesoSucursal, AuthUserContext, JwtPayload, LoginResponse, RolUsuario, SucursalRequeridaError } from "@hangar421/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { LoginCredencialesDto, LoginPinDto } from "./dto/login.dto";
 
-interface AccesoSucursal {
-  sucursalId: string;
-  rol: RolUsuario;
-}
+/** Se incluye el nombre de la sucursal en todas las consultas que resuelven accesos: es lo que
+ *  el selector de sucursal necesita pintar (ver AccesoSucursal en @hangar421/shared). */
+const INCLUIR_SUCURSALES = { where: { activo: true }, include: { sucursal: { select: { nombre: true } } } } as const;
 
 /** Prisma genera su propio tipo `RolUsuario` (idéntico en valores al de `@hangar421/shared`,
  *  pero nominalmente distinto para TypeScript) — se normaliza aquí, en el único punto donde
  *  las filas de `usuarioSucursal` entran al servicio. */
-function mapearAccesos(rows: { sucursalId: string; rol: string }[]): AccesoSucursal[] {
-  return rows.map((r) => ({ sucursalId: r.sucursalId, rol: r.rol as RolUsuario }));
+function mapearAccesos(rows: { sucursalId: string; rol: string; sucursal?: { nombre: string } }[]): AccesoSucursal[] {
+  return rows.map((r) => ({ sucursalId: r.sucursalId, nombre: r.sucursal?.nombre ?? "", rol: r.rol as RolUsuario }));
 }
 
 @Injectable()
@@ -70,7 +69,7 @@ export class AuthService {
   async loginConCredenciales(dto: LoginCredencialesDto): Promise<LoginResponse> {
     const usuario = await this.prisma.usuario.findFirst({
       where: { OR: [{ email: dto.email }, { username: dto.email }] },
-      include: { sucursales: { where: { activo: true } } },
+      include: { sucursales: INCLUIR_SUCURSALES },
     });
     if (!usuario || !usuario.activo || usuario.eliminado || !usuario.passwordHash) {
       throw new UnauthorizedException("Credenciales inválidas");
@@ -114,7 +113,7 @@ export class AuthService {
   async loginConPin(dto: LoginPinDto): Promise<LoginResponse> {
     const usuarioSucursal = await this.prisma.usuarioSucursal.findUnique({
       where: { usuarioId_sucursalId: { usuarioId: dto.usuarioId, sucursalId: dto.sucursalId } },
-      include: { usuario: { include: { sucursales: { where: { activo: true } } } } },
+      include: { usuario: { include: { sucursales: INCLUIR_SUCURSALES } } },
     });
     if (!usuarioSucursal || !usuarioSucursal.activo) {
       throw new UnauthorizedException("Sin acceso a la sucursal");
@@ -156,7 +155,7 @@ export class AuthService {
 
     const usuario = await this.prisma.usuario.findUniqueOrThrow({
       where: { id: payload.sub },
-      include: { sucursales: { where: { activo: true } } },
+      include: { sucursales: INCLUIR_SUCURSALES },
     });
 
     return this.emitirSesion(
@@ -181,7 +180,7 @@ export class AuthService {
   async cambiarSucursalActiva(usuarioId: string, sucursalId: string, dispositivoId?: string): Promise<LoginResponse> {
     const usuario = await this.prisma.usuario.findUniqueOrThrow({
       where: { id: usuarioId },
-      include: { sucursales: { where: { activo: true } } },
+      include: { sucursales: INCLUIR_SUCURSALES },
     });
     const accesos = mapearAccesos(usuario.sucursales);
     const acceso = accesos.find((s) => s.sucursalId === sucursalId);
@@ -193,7 +192,7 @@ export class AuthService {
   // -- privados --------------------------------------------------------------
 
   private resolverSucursalActiva(
-    sucursales: { sucursalId: string; rol: RolUsuario }[],
+    sucursales: AccesoSucursal[],
     sucursalIdSolicitada?: string,
   ) {
     if (sucursales.length === 0) {
@@ -210,9 +209,20 @@ export class AuthService {
     if (comoCorporativo) return { sucursalId: comoCorporativo.sucursalId, rol: comoCorporativo.rol };
 
     if (sucursales.length > 1) {
-      throw new BadRequestException(
-        "El usuario tiene acceso a varias sucursales; especifica sucursalId",
-      );
+      // El error lleva la lista de sucursales. No es decorativo: aquí NO se emite ningún token,
+      // así que sin estos datos el cliente no tiene forma de consultar a qué sucursales puede
+      // entrar y el selector se vuelve inalcanzable — que es exactamente lo que le pasaba al
+      // APK, cuya pantalla de "elegir sucursal" nunca llegaba a mostrarse.
+      //
+      // Se prefiere esto a emitir un token sin sucursal activa: mantener el invariante "todo
+      // access token tiene una sucursal válida" es lo que permite que SucursalAccessGuard sea
+      // seguro de aplicar globalmente.
+      const cuerpo: SucursalRequeridaError = {
+        message: "El usuario tiene acceso a varias sucursales; especifica sucursalId",
+        codigo: "SUCURSAL_REQUERIDA",
+        sucursales,
+      };
+      throw new BadRequestException(cuerpo);
     }
     return { sucursalId: sucursales[0].sucursalId, rol: sucursales[0].rol };
   }
@@ -221,7 +231,7 @@ export class AuthService {
     usuarioId: string,
     empresaId: string,
     nombre: string,
-    sucursales: { sucursalId: string; rol: RolUsuario }[],
+    sucursales: AccesoSucursal[],
     sucursalId: string,
     rol: RolUsuario,
     dispositivoId?: string,
@@ -258,7 +268,7 @@ export class AuthService {
       id: usuarioId,
       nombre,
       empresaId,
-      sucursales: sucursales.map((s) => ({ sucursalId: s.sucursalId, rol: s.rol })),
+      sucursales,
     };
 
     return {

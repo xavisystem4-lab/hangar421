@@ -28,6 +28,7 @@ import { PlataformasModule } from "./plataformas/plataformas.module";
 
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { EmpresaScopeGuard } from "./common/guards/empresa-scope.guard";
+import { SucursalAccessGuard } from "./common/guards/sucursal-access.guard";
 import { RolesGuard } from "./common/guards/roles.guard";
 import { AllExceptionsFilter } from "./common/filters/http-exception.filter";
 import { AuditInterceptor } from "./common/interceptors/audit.interceptor";
@@ -64,6 +65,7 @@ import { AuditInterceptor } from "./common/interceptors/audit.interceptor";
     // roles — los tres globales; @Public() los sortea.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: EmpresaScopeGuard },
+    { provide: APP_GUARD, useClass: SucursalAccessGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

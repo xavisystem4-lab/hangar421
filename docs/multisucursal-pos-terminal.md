@@ -1,8 +1,8 @@
 # Multisucursal en el POS Android (pos-terminal) — análisis y propuesta
 
-> Estado: **pasos 0 y 2 implementados** (ver §7); el resto sigue siendo propuesta. Documenta el
-> análisis de la arquitectura actual y el plan recomendado. Complementa `architecture.md` (visión
-> general) y `sync-flows.md` (sincronización).
+> Estado: **pasos 0 a 4 implementados** (ver §7); quedan el 5 (reportes consolidados) y el 6
+> (módulo de compras y pantallas faltantes). Documenta el análisis de la arquitectura actual y el
+> plan seguido. Complementa `architecture.md` (visión general) y `sync-flows.md` (sincronización).
 
 ## 1. Resumen
 
@@ -26,7 +26,8 @@ seguir siendo lógico (`sucursalId` + guards), que es lo que el sistema ya hace.
 | `GET /sucursales?empresaId=` | `sucursales.controller.ts` | El endpoint que alimenta el selector de sucursal |
 | `UsuarioSucursal(usuarioId, sucursalId, rol, perfilId, permisosJson)` | `schema.prisma:359` | Rol y permisos **por sucursal**, no globales |
 | `JwtPayload.sucursalId` | `packages/shared/src/types/auth.ts:40` | La "sucursal activa" ya es un concepto del token |
-| `SucursalAccessGuard` | `common/guards/sucursal-access.guard.ts` | ⚠️ Escrito, pero **sin conectar** — ver §4.3 |
+| `SucursalAccessGuard` | `common/guards/sucursal-access.guard.ts` | Bloquea operar sobre otra sucursal; exime a `ADMIN_CORPORATIVO`. Estaba escrito pero **sin conectar** — ver §4.3 |
+| `POST /auth/switch-sucursal` | `auth.controller.ts` | Cambio de sucursal activa, revalidando contra `UsuarioSucursal` — ver §4.4 |
 | `ProductoSucursal` | `schema.prisma` | Catálogo central con precio y disponibilidad por sucursal |
 | `GET /reportes/dashboard?empresaId=&sucursalId?=` | `reportes.controller.ts:13` | `sucursalId` es opcional → el consolidado por empresa **ya funciona** |
 | Módulos de dominio | `apps/backend/src/` | `catalogo`, `inventario`, `caja`, `pedidos`, `clientes`, `proveedores`, `reportes`, `usuarios`, `perfiles`, `traspasos` |
@@ -65,7 +66,7 @@ aislamiento físico. No es el caso de dos sucursales de la misma empresa.
 
 ## 4. Huecos reales
 
-### 4.1 🔴 `empresaId` no se valida contra el token — fuga entre empresas
+### 4.1 🔴 ~~`empresaId` no se valida contra el token~~ — resuelto (paso 0)
 
 `GET /sucursales?empresaId=` y el resto de endpoints toman `empresaId` **del query string** y lo
 usan tal cual (`sucursales.service.ts:9`). Ningún guard lo compara con el `empresaId` del JWT:
@@ -87,7 +88,7 @@ Arreglo: un guard (o un decorador `@EmpresaScope()`) que tome `empresaId` del to
 o simplemente ignore — el del query. `ADMIN_CORPORATIVO` sigue pudiendo ver todas las sucursales
 *de su empresa*, no de otras.
 
-### 4.2 🔴 La base local del APK asume UNA sola sucursal
+### 4.2 🔴 ~~La base local del APK asume UNA sola sucursal~~ — resuelto (paso 2)
 
 Este es el hueco más grande del lado del cliente. De las 15 tablas locales
 (`pos-terminal/src/db/migrations.ts`), **solo `sync_outbox` lleva `sucursal_id`**. `ventas`,
@@ -102,29 +103,41 @@ Consecuencias si hoy se cambiara de sucursal sin tocar el esquema:
 - Los cortes de caja y turnos sumarían las dos sucursales.
 - Los usuarios locales (PIN offline) de una sucursal podrían abrir caja en la otra.
 
-### 4.3 🔴 `SucursalAccessGuard` no está conectado a nada
+### 4.3 🔴 ~~`SucursalAccessGuard` no está conectado a nada~~ — resuelto (paso 1)
 
-El guard que debía impedir operar sobre otra sucursal **existe pero no se usa**: no aparece en los
-`APP_GUARD` de `app.module.ts` ni en ningún `@UseGuards()` del proyecto. Es código muerto. Hoy,
-por tanto, no hay aislamiento por sucursal a nivel de API.
+El guard que debía impedir operar sobre otra sucursal **existía pero no se usaba**: no aparecía en
+los `APP_GUARD` de `app.module.ts` ni en ningún `@UseGuards()`. Era código muerto, así que no
+había aislamiento por sucursal a nivel de API.
 
-No se conecta en el paso 0 a propósito: el guard compara contra `user.sucursalId`, y el flujo
-actual de `ConexionErpScreen` permite iniciar sesión **sin** sucursal resuelta (cuenta con varias)
-y luego llamar a `/catalogo/productos?sucursalId=…` con ese token. Activarlo hoy rompería ese
-camino sin darle recambio. Su sitio natural es el paso 1, junto a `cambiar-sucursal`, que es lo
-que garantiza que todo token en circulación tenga una sucursal activa válida.
+No se conectó en el paso 0 a propósito: compara contra `user.sucursalId`, y mientras el login
+pudiera dejar sesiones sin sucursal resuelta, activarlo habría roto el enlace del APK sin
+recambio. Se conectó en el paso 1, una vez garantizado que **todo access token en circulación
+tiene una sucursal activa válida**.
 
-### 4.4 🟠 No existe forma de cambiar de sucursal de forma segura
+Una exención explícita, `@SucursalLibre()`, marca los endpoints que nombran por definición otra
+sucursal. Hoy solo `POST /auth/switch-sucursal`, que sin ella se bloquearía a sí mismo.
 
-`SucursalAccessGuard` lee `user.sucursalId` **del token**. Cambiar de sucursal por tanto no es un
-cambio de estado en el cliente: exige un token nuevo. No hay endpoint para eso; hoy la única vía
-es cerrar sesión y volver a entrar.
+### 4.4 🔴 La pantalla de elegir sucursal del APK era inalcanzable — resuelto (pasos 1 y 3)
 
-### 4.5 🟠 El APK guarda una sola sucursal y se pide escribiendo un UUID a mano
+`POST /auth/switch-sucursal` ya existía y validaba correctamente contra `UsuarioSucursal`. El
+problema estaba en cómo se llegaba a él:
 
-`dispositivoLocal.ts` guarda una única clave `sucursal_id_erp` en `config_local`. Y cuando la
-cuenta tiene varias sucursales, `ConexionErpScreen.tsx` pide **teclear el ID de la sucursal** —
-un UUID, a mano, en un teclado de celular. Es el sitio donde va el selector.
+- `resolverSucursalActiva` lanzaba **400** si la cuenta tenía varias sucursales y no se indicaba
+  cuál. Como en ese punto no se emite ningún token, el cliente no tenía forma de consultar la
+  lista: el selector era inalcanzable para toda cuenta no corporativa.
+- A un `ADMIN_CORPORATIVO` le asignaba **la primera sucursal en silencio**, sin preguntar. La
+  terminal quedaba ligada a una sucursal arbitraria.
+
+Arreglo: el 400 pasa a llevar la lista de sucursales (`codigo: "SUCURSAL_REQUERIDA"`), y los
+accesos incluyen el **nombre** de cada sucursal. Se prefirió esto a emitir un token sin sucursal
+activa, porque mantener ese invariante es lo que hace seguro aplicar `SucursalAccessGuard`
+globalmente.
+
+### 4.5 🟠 ~~El APK guarda una sola sucursal y se pide escribiendo un UUID a mano~~ — resuelto (paso 3)
+
+`ConexionErpScreen.tsx` pedía **teclear el UUID de la sucursal** a mano, en un teclado de celular.
+Ahora muestra un selector con los nombres y el rol en cada una, y `PosNavigator` lleva el
+indicador de sucursal activa en la cabecera, que se toca para cambiarla.
 
 ### 4.6 🟡 El APK no tiene pantallas para la mitad de las áreas pedidas
 
@@ -218,14 +231,14 @@ donde ese trabajo rinde más que replicado en el APK.
 | # | Entrega | Por qué en este punto |
 |---|---|---|
 | 0 | ✅ **Hecho** — Cerrar la fuga de `empresaId` (§4.1) | Es una vulnerabilidad abierta y la segunda sucursal la activa |
-| 1 | `mis-sucursales` + `cambiar-sucursal`, y conectar `SucursalAccessGuard` (§4.3) | Base de todo lo demás |
+| 1 | ✅ **Hecho** — `SucursalAccessGuard` conectado + login que devuelve las sucursales (§4.3, §4.4) | Base de todo lo demás |
 | 2 | ✅ **Hecho** — Migración `sucursal_id` en el APK | Antes de que existan datos de dos sucursales que ya no se puedan separar |
-| 3 | Selector de sucursal + indicador en cabecera | El requisito visible |
-| 4 | Acotar repos y sync | Cierra la separación de datos |
+| 3 | ✅ **Hecho** — Selector de sucursal + indicador en cabecera | Va con el paso 1: al conectar el guard, el campo de UUID a mano dejaba de funcionar y sin selector no había recambio |
+| 4 | ✅ **Hecho** (con el paso 2) — Acotar repos y sync | Cierra la separación de datos |
 | 5 | Reportes consolidados | Ya con datos correctamente separados |
 | 6 | Módulo de compras y pantallas faltantes | Desarrollo nuevo, sin bloquear lo anterior |
 
-Los pasos 0–4 son los que hacen que "los datos no se mezclen" sea cierto. El 5 y el 6 son
+Con los pasos 0–4 hechos, "los datos no se mezclan" ya es cierto. El 5 y el 6 son
 funcionalidad encima de esa base.
 
 ## 8. Compatibilidad

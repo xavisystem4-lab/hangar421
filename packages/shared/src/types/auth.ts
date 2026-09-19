@@ -26,11 +26,31 @@ export interface AuthTokens {
   expiresIn: number;
 }
 
+/** Una sucursal a la que el usuario tiene acceso, con el rol que tiene EN ELLA (viene de
+ *  `UsuarioSucursal`, no del usuario: el mismo empleado puede ser cajero en una y supervisor en
+ *  otra). Incluye el nombre porque es lo que se pinta en el selector de sucursal — un desplegable
+ *  de UUIDs no le sirve a nadie. */
+export interface AccesoSucursal {
+  sucursalId: string;
+  nombre: string;
+  rol: RolUsuario;
+}
+
 export interface AuthUserContext {
   id: string;
   nombre: string;
   empresaId: string;
-  sucursales: { sucursalId: string; rol: RolUsuario }[];
+  sucursales: AccesoSucursal[];
+}
+
+/** Cuerpo del 400 que devuelve el login cuando la cuenta tiene varias sucursales y no se indicó
+ *  cuál. Lleva la lista para que el cliente pueda mostrar el selector y reintentar con
+ *  `sucursalId` — sin esto no hay forma de elegir: no se emite ningún token, así que tampoco se
+ *  puede consultar la lista por otra vía. */
+export interface SucursalRequeridaError {
+  message: string;
+  codigo: "SUCURSAL_REQUERIDA";
+  sucursales: AccesoSucursal[];
 }
 
 export interface LoginResponse extends AuthTokens {

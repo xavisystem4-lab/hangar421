@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { RolUsuario } from "@hangar421/shared";
 import { useAuthLocalStore } from "../store/authLocalStore";
@@ -7,6 +7,7 @@ import { usarColores } from "../store/temaStore";
 import { procesarCola } from "../sync/syncEngine";
 import { abrirBaseDeDatos } from "../db/database";
 import { listarTicketsPendientes } from "../db/ticketsRepo";
+import { obtenerNombreSucursal } from "../db/dispositivoLocal";
 import { PosVentaScreen } from "./PosVentaScreen";
 import { PosCobroScreen } from "./PosCobroScreen";
 import { PosCajaScreen } from "./PosCajaScreen";
@@ -46,6 +47,18 @@ export function PosNavigator() {
   const [ultimoFolio, setUltimoFolio] = useState<{ folio: number; total: number } | null>(null);
   const [mostrarConexion, setMostrarConexion] = useState(false);
   const [reciboPendiente, setReciboPendiente] = useState<string | null>(null);
+  const [sucursalActiva, setSucursalActiva] = useState<string | null>(null);
+
+  // Indicador de sucursal activa: se recarga al volver de la pantalla de conexión, que es el
+  // único sitio donde puede cambiar. Se lee de la base local, no del ERP, para que siga
+  // visible sin conexión.
+  useEffect(() => {
+    if (mostrarConexion) return;
+    abrirBaseDeDatos()
+      .then(obtenerNombreSucursal)
+      .then(setSucursalActiva)
+      .catch(() => undefined);
+  }, [mostrarConexion]);
 
   function tocarIndicadorSync() {
     if (!sync.conectadoAlErp) {
@@ -91,7 +104,16 @@ export function PosNavigator() {
   return (
     <View style={{ flex: 1, backgroundColor: colores.fondo }}>
       <View style={estilos.header}>
-        <Text style={estilos.headerTitulo}>HANGAR 421 · {usuario?.nombre}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={estilos.headerTitulo} numberOfLines={1}>HANGAR 421 · {usuario?.nombre}</Text>
+          {/* Selector de sucursal activa: siempre visible, y tocarlo lleva a cambiarla. Si la
+              terminal no está enlazada lo dice, en vez de dejar el hueco en blanco. */}
+          <TouchableOpacity onPress={() => setMostrarConexion(true)} accessibilityLabel="Cambiar de sucursal">
+            <Text style={estilos.headerSucursal} numberOfLines={1}>
+              {sucursalActiva ? `🏪 ${sucursalActiva}` : "🏪 Sin sucursal enlazada"} ▾
+            </Text>
+          </TouchableOpacity>
+        </View>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
           <TouchableOpacity onPress={tocarIndicadorSync}>
             <Text style={estilos.indicadorSync}>{ETIQUETA_SYNC[sync.estado]}{sync.pendientes > 0 ? ` (${sync.pendientes})` : ""}</Text>
@@ -152,6 +174,7 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
   return StyleSheet.create({
     header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 14, backgroundColor: colores.navy },
     headerTitulo: { color: colores.amber, fontWeight: "800", fontSize: 15 },
+    headerSucursal: { color: "rgba(255,255,255,0.85)", fontSize: 12, marginTop: 2 },
     indicadorSync: { color: "#fff", fontSize: 11 },
     botonHeader: { width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
     botonHeaderTexto: { fontSize: 15 },

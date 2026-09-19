@@ -2,6 +2,7 @@ import { Body, Controller, Get, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
 import { Public } from "../common/decorators/public.decorator";
+import { SucursalLibre } from "../common/decorators/sucursal-libre.decorator";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { AuthService } from "./auth.service";
@@ -45,6 +46,7 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @SucursalLibre()
   @Post("switch-sucursal")
   switchSucursal(@CurrentUser() user: any, @Body() dto: SwitchSucursalDto) {
     return this.auth.cambiarSucursalActiva(user.sub, dto.sucursalId, user.dispositivoId);

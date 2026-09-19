@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { RolUsuario, TipoDispositivo, type JwtPayload, type LoginResponse } from "@hangar421/shared";
-import { erpFetch, guardarTokensErp, obtenerErpBaseUrl } from "../api/erpHttp";
+import { RolUsuario, TipoDispositivo, type AccesoSucursal, type JwtPayload, type LoginResponse } from "@hangar421/shared";
+import { ErrorErp, erpFetch, guardarTokensErp, obtenerErpBaseUrl } from "../api/erpHttp";
 import { decodificarJwt } from "../auth/jwt";
 import { abrirBaseDeDatos } from "../db/database";
 import { guardarSucursalErp, obtenerOCrearDispositivoId } from "../db/dispositivoLocal";
@@ -12,21 +12,34 @@ import { usarColores } from "../store/temaStore";
 interface SesionErp {
   empresaId: string;
   rol: RolUsuario | undefined;
-  sucursalIdResuelta: string | null;
+  /** Sucursales a las que este usuario puede entrar, con nombre — lo que pinta el selector. */
+  sucursales: AccesoSucursal[];
+  /** true si ya hay tokens válidos: se cambia de sucursal con switch-sucursal en vez de
+   *  reintentar el login (el caso de un ADMIN_CORPORATIVO, al que el backend le resuelve una
+   *  sucursal por defecto sin preguntar). */
+  conTokens: boolean;
 }
 
 /** Conexión opcional con el ERP — NUNCA se pide en el flujo de venta, solo aquí. Login real
- *  (email/contraseña, POST /auth/login, endpoint ya existente). Dos caminos después de entrar:
- *  (1) conectar a una sucursal EXISTENTE de la cuenta (la que resolvió el JWT, o una escrita a
- *  mano si la cuenta tiene varias), o (2) crear una sucursal NUEVA e independiente
- *  (POST /sucursales, requiere rol ADMIN_CORPORATIVO) — esto es lo que hace que el Punto de
- *  Venta se registre como su propia sucursal en el ERP, tal como pide el objetivo original. */
+ *  (email/contraseña, POST /auth/login). Si la cuenta tiene acceso a varias sucursales se
+ *  muestra un selector con sus NOMBRES; antes había que teclear el UUID de la sucursal a mano,
+ *  y para las cuentas no corporativas esa pantalla era además inalcanzable (el login fallaba
+ *  con 400 antes de llegar a ella).
+ *
+ *  Hay dos caminos para llegar al selector, según lo que haga el backend:
+ *   - Cuenta NO corporativa con varias sucursales: el login devuelve 400 SUCURSAL_REQUERIDA con
+ *     la lista. No hay tokens todavía, así que al elegir se repite el login con `sucursalId`.
+ *   - ADMIN_CORPORATIVO: el login sí entra y resuelve una sucursal por defecto. Se muestra igual
+ *     el selector (esa elección por defecto es arbitraria y esta terminal tiene que quedar
+ *     ligada a la sucursal correcta) y al elegir se usa POST /auth/switch-sucursal.
+ *
+ *  Además puede crear una sucursal NUEVA e independiente (POST /sucursales, solo
+ *  ADMIN_CORPORATIVO), que es lo que registra este Punto de Venta como su propia sucursal. */
 export function ConexionErpScreen({ onConectado, onCerrar }: { onConectado: () => void; onCerrar: () => void }) {
   const colores = usarColores();
   const estilos = crearEstilos(colores);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [sucursalIdManual, setSucursalIdManual] = useState("");
   const [conectando, setConectando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,16 +52,31 @@ export function ConexionErpScreen({ onConectado, onCerrar }: { onConectado: () =
     obtenerErpBaseUrl().then(setServidorErp);
   }, []);
 
-  async function finalizarConexion(sucursalId: string, empresaId: string) {
+  async function finalizarConexion(sucursalId: string, empresaId: string, nombre?: string) {
     const db = await abrirBaseDeDatos();
-    await guardarSucursalErp(db, sucursalId);
+    // Repunta a esta sucursal lo que se haya registrado antes de enlazar (ver dispositivoLocal).
+    await guardarSucursalErp(db, sucursalId, nombre);
     await guardarEmpresaErp(empresaId);
     await refrescarCatalogo().catch(() => undefined); // best-effort, no bloquea la conexión
     await ejecutarPull().catch(() => undefined);
     onConectado();
   }
 
-  async function entrar() {
+  /** Mensaje de error legible. Distingue explícitamente el fallo de red del de permisos: son dos
+   *  problemas distintos y el usuario actúa distinto ante cada uno (esperar/revisar el wifi vs.
+   *  pedirle acceso a un administrador). */
+  function describirError(e: any, porDefecto: string): string {
+    if (e instanceof ErrorErp) {
+      if (e.status === 401 || e.status === 403) return "Tu usuario no tiene acceso a esa sucursal. Pídeselo a un administrador.";
+      return e.message;
+    }
+    if (typeof e?.message === "string" && /network|timeout|Network request failed/i.test(e.message)) {
+      return "Sin conexión con el ERP. Revisa la red e inténtalo de nuevo — el Punto de Venta sigue funcionando sin esto.";
+    }
+    return e?.message ?? porDefecto;
+  }
+
+  async function entrar(sucursalId?: string) {
     if (!email.trim() || !password) return;
     setError(null);
     setConectando(true);
@@ -57,23 +85,51 @@ export function ConexionErpScreen({ onConectado, onCerrar }: { onConectado: () =
       const dispositivoId = await obtenerOCrearDispositivoId(db);
       const resp = await erpFetch<LoginResponse>("/auth/login", {
         method: "POST",
-        body: JSON.stringify({ email: email.trim(), password, dispositivoId, sucursalId: sucursalIdManual.trim() || undefined }),
+        body: JSON.stringify({ email: email.trim(), password, dispositivoId, sucursalId }),
       });
       await guardarTokensErp(resp.accessToken, resp.refreshToken);
       const payload = decodificarJwt<JwtPayload>(resp.accessToken);
+      const sucursales = resp.usuario.sucursales ?? [];
 
-      if (payload.sucursalId) {
-        // Ya hay una sucursal resuelta (única en la cuenta, o la que se escribió a mano) — se
-        // conecta directo a esa, sin pedir un paso extra.
-        await finalizarConexion(payload.sucursalId, resp.usuario.empresaId);
+      // Con una sola sucursal no hay nada que elegir; con varias, la que resolvió el backend es
+      // arbitraria y esta terminal debe quedar ligada a la correcta.
+      if (payload.sucursalId && (sucursalId || sucursales.length <= 1)) {
+        const activa = sucursales.find((s) => s.sucursalId === payload.sucursalId);
+        await finalizarConexion(payload.sucursalId, resp.usuario.empresaId, activa?.nombre);
         return;
       }
 
-      // Cuenta con varias sucursales y no se escribió ninguna a mano — se queda en esta pantalla
-      // para elegir: escribir el ID de una existente, o (si es ADMIN_CORPORATIVO) crear una nueva.
-      setSesion({ empresaId: resp.usuario.empresaId, rol: payload.rol, sucursalIdResuelta: null });
+      setSesion({ empresaId: resp.usuario.empresaId, rol: payload.rol, sucursales, conTokens: true });
     } catch (e: any) {
-      setError(e.message ?? "No se pudo conectar con el ERP");
+      // El backend no emite token cuando hay varias sucursales sin elegir, pero sí manda la
+      // lista en el error — es la única forma de poblar el selector en ese punto.
+      if (e instanceof ErrorErp && e.codigo === "SUCURSAL_REQUERIDA") {
+        setSesion({ empresaId: "", rol: undefined, sucursales: e.cuerpo?.sucursales ?? [], conTokens: false });
+        return;
+      }
+      setError(describirError(e, "No se pudo conectar con el ERP"));
+    } finally {
+      setConectando(false);
+    }
+  }
+
+  async function elegirSucursal(acceso: AccesoSucursal) {
+    setError(null);
+    // Sin tokens todavía: se repite el login indicando ya la sucursal.
+    if (!sesion?.conTokens) {
+      await entrar(acceso.sucursalId);
+      return;
+    }
+    setConectando(true);
+    try {
+      const resp = await erpFetch<LoginResponse>("/auth/switch-sucursal", {
+        method: "POST",
+        body: JSON.stringify({ sucursalId: acceso.sucursalId }),
+      });
+      await guardarTokensErp(resp.accessToken, resp.refreshToken);
+      await finalizarConexion(acceso.sucursalId, resp.usuario.empresaId, acceso.nombre);
+    } catch (e: any) {
+      setError(describirError(e, "No se pudo cambiar de sucursal"));
     } finally {
       setConectando(false);
     }
@@ -96,17 +152,15 @@ export function ConexionErpScreen({ onConectado, onCerrar }: { onConectado: () =
         body: JSON.stringify({ nombre: datosFiscales.nombreSucursalLocal || "Punto de Venta", tipo: TipoDispositivo.POS_TERMINAL, identificador: dispositivoId }),
       }).catch(() => undefined); // el registro es informativo — no bloquea la conexión si falla
 
-      await finalizarConexion(nueva.id, sesion.empresaId);
+      // La sucursal recién creada no está en la sesión actual: hay que reemitir el token para
+      // que quede como sucursal activa, o SucursalAccessGuard rechazaría todo lo que venga
+      // después (el catálogo, el pull, el drenado del outbox).
+      await elegirSucursal({ sucursalId: nueva.id, nombre: nombreSucursalNueva.trim(), rol: RolUsuario.ADMIN_CORPORATIVO });
     } catch (e: any) {
-      setError(e.message ?? "No se pudo crear la sucursal");
+      setError(describirError(e, "No se pudo crear la sucursal"));
     } finally {
       setConectando(false);
     }
-  }
-
-  async function conectarAExistenteManual() {
-    if (!sesion || !sucursalIdManual.trim()) return;
-    await finalizarConexion(sucursalIdManual.trim(), sesion.empresaId);
   }
 
   if (sesion) {
@@ -116,13 +170,24 @@ export function ConexionErpScreen({ onConectado, onCerrar }: { onConectado: () =
           <Text style={estilos.titulo}>Elegir sucursal</Text>
           <TouchableOpacity onPress={onCerrar}><Text style={estilos.cerrar}>✕</Text></TouchableOpacity>
         </View>
-        <Text style={estilos.ayuda}>Esta cuenta tiene acceso a más de una sucursal — elige a cuál conectar este dispositivo.</Text>
+        <Text style={estilos.ayuda}>
+          Esta terminal quedará ligada a la sucursal que elijas: sus ventas, su caja y sus usuarios
+          se guardan por separado de las demás.
+        </Text>
 
-        <Text style={estilos.subtitulo}>Conectar a una sucursal existente</Text>
-        <TextInput placeholder="ID de la sucursal" placeholderTextColor={colores.textoSecundario} value={sucursalIdManual} onChangeText={setSucursalIdManual} autoCapitalize="none" style={estilos.input} />
-        <TouchableOpacity onPress={conectarAExistenteManual} disabled={conectando || !sucursalIdManual.trim()} style={estilos.botonSecundario}>
-          <Text style={estilos.botonSecundarioTexto}>Enlazar</Text>
-        </TouchableOpacity>
+        {sesion.sucursales.length === 0 ? (
+          <Text style={estilos.ayuda}>Tu usuario no tiene ninguna sucursal asignada. Pídele a un administrador que te dé acceso.</Text>
+        ) : (
+          sesion.sucursales.map((s) => (
+            <TouchableOpacity key={s.sucursalId} onPress={() => elegirSucursal(s)} disabled={conectando} style={estilos.tarjetaSucursal}>
+              <View style={{ flex: 1 }}>
+                <Text style={estilos.nombreSucursal}>{s.nombre || s.sucursalId}</Text>
+                <Text style={estilos.rolSucursal}>{etiquetaRol(s.rol)}</Text>
+              </View>
+              <Text style={estilos.flecha}>›</Text>
+            </TouchableOpacity>
+          ))
+        )}
 
         {sesion.rol === RolUsuario.ADMIN_CORPORATIVO && (
           <>
@@ -157,16 +222,29 @@ export function ConexionErpScreen({ onConectado, onCerrar }: { onConectado: () =
 
       <TextInput placeholder="Correo" placeholderTextColor={colores.textoSecundario} value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" style={estilos.input} />
       <TextInput placeholder="Contraseña" placeholderTextColor={colores.textoSecundario} value={password} onChangeText={setPassword} secureTextEntry style={estilos.input} />
-      <TextInput placeholder="ID de sucursal (solo si ya sabes a cuál conectar)" placeholderTextColor={colores.textoSecundario} value={sucursalIdManual} onChangeText={setSucursalIdManual} autoCapitalize="none" style={estilos.input} />
 
       {error && <Text style={estilos.error}>{error}</Text>}
 
-      <TouchableOpacity onPress={entrar} disabled={conectando || !email.trim() || !password} style={estilos.boton}>
+      <TouchableOpacity onPress={() => entrar()} disabled={conectando || !email.trim() || !password} style={estilos.boton}>
         <Text style={estilos.botonTexto}>{conectando ? "Enlazando…" : "Enlazar"}</Text>
       </TouchableOpacity>
       <Text style={estilos.notaPersistencia}>Solo se pide una vez por dispositivo — después queda enlazado hasta que cierres la conexión.</Text>
     </ScrollView>
   );
+}
+
+/** El rol viene de UsuarioSucursal, así que es el rol EN ESA sucursal — se muestra junto al
+ *  nombre porque el mismo empleado puede entrar con permisos distintos a cada una. */
+function etiquetaRol(rol: RolUsuario): string {
+  const etiquetas: Record<string, string> = {
+    [RolUsuario.ADMIN_CORPORATIVO]: "Administrador corporativo",
+    [RolUsuario.ADMIN_SUCURSAL]: "Administrador de sucursal",
+    [RolUsuario.SUPERVISOR]: "Supervisor",
+    [RolUsuario.CAJERO]: "Cajero",
+    [RolUsuario.MESERO]: "Mesero",
+    [RolUsuario.COCINA]: "Cocina",
+  };
+  return etiquetas[rol] ?? rol;
 }
 
 function crearEstilos(colores: ReturnType<typeof usarColores>) {
@@ -181,10 +259,17 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     notaPersistencia: { fontSize: 12, color: colores.textoSecundario, textAlign: "center", marginTop: 10 },
     subtitulo: { fontSize: 15, fontWeight: "800", color: colores.texto, marginTop: 18, marginBottom: 8 },
     input: { borderWidth: 1, borderColor: colores.borde, borderRadius: 10, padding: 14, marginBottom: 10, fontSize: 15, color: colores.texto },
-    error: { color: colores.red, marginTop: 4, marginBottom: 4 },
+    error: { color: colores.red, marginTop: 8, marginBottom: 4 },
+    // minHeight 64: la fila entera es el área táctil, no solo el texto — se toca una vez y
+    // decide a qué sucursal queda ligada la terminal.
+    tarjetaSucursal: {
+      flexDirection: "row", alignItems: "center", backgroundColor: colores.superficie, borderRadius: 12,
+      borderWidth: 1, borderColor: colores.borde, padding: 16, marginBottom: 10, minHeight: 64,
+    },
+    nombreSucursal: { fontSize: 16, fontWeight: "700", color: colores.texto },
+    rolSucursal: { fontSize: 12, color: colores.textoSecundario, marginTop: 2 },
+    flecha: { fontSize: 22, color: colores.textoSecundario, marginLeft: 8 },
     boton: { backgroundColor: colores.green, borderRadius: 12, padding: 16, alignItems: "center", marginTop: 10, minHeight: 52, justifyContent: "center" },
     botonTexto: { color: "#fff", fontWeight: "700", fontSize: 16 },
-    botonSecundario: { backgroundColor: colores.navy, borderRadius: 12, padding: 14, alignItems: "center", minHeight: 48, justifyContent: "center" },
-    botonSecundarioTexto: { color: "#fff", fontWeight: "700" },
   });
 }
