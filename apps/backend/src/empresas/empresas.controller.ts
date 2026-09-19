@@ -13,15 +13,18 @@ import { EmpresasService } from "./empresas.service";
 export class EmpresasController {
   constructor(private empresas: EmpresasService) {}
 
-  @Get(":id")
-  obtener(@Param("id") id: string) {
+  // El parámetro se llama `empresaId` (no `id`) a propósito: así EmpresaScopeGuard lo reconoce
+  // y estas dos rutas quedan cubiertas sin lógica extra. La URL es la misma — el nombre del
+  // parámetro es interno y no cambia el patrón de ruta.
+  @Get(":empresaId")
+  obtener(@Param("empresaId") id: string) {
     return this.empresas.obtener(id);
   }
 
-  @Put(":id")
+  @Put(":empresaId")
   @Roles(RolUsuario.ADMIN_CORPORATIVO)
   @Audit("EMPRESA", "ACTUALIZAR")
-  actualizar(@Param("id") id: string, @Body() body: any) {
+  actualizar(@Param("empresaId") id: string, @Body() body: any) {
     return this.empresas.actualizar(id, body);
   }
 }

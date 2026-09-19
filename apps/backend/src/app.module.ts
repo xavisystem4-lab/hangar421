@@ -27,6 +27,7 @@ import { PagosModule } from "./pagos/pagos.module";
 import { PlataformasModule } from "./plataformas/plataformas.module";
 
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
+import { EmpresaScopeGuard } from "./common/guards/empresa-scope.guard";
 import { RolesGuard } from "./common/guards/roles.guard";
 import { AllExceptionsFilter } from "./common/filters/http-exception.filter";
 import { AuditInterceptor } from "./common/interceptors/audit.interceptor";
@@ -59,8 +60,10 @@ import { AuditInterceptor } from "./common/interceptors/audit.interceptor";
     PlataformasModule,
   ],
   providers: [
-    // Orden: JWT primero, luego roles — ambos globales; @Public() los sortea.
+    // Orden: JWT primero (deja la sesión en request.user), luego el alcance de empresa, luego
+    // roles — los tres globales; @Public() los sortea.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: EmpresaScopeGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
