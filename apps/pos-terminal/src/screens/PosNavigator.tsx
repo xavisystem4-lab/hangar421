@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { RolUsuario } from "@hangar421/shared";
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { useSyncStatusStore, type EstadoSync } from "../store/syncStatusStore";
@@ -15,10 +15,11 @@ import { ConexionErpScreen } from "./ConexionErpScreen";
 import { PosAdminCatalogoScreen } from "./PosAdminCatalogoScreen";
 import { PosAdminReportesScreen } from "./PosAdminReportesScreen";
 import { PosAdminUsuariosScreen } from "./PosAdminUsuariosScreen";
+import { PosAdminPagosScreen } from "./PosAdminPagosScreen";
 import { ReciboEnPantallaScreen } from "./ReciboEnPantallaScreen";
 
 type Pantalla = "venta" | "cobro" | "caja" | "admin";
-type PantallaAdmin = "catalogo" | "reportes" | "usuarios";
+type PantallaAdmin = "catalogo" | "reportes" | "usuarios" | "pagos";
 
 const TABS: { id: Pantalla; etiqueta: string }[] = [
   { id: "venta", etiqueta: "Venta" },
@@ -137,7 +138,8 @@ export function PosNavigator() {
         {pantalla === "caja" && <PosCajaScreen />}
         {pantalla === "admin" && (
           <View style={{ flex: 1 }}>
-            <View style={estilos.subTabs}>
+            {/* Horizontal: con cuatro pestañas ya no caben en el ancho de un celular. */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={estilos.subTabs} contentContainerStyle={{ gap: 8, paddingHorizontal: 12 }}>
               <TouchableOpacity onPress={() => setPantallaAdmin("catalogo")} style={[estilos.subTab, pantallaAdmin === "catalogo" && estilos.subTabActivo]}>
                 <Text style={{ color: pantallaAdmin === "catalogo" ? "#fff" : colores.texto, fontWeight: "700" }}>Catálogo</Text>
               </TouchableOpacity>
@@ -147,11 +149,15 @@ export function PosNavigator() {
               <TouchableOpacity onPress={() => setPantallaAdmin("usuarios")} style={[estilos.subTab, pantallaAdmin === "usuarios" && estilos.subTabActivo]}>
                 <Text style={{ color: pantallaAdmin === "usuarios" ? "#fff" : colores.texto, fontWeight: "700" }}>Usuarios</Text>
               </TouchableOpacity>
-            </View>
+              <TouchableOpacity onPress={() => setPantallaAdmin("pagos")} style={[estilos.subTab, pantallaAdmin === "pagos" && estilos.subTabActivo]}>
+                <Text style={{ color: pantallaAdmin === "pagos" ? "#fff" : colores.texto, fontWeight: "700" }}>Pagos</Text>
+              </TouchableOpacity>
+            </ScrollView>
             <View style={{ flex: 1 }}>
               {pantallaAdmin === "catalogo" && <PosAdminCatalogoScreen onCerrar={() => setPantalla("venta")} />}
               {pantallaAdmin === "reportes" && <PosAdminReportesScreen onCerrar={() => setPantalla("venta")} />}
               {pantallaAdmin === "usuarios" && <PosAdminUsuariosScreen onCerrar={() => setPantalla("venta")} />}
+              {pantallaAdmin === "pagos" && <PosAdminPagosScreen onCerrar={() => setPantalla("venta")} />}
             </View>
           </View>
         )}
@@ -181,7 +187,7 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     avisoFolio: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: colores.green, padding: 10, paddingHorizontal: 16 },
     avisoFolioTexto: { color: "#fff", fontWeight: "700", fontSize: 13 },
     avisoFolioCerrar: { color: "#fff", fontSize: 16 },
-    subTabs: { flexDirection: "row", gap: 8, padding: 12, backgroundColor: colores.superficie, borderBottomWidth: 1, borderBottomColor: colores.borde },
+    subTabs: { flexGrow: 0, paddingVertical: 12, backgroundColor: colores.superficie, borderBottomWidth: 1, borderBottomColor: colores.borde },
     subTab: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, backgroundColor: colores.gray50 },
     subTabActivo: { backgroundColor: colores.navy },
     tabBar: { flexDirection: "row", borderTopWidth: 1, borderTopColor: colores.borde, backgroundColor: colores.superficie },

@@ -273,6 +273,62 @@ export const MIGRACIONES: Migracion[] = [
       `);
     },
   },
+  {
+    version: 4,
+    nombre: "modificadores_de_producto",
+    up: async (db) => {
+      // Productos compuestos: un café pregunta tamaño, tipo de leche, jarabes… Mismo modelo que
+      // el backend (Modificador / OpcionModificador / ProductoModificador) y que ya consume el
+      // POS Windows, replicado en local para que el modal funcione sin conexión.
+      //
+      // `origen` igual que en el catálogo (migración 2): distingue lo sembrado en el dispositivo
+      // de lo que baja del ERP, que describe lo mismo con otros ids.
+      await db.execAsync(`
+        CREATE TABLE modificadores (
+          id TEXT PRIMARY KEY,
+          nombre TEXT NOT NULL,
+          tipo TEXT NOT NULL CHECK(tipo IN ('SELECCION_UNICA','MULTIPLE')),
+          obligatorio INTEGER NOT NULL DEFAULT 0,
+          activo INTEGER NOT NULL DEFAULT 1,
+          origen TEXT NOT NULL DEFAULT 'ERP',
+          synced_at TEXT
+        );
+
+        CREATE TABLE opciones_modificador (
+          id TEXT PRIMARY KEY,
+          modificador_id TEXT NOT NULL REFERENCES modificadores(id),
+          nombre TEXT NOT NULL,
+          precio_extra REAL NOT NULL DEFAULT 0,
+          orden INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX idx_opciones_modificador ON opciones_modificador(modificador_id);
+
+        -- Tabla puente: qué modificadores pregunta cada producto, y en qué orden.
+        CREATE TABLE producto_modificadores (
+          producto_id TEXT NOT NULL REFERENCES productos(id),
+          modificador_id TEXT NOT NULL REFERENCES modificadores(id),
+          orden INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (producto_id, modificador_id)
+        );
+
+        -- Si es 0, tocar la tarjeta agrega el producto directo al carrito, sin abrir el modal.
+        ALTER TABLE productos ADD COLUMN requiere_personalizacion INTEGER NOT NULL DEFAULT 0;
+
+        -- Lo elegido en cada línea de venta. Se guarda el NOMBRE y el precio además del id de la
+        -- opción: el ticket y el historial deben seguir leyéndose años después aunque el
+        -- modificador se renombre o se borre del catálogo — mismo criterio que
+        -- venta_items.nombre_snapshot.
+        CREATE TABLE venta_item_modificadores (
+          id TEXT PRIMARY KEY,
+          venta_item_id TEXT NOT NULL REFERENCES venta_items(id),
+          opcion_modificador_id TEXT NOT NULL,
+          nombre_snapshot TEXT NOT NULL,
+          precio_extra_snapshot REAL NOT NULL DEFAULT 0
+        );
+        CREATE INDEX idx_venta_item_modificadores_item ON venta_item_modificadores(venta_item_id);
+      `);
+    },
+  },
 ];
 
 /** Corre, en orden, toda migración con `version` mayor a la ya aplicada — cada una dentro de su

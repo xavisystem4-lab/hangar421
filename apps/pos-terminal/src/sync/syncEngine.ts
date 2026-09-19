@@ -3,23 +3,43 @@ import { abrirBaseDeDatos } from "../db/database";
 import { pendientesParaDrenar, marcarSincronizado, marcarError, contarPendientes } from "../db/outboxRepo";
 import { erpFetch, obtenerTokensErp } from "../api/erpHttp";
 import { useSyncStatusStore } from "../store/syncStatusStore";
+import { refrescarCatalogo, ejecutarPull } from "./pullEngine";
 
 // Más espaciado que los 8s de apps/waiter-mobile: ahí el destino es una Estación en la misma
 // red LAN; aquí es el ERP en la nube (Railway) — pollear cada 8s no aporta nada y sí gasta
 // batería/datos sin necesidad, ver plan Parte B "Sincronización".
 const INTERVALO_MS = 45_000;
 
+// El catálogo se traía SOLO al enlazar con el ERP (ConexionErpScreen), nunca más: un producto
+// nuevo o un cambio de precio hechos en el ERP no llegaban jamás a una terminal ya enlazada,
+// salvo reconectándola a mano. Se refresca en segundo plano, pero mucho más espaciado que el
+// drenado del outbox: el catálogo cambia unas pocas veces al mes, las ventas cada minuto.
+const INTERVALO_CATALOGO_MS = 15 * 60_000;
+
 let intervalo: ReturnType<typeof setInterval> | null = null;
+let intervaloCatalogo: ReturnType<typeof setInterval> | null = null;
+
+/** Refresco del catálogo, siempre best-effort: un fallo aquí no debe tocar el indicador de sync
+ *  ni, mucho menos, la pantalla de venta (ver el comentario de cabecera de erpHttp.ts). */
+async function refrescarCatalogoEnSegundoPlano(): Promise<void> {
+  await refrescarCatalogo().catch(() => undefined);
+  await ejecutarPull().catch(() => undefined);
+}
 
 export function iniciarSync() {
   if (intervalo) return;
   procesarCola();
   intervalo = setInterval(procesarCola, INTERVALO_MS);
+
+  refrescarCatalogoEnSegundoPlano();
+  intervaloCatalogo = setInterval(refrescarCatalogoEnSegundoPlano, INTERVALO_CATALOGO_MS);
 }
 
 export function detenerSync() {
   if (intervalo) clearInterval(intervalo);
   intervalo = null;
+  if (intervaloCatalogo) clearInterval(intervaloCatalogo);
+  intervaloCatalogo = null;
 }
 
 /** Drena sync_outbox hacia POST /sync/push, en el orden en que se encolaron (ver

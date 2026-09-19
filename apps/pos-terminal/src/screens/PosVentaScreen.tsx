@@ -4,7 +4,8 @@ import { useCarritoStore } from "../store/carritoStore";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
 import { coincideBusqueda } from "../db/busqueda";
-import { listarCategorias, listarProductos, type CategoriaLocal, type ProductoLocal } from "../db/catalogoRepo";
+import { listarCategorias, listarProductos, modificadoresDeProducto, type CategoriaLocal, type ModificadorLocal, type ProductoLocal } from "../db/catalogoRepo";
+import { ModalModificadores } from "../components/ModalModificadores";
 
 /** Catálogo + carrito — lee/escribe SQLite local, nunca la red. El catálogo de HANGAR 421 se
  *  siembra en la base local en el primer arranque (ver db/catalogoHangar.ts), así que la
@@ -19,6 +20,29 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
   const [productos, setProductos] = useState<ProductoLocal[]>([]);
   const [categoriaActiva, setCategoriaActiva] = useState<string | null>(null);
   const [busqueda, setBusqueda] = useState("");
+  const [personalizando, setPersonalizando] = useState<{ producto: ProductoLocal; modificadores: ModificadorLocal[] } | null>(null);
+
+  /** Un producto compuesto (café, combo) abre el modal; el resto entra directo al carrito, que
+   *  es lo que mantiene ágil el cobro en barra. Si el producto dice que se personaliza pero no
+   *  tiene modificadores cargados (catálogo a medio sincronizar), se agrega directo en vez de
+   *  abrir un modal vacío que bloquearía la venta. */
+  async function tocarProducto(producto: ProductoLocal) {
+    if (producto.requierePersonalizacion) {
+      const db = await abrirBaseDeDatos();
+      const modificadores = await modificadoresDeProducto(db, producto.id);
+      if (modificadores.length > 0) {
+        setPersonalizando({ producto, modificadores });
+        return;
+      }
+    }
+    agregarItem({
+      productoId: producto.id,
+      nombreProducto: producto.nombre,
+      cantidad: 1,
+      precioUnitario: producto.precioBase,
+      modificadores: [],
+    });
+  }
 
   async function cargar() {
     const db = await abrirBaseDeDatos();
@@ -121,11 +145,15 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
                   <TouchableOpacity
                     key={p.id}
                     style={estilos.tarjetaProducto}
-                    onPress={() => agregarItem({ productoId: p.id, nombreProducto: p.nombre, cantidad: 1, precioUnitario: p.precioBase })}
+                    onPress={() => tocarProducto(p)}
                   >
                     <Text style={estilos.nombreProducto} numberOfLines={2}>{p.nombre}</Text>
                     {contexto && <Text style={estilos.contextoProducto} numberOfLines={1}>{contexto}</Text>}
-                    <Text style={estilos.precioProducto}>${p.precioBase.toFixed(2)}</Text>
+                    <Text style={estilos.precioProducto}>
+                      ${p.precioBase.toFixed(2)}
+                      {/* Avisa de que el precio puede subir con lo que se elija en el modal. */}
+                      {p.requierePersonalizacion ? <Text style={estilos.marcaPersonaliza}>  ⚙</Text> : null}
+                    </Text>
                   </TouchableOpacity>
                 );
               })}
@@ -139,13 +167,26 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
         <ScrollView style={{ maxHeight: 160 }}>
           {items.map((item) => (
             <View key={item.id} style={estilos.filaItem}>
-              <Text style={{ color: colores.texto, flex: 1 }} numberOfLines={1}>{item.nombreProducto}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colores.texto }} numberOfLines={1}>{item.nombreProducto}</Text>
+                {/* Lo elegido en el modal, bajo el nombre: dos "Latte" con leches distintas
+                    tienen que distinguirse en el carrito antes de cobrar. */}
+                {item.modificadores.length > 0 && (
+                  <Text style={estilos.modificadoresItem} numberOfLines={2}>
+                    {item.modificadores.map((m) => m.nombreOpcion).join(" · ")}
+                  </Text>
+                )}
+                {item.notas ? <Text style={estilos.modificadoresItem} numberOfLines={1}>✎ {item.notas}</Text> : null}
+              </View>
               <View style={estilos.controlesCantidad}>
                 <TouchableOpacity onPress={() => cambiarCantidad(item.id, -1)} style={estilos.botonCantidad}><Text style={estilos.botonCantidadTexto}>−</Text></TouchableOpacity>
                 <Text style={{ color: colores.texto, width: 24, textAlign: "center" }}>{item.cantidad}</Text>
                 <TouchableOpacity onPress={() => cambiarCantidad(item.id, 1)} style={estilos.botonCantidad}><Text style={estilos.botonCantidadTexto}>+</Text></TouchableOpacity>
               </View>
-              <Text style={{ color: colores.texto, width: 70, textAlign: "right" }}>${(item.precioUnitario * item.cantidad).toFixed(2)}</Text>
+              {/* Incluye los extras: si no, la suma de las líneas no cuadraría con el total. */}
+              <Text style={{ color: colores.texto, width: 70, textAlign: "right" }}>
+                ${((item.precioUnitario + item.modificadores.reduce((s, m) => s + m.precioExtra, 0)) * item.cantidad).toFixed(2)}
+              </Text>
               <TouchableOpacity onPress={() => quitarItem(item.id)}><Text style={{ color: colores.red, marginLeft: 8 }}>🗑</Text></TouchableOpacity>
             </View>
           ))}
@@ -161,6 +202,25 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
           <Text style={estilos.botonCobrarTexto}>Cobrar ${t.total.toFixed(2)}</Text>
         </TouchableOpacity>
       </View>
+
+      {personalizando && (
+        <ModalModificadores
+          producto={personalizando.producto}
+          modificadores={personalizando.modificadores}
+          onCancelar={() => setPersonalizando(null)}
+          onConfirmar={(cantidad, seleccion, notas) => {
+            agregarItem({
+              productoId: personalizando.producto.id,
+              nombreProducto: personalizando.producto.nombre,
+              cantidad,
+              precioUnitario: personalizando.producto.precioBase,
+              notas: notas || undefined,
+              modificadores: seleccion,
+            });
+            setPersonalizando(null);
+          }}
+        />
+      )}
     </View>
   );
 }
@@ -186,6 +246,8 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     nombreProducto: { fontSize: 14, fontWeight: "700", color: colores.texto },
     contextoProducto: { fontSize: 11, color: colores.textoSecundario, marginTop: 2 },
     precioProducto: { fontSize: 15, fontWeight: "800", color: colores.navyTexto, marginTop: 6 },
+    marcaPersonaliza: { fontSize: 11, color: colores.textoSecundario, fontWeight: "600" },
+    modificadoresItem: { fontSize: 11, color: colores.textoSecundario, marginTop: 1 },
     ayuda: { color: colores.textoSecundario, fontSize: 13, padding: 8 },
     carrito: { backgroundColor: colores.superficie, borderTopWidth: 1, borderTopColor: colores.borde, padding: 12 },
     filaItem: { flexDirection: "row", alignItems: "center", paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colores.borde },

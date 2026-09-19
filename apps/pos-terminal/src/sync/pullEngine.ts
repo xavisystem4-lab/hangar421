@@ -37,7 +37,12 @@ export async function refrescarCatalogo(): Promise<void> {
   await upsertCatalogo(
     db,
     categorias.map((c) => ({ id: c.id, nombre: c.nombre, orden: c.orden, activo: c.activo })),
-    productos.map((p) => ({ id: p.id, categoriaId: p.categoriaId, nombre: p.nombre, subcategoria: p.subcategoria ?? null, orden: p.orden ?? 0, precioBase: Number(p.precioBase), precioSucursal: p.precioSucursal != null ? Number(p.precioSucursal) : undefined, activo: p.activo, disponibleSucursal: p.disponibleSucursal })),
+    productos.map((p) => ({
+      id: p.id, categoriaId: p.categoriaId, nombre: p.nombre, subcategoria: p.subcategoria ?? null, orden: p.orden ?? 0,
+      precioBase: Number(p.precioBase), precioSucursal: p.precioSucursal != null ? Number(p.precioSucursal) : undefined,
+      activo: p.activo, disponibleSucursal: p.disponibleSucursal,
+      requierePersonalizacion: p.requierePersonalizacion, modificadores: p.modificadores,
+    })),
   );
 }
 

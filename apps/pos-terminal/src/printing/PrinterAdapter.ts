@@ -2,6 +2,10 @@ export interface TicketItem {
   cantidad: number;
   nombre: string;
   precioTotal: number;
+  /** Lo elegido en el modal de personalización ("Grande", "Avena", "Vainilla"), ya en texto.
+   *  Va aparte del nombre para que la impresora pueda sangrarlo en una línea propia: en un
+   *  ticket de 32 caracteres, "Latte Grande Avena Vainilla" no cabe en una sola. */
+  modificadores?: string[];
 }
 
 export interface TicketPayload {

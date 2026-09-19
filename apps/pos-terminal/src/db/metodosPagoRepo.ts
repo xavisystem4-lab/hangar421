@@ -18,16 +18,22 @@ const ETIQUETA: Record<MetodoPago, string> = {
 
 export { ETIQUETA as etiquetaMetodoPago };
 
-/** Efectivo/Transferencia/Otro habilitados por defecto; Tarjeta y QR apagados hasta que el
- *  negocio los active a propósito (Tarjeta necesita una terminal física real, QR un proveedor
- *  configurado — ninguno de los dos tiene sentido "encendido" sin más en un alta nueva). */
+/** Efectivo, Tarjeta, Transferencia y Otro habilitados por defecto; QR apagado hasta que el
+ *  negocio configure un proveedor.
+ *
+ *  Tarjeta estaba apagada por asumir que necesitaba una terminal integrada. No es así: aquí
+ *  significa "el cliente pagó con tarjeta en la terminal del banco y lo registro en la venta",
+ *  que es como cobra la mayoría de las cafeterías y no requiere integración ninguna — el importe
+ *  entra en el corte de caja y en los reportes por método de pago igual que el efectivo. El
+ *  cobro integrado contra una terminal Mercado Pago (el que usa el POS Windows) es otra cosa,
+ *  necesita red y queda fuera del flujo offline de esta app. */
 export async function sembrarMetodosPagoPorDefecto(db: SQLiteDatabase): Promise<void> {
   const { total } = (await db.getFirstAsync<{ total: number }>("SELECT COUNT(*) as total FROM metodos_pago_config")) ?? { total: 0 };
   if (total > 0) return;
 
   const defaults: { tipo: MetodoPago; habilitado: boolean; orden: number }[] = [
     { tipo: MetodoPago.EFECTIVO, habilitado: true, orden: 1 },
-    { tipo: MetodoPago.TARJETA, habilitado: false, orden: 2 },
+    { tipo: MetodoPago.TARJETA, habilitado: true, orden: 2 },
     { tipo: MetodoPago.TRANSFERENCIA, habilitado: true, orden: 3 },
     { tipo: MetodoPago.QR, habilitado: false, orden: 4 },
     { tipo: MetodoPago.OTRO, habilitado: true, orden: 5 },

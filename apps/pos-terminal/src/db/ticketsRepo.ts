@@ -27,13 +27,33 @@ export async function listarTicketsPendientes(db: SQLiteDatabase): Promise<Venta
 export async function construirTicketPayload(db: SQLiteDatabase, ventaId: string): Promise<TicketPayload> {
   const venta = await db.getFirstAsync<any>("SELECT * FROM ventas WHERE id = ?", ventaId);
   if (!venta) throw new Error("Venta no encontrada");
-  const items = await db.getAllAsync<any>("SELECT nombre_snapshot, precio_unit_snapshot, cantidad FROM venta_items WHERE venta_id = ?", ventaId);
+  const items = await db.getAllAsync<any>("SELECT id, nombre_snapshot, precio_unit_snapshot, cantidad FROM venta_items WHERE venta_id = ?", ventaId);
   const datosFiscales = await obtenerDatosFiscales(db);
+
+  // Los modificadores elegidos en cada línea. Se leen de los snapshots, no del catálogo vigente:
+  // reimprimir un ticket de hace meses debe mostrar lo que se cobró entonces.
+  const modificadores = items.length
+    ? await db.getAllAsync<any>(
+        `SELECT venta_item_id, nombre_snapshot, precio_extra_snapshot FROM venta_item_modificadores
+         WHERE venta_item_id IN (${items.map(() => "?").join(",")})`,
+        ...items.map((i) => i.id),
+      )
+    : [];
 
   return {
     folio: venta.folio_local,
     fecha: venta.created_at,
-    items: items.map((i) => ({ cantidad: i.cantidad, nombre: i.nombre_snapshot, precioTotal: i.precio_unit_snapshot * i.cantidad })),
+    items: items.map((i) => {
+      const suyos = modificadores.filter((m) => m.venta_item_id === i.id);
+      const extra = suyos.reduce((s, m) => s + m.precio_extra_snapshot, 0);
+      return {
+        cantidad: i.cantidad,
+        nombre: i.nombre_snapshot,
+        // El precio de la línea incluye los extras, o el ticket no sumaría el total cobrado.
+        precioTotal: (i.precio_unit_snapshot + extra) * i.cantidad,
+        modificadores: suyos.length > 0 ? suyos.map((m) => m.nombre_snapshot) : undefined,
+      };
+    }),
     subtotal: venta.subtotal,
     total: venta.total,
     pieTicket: datosFiscales.pieTicket,

@@ -1,6 +1,12 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 import { generarSlug } from "./busqueda";
 import { obtenerConfig, guardarConfig } from "./configLocalRepo";
+import {
+  MODIFICADORES_HANGAR,
+  PERSONALIZACION_POR_PRODUCTO,
+  idModificadorHangar,
+  idOpcionHangar,
+} from "./modificadoresHangar";
 
 /** Catálogo REAL de HANGAR 421 Coffee Shop, copiado de la única fuente que lo define hoy:
  *  apps/backend/src/bootstrap/seed-demo-data.ts (`categoriasData` / `productosData`) — el mismo
@@ -124,14 +130,46 @@ export async function sembrarCatalogoHangar(db: SQLiteDatabase): Promise<number>
       );
     }
     for (const producto of PRODUCTOS_HANGAR) {
+      const pregunta = PERSONALIZACION_POR_PRODUCTO[`${producto.categoria}#${producto.nombre}`] ?? [];
       await db.runAsync(
-        `INSERT INTO productos (id, categoria_id, nombre, subcategoria, precio_base, tasa_impuesto, orden, activo, origen, synced_at)
-         VALUES (?, ?, ?, ?, ?, 0, ?, 1, 'LOCAL', ?)
+        `INSERT INTO productos (id, categoria_id, nombre, subcategoria, precio_base, tasa_impuesto, orden, activo, requiere_personalizacion, origen, synced_at)
+         VALUES (?, ?, ?, ?, ?, 0, ?, 1, ?, 'LOCAL', ?)
          ON CONFLICT(id) DO UPDATE SET categoria_id = excluded.categoria_id, nombre = excluded.nombre,
-           subcategoria = excluded.subcategoria, precio_base = excluded.precio_base, orden = excluded.orden, activo = 1`,
+           subcategoria = excluded.subcategoria, precio_base = excluded.precio_base, orden = excluded.orden,
+           requiere_personalizacion = excluded.requiere_personalizacion, activo = 1`,
         idProductoHangar(producto), idCategoriaHangar(producto.categoria), producto.nombre,
-        producto.subcategoria ?? null, producto.precio, producto.orden, ahora,
+        producto.subcategoria ?? null, producto.precio, producto.orden, pregunta.length > 0 ? 1 : 0, ahora,
       );
+    }
+
+    // Modificadores + sus opciones, y el vínculo con cada producto que los pregunta.
+    for (const modificador of MODIFICADORES_HANGAR) {
+      const modificadorId = idModificadorHangar(modificador.nombre);
+      await db.runAsync(
+        `INSERT INTO modificadores (id, nombre, tipo, obligatorio, activo, origen, synced_at) VALUES (?, ?, ?, ?, 1, 'LOCAL', ?)
+         ON CONFLICT(id) DO UPDATE SET nombre = excluded.nombre, tipo = excluded.tipo, obligatorio = excluded.obligatorio, activo = 1`,
+        modificadorId, modificador.nombre, modificador.tipo, modificador.obligatorio ? 1 : 0, ahora,
+      );
+      for (const opcion of modificador.opciones) {
+        await db.runAsync(
+          `INSERT INTO opciones_modificador (id, modificador_id, nombre, precio_extra, orden) VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET nombre = excluded.nombre, precio_extra = excluded.precio_extra, orden = excluded.orden`,
+          idOpcionHangar(modificador.nombre, opcion.nombre), modificadorId, opcion.nombre, opcion.precioExtra, opcion.orden,
+        );
+      }
+    }
+
+    for (const producto of PRODUCTOS_HANGAR) {
+      const pregunta = PERSONALIZACION_POR_PRODUCTO[`${producto.categoria}#${producto.nombre}`];
+      if (!pregunta) continue;
+      let orden = 1;
+      for (const nombreModificador of pregunta) {
+        await db.runAsync(
+          `INSERT INTO producto_modificadores (producto_id, modificador_id, orden) VALUES (?, ?, ?)
+           ON CONFLICT(producto_id, modificador_id) DO UPDATE SET orden = excluded.orden`,
+          idProductoHangar(producto), idModificadorHangar(nombreModificador), orden++,
+        );
+      }
     }
   });
   return PRODUCTOS_HANGAR.length;

@@ -71,13 +71,32 @@ export async function confirmarVenta(
       CanalOrigen.APP_POS_MOVIL, datos.turnoId, datos.usuarioId, ahora, ahora, idempotencyKeyVenta,
     );
 
-    const itemsPayload: { productoId: string; cantidad: number; notas?: string }[] = [];
+    const itemsPayload: { productoId: string; cantidad: number; notas?: string; modificadores: { opcionModificadorId: string }[] }[] = [];
     for (const item of datos.items) {
+      const itemId = uuid7();
       await db.runAsync(
         "INSERT INTO venta_items (id, venta_id, producto_id, nombre_snapshot, precio_unit_snapshot, cantidad, descuento_item, notas) VALUES (?, ?, ?, ?, ?, ?, 0, ?)",
-        uuid7(), ventaId, item.productoId, item.nombreProducto, item.precioUnitario, item.cantidad, item.notas ?? null,
+        itemId, ventaId, item.productoId, item.nombreProducto, item.precioUnitario, item.cantidad, item.notas ?? null,
       );
-      itemsPayload.push({ productoId: item.productoId, cantidad: item.cantidad, notas: item.notas });
+
+      // Snapshot del nombre y del precio extra, no solo el id: el ticket y el historial deben
+      // seguir leyéndose aunque el modificador se renombre o desaparezca del catálogo.
+      for (const modificador of item.modificadores ?? []) {
+        await db.runAsync(
+          "INSERT INTO venta_item_modificadores (id, venta_item_id, opcion_modificador_id, nombre_snapshot, precio_extra_snapshot) VALUES (?, ?, ?, ?, ?)",
+          uuid7(), itemId, modificador.opcionModificadorId, modificador.nombreOpcion, round2(modificador.precioExtra),
+        );
+      }
+
+      itemsPayload.push({
+        productoId: item.productoId,
+        cantidad: item.cantidad,
+        notas: item.notas,
+        // El backend resuelve precio y nombre por su cuenta desde OpcionModificador (ver
+        // PedidosService.resolverItem), así que solo necesita el id — igual que manda el
+        // Comandero.
+        modificadores: (item.modificadores ?? []).map((m) => ({ opcionModificadorId: m.opcionModificadorId })),
+      });
     }
 
     const pagosPayload: PagoVenta[] = [];
