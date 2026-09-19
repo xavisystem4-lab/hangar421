@@ -8,6 +8,7 @@ import { iniciarSync, detenerSync } from "./src/sync/syncEngine";
 import { ConfiguracionInicialScreen } from "./src/screens/ConfiguracionInicialScreen";
 import { LoginLocalScreen } from "./src/screens/LoginLocalScreen";
 import { PosNavigator } from "./src/screens/PosNavigator";
+import { BarraActualizacion } from "./src/components/BarraActualizacion";
 
 /** Fase 2b: BD local → configuración inicial (una sola vez) → login offline → venta/cobro/caja
  *  (todo sin red) + motor de sync en segundo plano hacia el ERP (opcional — ver
@@ -65,6 +66,9 @@ export default function App() {
       <SafeAreaView style={{ flex: 1, backgroundColor: colores.fondo }}>
         <StatusBar barStyle="light-content" backgroundColor={colores.navy} />
         <ConfiguracionInicialScreen onListo={() => setPrimerArranqueListo(true)} />
+        {/* También en la configuración inicial: si un APK viejo trae un fallo justo en este
+            paso, el cajero tiene que poder actualizar sin haber terminado de configurarlo. */}
+        <BarraActualizacion />
       </SafeAreaView>
     );
   }
@@ -75,6 +79,8 @@ export default function App() {
       <View style={{ flex: 1 }}>
         {!auth.usuario ? <LoginLocalScreen /> : <PosNavigator />}
       </View>
+      {/* Footer fijo, visible con y sin sesión — igual que en la app de Meseros. */}
+      <BarraActualizacion />
     </SafeAreaView>
   );
 }
