@@ -55,14 +55,19 @@ export async function confirmarVenta(
   let folioLocal = 0;
 
   await db.withTransactionAsync(async () => {
-    const { siguiente } = (await db.getFirstAsync<{ siguiente: number }>("SELECT COALESCE(MAX(folio_local), 0) + 1 AS siguiente FROM ventas")) ?? { siguiente: 1 };
+    // Consecutivo POR SUCURSAL (migración 3): cada sucursal numera sus tickets desde 1, sin
+    // heredar los folios de otra en la que este mismo dispositivo haya operado antes.
+    const { siguiente } = (await db.getFirstAsync<{ siguiente: number }>(
+      "SELECT COALESCE(MAX(folio_local), 0) + 1 AS siguiente FROM ventas WHERE sucursal_id = ?",
+      sucursalId,
+    )) ?? { siguiente: 1 };
     folioLocal = siguiente;
 
     await db.runAsync(
       `INSERT INTO ventas
-         (id, folio_local, mesa_id, cliente_id, estado, subtotal, descuento_monto, impuestos, total, canal_origen, turno_id, usuario_id, created_at, updated_at, idempotency_key)
-       VALUES (?, ?, NULL, NULL, 'COBRADA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ventaId, folioLocal, datos.totales.subtotal, datos.totales.descuentoTotal, datos.totales.impuesto, datos.totales.total,
+         (id, sucursal_id, folio_local, mesa_id, cliente_id, estado, subtotal, descuento_monto, impuestos, total, canal_origen, turno_id, usuario_id, created_at, updated_at, idempotency_key)
+       VALUES (?, ?, ?, NULL, NULL, 'COBRADA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ventaId, sucursalId, folioLocal, datos.totales.subtotal, datos.totales.descuentoTotal, datos.totales.impuesto, datos.totales.total,
       CanalOrigen.APP_POS_MOVIL, datos.turnoId, datos.usuarioId, ahora, ahora, idempotencyKeyVenta,
     );
 

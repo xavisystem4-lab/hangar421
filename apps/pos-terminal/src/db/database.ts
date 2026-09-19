@@ -1,5 +1,6 @@
 import * as SQLite from "expo-sqlite";
 import { ejecutarMigraciones } from "./migrations";
+import { sembrarCatalogoSiHaceFalta } from "./catalogoHangar";
 
 const NOMBRE_ARCHIVO = "hangar421-pos-terminal.db";
 
@@ -17,6 +18,10 @@ export function abrirBaseDeDatos(): Promise<SQLite.SQLiteDatabase> {
       await db.execAsync("PRAGMA journal_mode = WAL;");
       await db.execAsync("PRAGMA foreign_keys = ON;");
       await ejecutarMigraciones(db);
+      // Deja el catálogo de HANGAR 421 escrito en la base local en el primer arranque, para que
+      // la pantalla de venta tenga los mismos productos que el POS de Windows sin depender de
+      // ninguna conexión. Solo la primera vez (ver sembrarCatalogoSiHaceFalta).
+      await sembrarCatalogoSiHaceFalta(db);
       return db;
     })();
   }

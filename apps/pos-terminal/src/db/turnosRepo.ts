@@ -22,8 +22,14 @@ export interface MovimientoCajaLocal {
   createdAt: string;
 }
 
+/** El turno abierto DE LA SUCURSAL ACTIVA (migración 3) — cada sucursal tiene su propia caja, así
+ *  que un turno abierto en otra no debe bloquear ni contaminar el corte de esta. */
 export async function turnoAbierto(db: SQLiteDatabase): Promise<TurnoLocal | null> {
-  const f = await db.getFirstAsync<any>("SELECT * FROM turnos WHERE estado = 'ABIERTO' ORDER BY abierto_at DESC LIMIT 1");
+  const sucursalId = await obtenerOCrearSucursalIdLocal(db);
+  const f = await db.getFirstAsync<any>(
+    "SELECT * FROM turnos WHERE sucursal_id = ? AND estado = 'ABIERTO' ORDER BY abierto_at DESC LIMIT 1",
+    sucursalId,
+  );
   if (!f) return null;
   return { id: f.id, usuarioId: f.usuario_id, montoInicial: f.monto_inicial, montoFinalDeclarado: f.monto_final_declarado, estado: f.estado, abiertoAt: f.abierto_at, cerradoAt: f.cerrado_at };
 }
@@ -40,8 +46,8 @@ export async function abrirTurno(db: SQLiteDatabase, datos: { usuarioId: string;
 
   await db.withTransactionAsync(async () => {
     await db.runAsync(
-      "INSERT INTO turnos (id, usuario_id, monto_inicial, estado, abierto_at, idempotency_key) VALUES (?, ?, ?, 'ABIERTO', ?, ?)",
-      id, datos.usuarioId, round2(datos.montoInicial), ahora, idempotencyKey,
+      "INSERT INTO turnos (id, sucursal_id, usuario_id, monto_inicial, estado, abierto_at, idempotency_key) VALUES (?, ?, ?, ?, 'ABIERTO', ?, ?)",
+      id, sucursalId, datos.usuarioId, round2(datos.montoInicial), ahora, idempotencyKey,
     );
     await encolarSync(db, {
       entidad: SyncEntidad.TURNO,
@@ -74,8 +80,8 @@ export async function registrarMovimientoCaja(
 
   await db.withTransactionAsync(async () => {
     await db.runAsync(
-      "INSERT INTO movimientos_caja (id, turno_id, tipo, monto, motivo, created_at, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      id, datos.turnoId, datos.tipo, round2(datos.monto), datos.motivo ?? null, ahora, idempotencyKey,
+      "INSERT INTO movimientos_caja (id, sucursal_id, turno_id, tipo, monto, motivo, created_at, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      id, sucursalId, datos.turnoId, datos.tipo, round2(datos.monto), datos.motivo ?? null, ahora, idempotencyKey,
     );
     await encolarSync(db, {
       entidad: SyncEntidad.MOVIMIENTO_CAJA,

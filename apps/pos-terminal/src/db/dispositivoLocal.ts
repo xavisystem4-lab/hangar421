@@ -32,8 +32,32 @@ export async function obtenerOCrearSucursalIdLocal(db: SQLiteDatabase): Promise<
   return id;
 }
 
+/** Tablas locales cuyas filas pertenecen a UNA sucursal (migración 3). El orden no importa; se
+ *  recorren juntas al repuntar el placeholder. */
+const TABLAS_POR_SUCURSAL = ["ventas", "turnos", "movimientos_caja", "usuarios_locales"] as const;
+
+/** Enlaza el dispositivo a una sucursal real del ERP.
+ *
+ *  Además de guardar el id, **repunta a la sucursal real todo lo que se registró antes de
+ *  enlazar**. Sin esto, un dispositivo que vendió offline y luego se conecta vería su historial,
+ *  su turno abierto y sus usuarios locales desaparecer de golpe: esas filas quedaron con el
+ *  placeholder, mientras que las consultas pasarían a acotarse por el id del ERP (que es el que
+ *  obtenerOCrearSucursalIdLocal() prefiere en cuanto existe).
+ *
+ *  Todo en una transacción: o se mueve el marcador y los datos juntos, o no se mueve nada. El
+ *  índice único (sucursal_id, folio_local) no puede chocar aquí porque el placeholder deja de
+ *  existir tras el primer enlace — un segundo enlace ya no encuentra filas que mover. */
 export async function guardarSucursalErp(db: SQLiteDatabase, sucursalId: string): Promise<void> {
-  await guardarConfig(db, CLAVE_SUCURSAL_ERP, sucursalId);
+  const placeholder = await obtenerConfig(db, CLAVE_SUCURSAL_PLACEHOLDER);
+
+  await db.withTransactionAsync(async () => {
+    await guardarConfig(db, CLAVE_SUCURSAL_ERP, sucursalId);
+    if (placeholder && placeholder !== sucursalId) {
+      for (const tabla of TABLAS_POR_SUCURSAL) {
+        await db.runAsync(`UPDATE ${tabla} SET sucursal_id = ? WHERE sucursal_id = ?`, sucursalId, placeholder);
+      }
+    }
+  });
 }
 
 export async function obtenerSucursalErp(db: SQLiteDatabase): Promise<string | null> {

@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from "expo-sqlite";
+import { uuid7 } from "@hangar421/shared";
 
 export interface Migracion {
   version: number;
@@ -200,6 +201,75 @@ export const MIGRACIONES: Migracion[] = [
           creado_at TEXT NOT NULL,
           expira_at TEXT
         );
+      `);
+    },
+  },
+  {
+    version: 2,
+    nombre: "catalogo_subcategoria_orden_origen",
+    up: async (db) => {
+      // `subcategoria` no es cosmética: el catálogo real tiene homónimos que solo se distinguen
+      // por ella ("Pistache" galleta 80 vs. rol 155), y sin mostrarla el cajero no sabe cuál
+      // está tocando. `orden` replica el del ERP para que la cuadrícula salga en el mismo orden
+      // que el POS de Windows en vez de alfabético.
+      //
+      // `origen` separa lo que se sembró en este dispositivo (catalogoHangar.ts) de lo que baja
+      // del ERP: son ids distintos para el mismo café, así que sin esta marca un enlace
+      // posterior al ERP dejaría el catálogo duplicado. Las filas que ya existían vienen todas
+      // de /catalogo/productos, de ahí el DEFAULT 'ERP'.
+      await db.execAsync(`
+        ALTER TABLE productos ADD COLUMN subcategoria TEXT;
+        ALTER TABLE productos ADD COLUMN orden INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE productos ADD COLUMN origen TEXT NOT NULL DEFAULT 'ERP';
+        ALTER TABLE categorias_producto ADD COLUMN origen TEXT NOT NULL DEFAULT 'ERP';
+      `);
+    },
+  },
+  {
+    version: 3,
+    nombre: "separacion_por_sucursal",
+    up: async (db) => {
+      // Hasta aquí TODA la base local asumía una sola sucursal: solo `sync_outbox` llevaba
+      // `sucursal_id`. Sin esta columna, en cuanto el dispositivo pueda cambiar de sucursal las
+      // ventas, turnos y cortes de caja de ambas quedarían mezclados en las mismas tablas y sin
+      // forma de separarlos después — por eso la migración va ANTES que el selector.
+      await db.execAsync(`
+        ALTER TABLE ventas ADD COLUMN sucursal_id TEXT NOT NULL DEFAULT '';
+        ALTER TABLE turnos ADD COLUMN sucursal_id TEXT NOT NULL DEFAULT '';
+        ALTER TABLE movimientos_caja ADD COLUMN sucursal_id TEXT NOT NULL DEFAULT '';
+        ALTER TABLE usuarios_locales ADD COLUMN sucursal_id TEXT NOT NULL DEFAULT '';
+      `);
+
+      // Las filas que ya existen son todas de la sucursal en la que el dispositivo ha estado
+      // operando. Se resuelve igual que dispositivoLocal.obtenerOCrearSucursalIdLocal(): el id
+      // real del ERP si ya se enlazó, y si no el placeholder local.
+      //
+      // Si no hay ninguno de los dos (posible: crearUsuarioLocal() nunca pidió una sucursal, así
+      // que un dispositivo puede tener usuarios locales sin haber registrado jamás una venta) se
+      // crea el placeholder aquí mismo. Dejar filas con '' las volvería invisibles para las
+      // consultas acotadas, que es justo el fallo que esta migración viene a evitar.
+      const fila = await db.getFirstAsync<{ valor: string }>(
+        `SELECT valor FROM config_local WHERE clave IN ('sucursal_id_erp', 'sucursal_id_local')
+         ORDER BY CASE clave WHEN 'sucursal_id_erp' THEN 0 ELSE 1 END LIMIT 1`,
+      );
+      let sucursalId = fila?.valor;
+      if (!sucursalId) {
+        sucursalId = uuid7();
+        await db.runAsync("INSERT INTO config_local (clave, valor) VALUES ('sucursal_id_local', ?)", sucursalId);
+      }
+
+      for (const tabla of ["ventas", "turnos", "movimientos_caja", "usuarios_locales"]) {
+        await db.runAsync(`UPDATE ${tabla} SET sucursal_id = ? WHERE sucursal_id = ''`, sucursalId);
+      }
+
+      // El folio pasa a ser consecutivo POR SUCURSAL: compartir numeración entre sucursales no
+      // solo confunde, es un problema fiscal. El índice único lo garantiza a nivel de esquema,
+      // no solo en el SELECT MAX(...)+1 de ventasRepo.
+      await db.execAsync(`
+        CREATE UNIQUE INDEX idx_ventas_folio_sucursal ON ventas(sucursal_id, folio_local);
+        CREATE INDEX idx_turnos_sucursal_estado ON turnos(sucursal_id, estado);
+        CREATE INDEX idx_movimientos_caja_sucursal ON movimientos_caja(sucursal_id);
+        CREATE INDEX idx_usuarios_locales_sucursal ON usuarios_locales(sucursal_id);
       `);
     },
   },

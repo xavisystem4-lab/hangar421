@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from "expo-sqlite";
 import { uuid7 } from "@hangar421/shared";
 import { generarSalt, derivarHashPin, algoritmoHashActual } from "../auth/offlineAuth";
 import { erpFetch, obtenerTokensErp } from "../api/erpHttp";
-import { obtenerSucursalErp } from "./dispositivoLocal";
+import { obtenerSucursalErp, obtenerOCrearSucursalIdLocal } from "./dispositivoLocal";
 import { obtenerEmpresaErp } from "../sync/pullEngine";
 
 export interface UsuarioLocal {
@@ -29,6 +29,7 @@ export async function crearUsuarioLocal(
   const salt = await generarSalt();
   const hashLocal = await derivarHashPin(datos.pin, salt);
   const ahora = new Date().toISOString();
+  const sucursalId = await obtenerOCrearSucursalIdLocal(db);
 
   let erpUsuarioId: string | null = null;
   const conectado = await obtenerTokensErp();
@@ -38,8 +39,8 @@ export async function crearUsuarioLocal(
 
   await db.withTransactionAsync(async () => {
     await db.runAsync(
-      "INSERT INTO usuarios_locales (id, nombre, rol, erp_usuario_id, activo, ultima_verificacion_online) VALUES (?, ?, ?, ?, 1, ?)",
-      id, datos.nombre, datos.rol, erpUsuarioId, ahora,
+      "INSERT INTO usuarios_locales (id, sucursal_id, nombre, rol, erp_usuario_id, activo, ultima_verificacion_online) VALUES (?, ?, ?, ?, ?, 1, ?)",
+      id, sucursalId, datos.nombre, datos.rol, erpUsuarioId, ahora,
     );
     await db.runAsync(
       "INSERT INTO pin_cache (usuario_local_id, hash_local, salt, algoritmo, creado_at) VALUES (?, ?, ?, ?, ?)",
@@ -89,7 +90,11 @@ function slugificar(nombre: string): string {
  *  estaba desconectado) — no se pueden reintentar automáticamente porque el PIN en texto plano
  *  nunca se guarda; hace falta pedirlo de nuevo (ver PosAdminUsuariosScreen "Registrar en ERP"). */
 export async function listarUsuariosSinRegistrarEnErp(db: SQLiteDatabase): Promise<UsuarioLocal[]> {
-  const filas = await db.getAllAsync<any>("SELECT * FROM usuarios_locales WHERE activo = 1 AND erp_usuario_id IS NULL ORDER BY nombre");
+  const sucursalId = await obtenerOCrearSucursalIdLocal(db);
+  const filas = await db.getAllAsync<any>(
+    "SELECT * FROM usuarios_locales WHERE sucursal_id = ? AND activo = 1 AND erp_usuario_id IS NULL ORDER BY nombre",
+    sucursalId,
+  );
   return filas.map((f) => ({ id: f.id, nombre: f.nombre, rol: f.rol, erpUsuarioId: f.erp_usuario_id, activo: !!f.activo, ultimaVerificacionOnline: f.ultima_verificacion_online }));
 }
 
@@ -97,8 +102,15 @@ export async function marcarRegistradoEnErp(db: SQLiteDatabase, usuarioLocalId: 
   await db.runAsync("UPDATE usuarios_locales SET erp_usuario_id = ? WHERE id = ?", erpUsuarioId, usuarioLocalId);
 }
 
+/** Solo los usuarios de la sucursal activa (migración 3): el PIN se da de alta contra una
+ *  sucursal concreta, y un cajero de una no debe poder abrir la caja de la otra desde el mismo
+ *  dispositivo. Es también la lista que alimenta la pantalla de login local. */
 export async function listarUsuariosLocales(db: SQLiteDatabase): Promise<UsuarioLocal[]> {
-  const filas = await db.getAllAsync<any>("SELECT * FROM usuarios_locales WHERE activo = 1 ORDER BY nombre");
+  const sucursalId = await obtenerOCrearSucursalIdLocal(db);
+  const filas = await db.getAllAsync<any>(
+    "SELECT * FROM usuarios_locales WHERE sucursal_id = ? AND activo = 1 ORDER BY nombre",
+    sucursalId,
+  );
   return filas.map((f) => ({
     id: f.id,
     nombre: f.nombre,

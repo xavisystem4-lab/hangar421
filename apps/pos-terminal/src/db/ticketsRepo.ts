@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 import type { TicketPayload } from "../printing/PrinterAdapter";
 import { obtenerDatosFiscales } from "./configFiscalRepo";
+import { obtenerOCrearSucursalIdLocal } from "./dispositivoLocal";
 
 export async function marcarTicketPendiente(db: SQLiteDatabase, ventaId: string): Promise<void> {
   await db.runAsync("UPDATE ventas SET ticket_pendiente_impresion = 1 WHERE id = ?", ventaId);
@@ -12,8 +13,14 @@ export async function marcarTicketImpreso(db: SQLiteDatabase, ventaId: string): 
 
 export interface VentaPendienteTicket { id: string; folioLocal: number; total: number; createdAt: string }
 
+/** Acotado a la sucursal activa (migración 3) — un ticket pendiente de otra sucursal se
+ *  imprimiría con los datos fiscales de esta, que son los de la sucursal actual. */
 export async function listarTicketsPendientes(db: SQLiteDatabase): Promise<VentaPendienteTicket[]> {
-  const filas = await db.getAllAsync<any>("SELECT id, folio_local, total, created_at FROM ventas WHERE ticket_pendiente_impresion = 1 ORDER BY created_at DESC");
+  const sucursalId = await obtenerOCrearSucursalIdLocal(db);
+  const filas = await db.getAllAsync<any>(
+    "SELECT id, folio_local, total, created_at FROM ventas WHERE sucursal_id = ? AND ticket_pendiente_impresion = 1 ORDER BY created_at DESC",
+    sucursalId,
+  );
   return filas.map((f) => ({ id: f.id, folioLocal: f.folio_local, total: f.total, createdAt: f.created_at }));
 }
 
