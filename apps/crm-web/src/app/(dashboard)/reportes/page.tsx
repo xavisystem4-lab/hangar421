@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { Producto, Sucursal } from "@hangar421/shared";
 import { apiFetch } from "@/lib/api";
+import { useSucursalActiva } from "@/store/sucursalActiva";
 import { useAuthCrm } from "@/lib/authClient";
 import { StatTile } from "@/components/StatTile";
 import { BarChart } from "@/components/BarChart";
@@ -20,6 +21,7 @@ function fechaISO(d: Date): string {
 
 export default function ReportesPage() {
   const { contexto } = useAuthCrm();
+  const { seleccion } = useSucursalActiva();
   const [sucursales, setSucursales] = useState<Sucursal[]>([]);
   const [sucursalId, setSucursalId] = useState("");
   const [productos, setProductos] = useState<Producto[]>([]);
@@ -33,15 +35,14 @@ export default function ReportesPage() {
   const [porMetodo, setPorMetodo] = useState<VentaPorMetodo[]>([]);
   const [cargando, setCargando] = useState(false);
 
+  // La sucursal la fija el contexto global (cabecera). Antes esta página elegía siempre la
+  // primera del listado, así que un reporte podía ser de otra sucursal sin avisar.
   useEffect(() => {
     if (!contexto) return;
-    apiFetch<Sucursal[]>(`/sucursales?empresaId=${contexto.usuario.empresaId}`).then((s) => {
-      setSucursales(s);
-      if (s[0]) setSucursalId(s[0].id);
-    });
+    if (seleccion?.sucursalId) setSucursalId(seleccion.sucursalId);
     apiFetch<Producto[]>(`/catalogo/productos?empresaId=${contexto.usuario.empresaId}`).then(setProductos).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contexto]);
+  }, [contexto, seleccion?.sucursalId]);
 
   useEffect(() => {
     if (!contexto || !sucursalId) return;
@@ -76,9 +77,7 @@ export default function ReportesPage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
         <h1 style={{ marginTop: 0 }}>Reportes de ventas</h1>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <select value={sucursalId} onChange={(e) => setSucursalId(e.target.value)} style={{ padding: 8 }}>
-            {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-          </select>
+          {/* Sin selector propio: la sucursal la fija el contexto global de la cabecera. */}
           <label style={{ fontSize: 13, color: "var(--h421-gray-400)" }}>Desde</label>
           <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} style={{ padding: 8 }} />
           <label style={{ fontSize: 13, color: "var(--h421-gray-400)" }}>Hasta</label>

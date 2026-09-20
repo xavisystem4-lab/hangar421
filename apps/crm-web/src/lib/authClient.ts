@@ -48,6 +48,9 @@ export const useAuthCrm = create<AuthState>((set) => ({
 
   logout: () => {
     cerrarSesionLocal();
+    // Se borra también la sucursal activa: la siguiente persona que entre en este equipo debe
+    // elegirla a conciencia, no heredar el contexto de quien lo usó antes.
+    if (typeof window !== "undefined") localStorage.removeItem("hangar421_crm_sucursal_activa");
     set({ contexto: null });
   },
 }));

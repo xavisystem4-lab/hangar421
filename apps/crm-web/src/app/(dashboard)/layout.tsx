@@ -5,6 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuthCrm } from "@/lib/authClient";
 import { useThemeStore } from "@/store/themeStore";
 import { Sidebar } from "@/components/Sidebar";
+import { ChipSucursalActiva, SelectorSucursal } from "@/components/SelectorSucursal";
+import { useSucursalActiva } from "@/store/sucursalActiva";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -16,10 +18,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // quedado abierto de una sesión anterior): un cajón que aparece abierto solo tapando toda la
   // pantalla al entrar sería peor experiencia que partir siempre cerrado.
   const [menuAbierto, setMenuAbierto] = useState(false);
+  const { seleccion, cargar: cargarSucursal } = useSucursalActiva();
+  // Distinto de "no hay selección": esto es el usuario pidiendo cambiarla desde la cabecera,
+  // con una ya elegida. Ese diálogo sí se puede cerrar sin elegir.
+  const [cambiandoSucursal, setCambiandoSucursal] = useState(false);
 
   useEffect(() => {
     inicializar();
-  }, [inicializar]);
+    cargarSucursal();
+  }, [inicializar, cargarSucursal]);
 
   useEffect(() => {
     inicializarTema();
@@ -47,7 +54,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </button>
       <div className="h421-sidebar-fondo" data-abierto={menuAbierto} onClick={() => setMenuAbierto(false)} />
       <Sidebar abierto={menuAbierto} onCerrar={() => setMenuAbierto(false)} />
-      <main className="h421-main" style={{ flex: 1, padding: 28, overflowY: "auto" }}>{children}</main>
+      <main className="h421-main" style={{ flex: 1, padding: 28, overflowY: "auto" }}>
+        {/* Sucursal activa siempre visible: el error caro en un ERP multisucursal es mirar los
+            datos de una creyendo que son de otra. */}
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 18 }}>
+          <ChipSucursalActiva onCambiar={() => setCambiandoSucursal(true)} />
+        </div>
+        {/* Sin sucursal elegida no se renderiza ninguna página: así ninguna puede consultar con
+            un contexto a medias ni enseñar datos antes de que el usuario decida cuáles. */}
+        {seleccion ? children : null}
+      </main>
+
+      {(!seleccion || cambiandoSucursal) && (
+        <SelectorSucursal onCerrar={seleccion ? () => setCambiandoSucursal(false) : undefined} />
+      )}
     </div>
   );
 }

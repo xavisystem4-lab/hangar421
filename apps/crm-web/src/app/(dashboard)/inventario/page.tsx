@@ -5,6 +5,7 @@ import type { NivelInventario, Sucursal } from "@hangar421/shared";
 import { calcularNivelInventario } from "@hangar421/shared";
 import { apiFetch } from "@/lib/api";
 import { useAuthCrm } from "@/lib/authClient";
+import { useSucursalActiva } from "@/store/sucursalActiva";
 import { ReporteInventario } from "@/components/ReporteInventario";
 
 interface Existencia {
@@ -86,6 +87,7 @@ function Modal({ titulo, ancho = 520, onCerrar, children }: { titulo: string; an
 
 export default function InventarioPage() {
   const { contexto } = useAuthCrm();
+  const { seleccion } = useSucursalActiva();
   const [sucursales, setSucursales] = useState<Sucursal[]>([]);
   const [sucursalId, setSucursalId] = useState("");
   const [existencias, setExistencias] = useState<Existencia[]>([]);
@@ -174,15 +176,14 @@ export default function InventarioPage() {
     setTraspasosPendientes(todos.filter((t) => t.sucursalDestinoId === suc && t.estado === "ENVIADO"));
   }
 
+  // La sucursal viene del contexto global (cabecera), no de un selector propio.
   useEffect(() => {
-    if (!contexto) return;
-    apiFetch<Sucursal[]>(`/sucursales?empresaId=${contexto.usuario.empresaId}`).then((s) => {
-      setSucursales(s);
-      if (s[0]) { setSucursalId(s[0].id); cargar(s[0].id); }
-    });
+    if (!contexto || !seleccion?.sucursalId) return;
+    setSucursalId(seleccion.sucursalId);
+    cargar(seleccion.sucursalId);
     cargarProveedores();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contexto]);
+  }, [contexto, seleccion?.sucursalId]);
 
   // Filas combinadas (insumo + su existencia en la sucursal elegida) con búsqueda y filtro de
   // nivel aplicados — es la única tabla ahora, antes existían dos por separado.
@@ -358,9 +359,7 @@ export default function InventarioPage() {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1 style={{ marginTop: 0 }}>Inventario</h1>
-        <select value={sucursalId} onChange={(e) => { setSucursalId(e.target.value); cargar(e.target.value); }} style={{ padding: 8 }}>
-          {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-        </select>
+        {/* Sin selector propio: la sucursal la fija el contexto global de la cabecera. */}
       </div>
 
       {mensaje && <p style={{ color: "var(--h421-navy-texto)" }}>{mensaje}</p>}

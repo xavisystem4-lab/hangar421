@@ -4,12 +4,14 @@ import { useEffect, useState } from "react";
 import type { CategoriaProducto, Producto, Sucursal } from "@hangar421/shared";
 import { apiFetch } from "@/lib/api";
 import { useAuthCrm } from "@/lib/authClient";
+import { useSucursalActiva } from "@/store/sucursalActiva";
 
 interface Insumo { id: string; nombre: string; unidadMedida: string }
 interface RecetaItemDto { id: string; insumoId: string; cantidad: string; insumo: { nombre: string; unidadMedida: string } }
 
 export default function CatalogoPage() {
   const { contexto } = useAuthCrm();
+  const { seleccion } = useSucursalActiva();
   const [categorias, setCategorias] = useState<CategoriaProducto[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [sucursales, setSucursales] = useState<Sucursal[]>([]);
@@ -38,20 +40,14 @@ export default function CatalogoPage() {
     setProductos(prods);
   }
 
+  // La sucursal viene del contexto global (cabecera). Recargar cuando cambia es lo que hace
+  // que el ERP entero siga la misma sucursal sin que cada página tenga su propio selector.
   useEffect(() => {
-    if (!contexto) return;
-    apiFetch<Sucursal[]>(`/sucursales?empresaId=${contexto.usuario.empresaId}`).then((s) => {
-      setSucursales(s);
-      const activa = s[0]?.id ?? "";
-      setSucursalId(activa);
-      if (activa) cargar(activa);
-    });
-    apiFetch<Insumo[]>(`/inventario/insumos?empresaId=${contexto.usuario.empresaId}`).then((ins) => {
-      setInsumos(ins);
-      if (ins[0]) setNuevoItem((n) => ({ ...n, insumoId: ins[0].id }));
-    });
+    if (!contexto || !seleccion?.sucursalId) return;
+    setSucursalId(seleccion.sucursalId);
+    cargar(seleccion.sucursalId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contexto]);
+  }, [contexto, seleccion?.sucursalId]);
 
   async function crearProducto() {
     if (!contexto || !nuevo.nombre || !nuevo.categoriaId) return;
@@ -121,9 +117,8 @@ export default function CatalogoPage() {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1 style={{ marginTop: 0 }}>Catálogo</h1>
-        <select value={sucursalId} onChange={(e) => { setSucursalId(e.target.value); cargar(e.target.value); }} style={{ padding: 8 }}>
-          {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-        </select>
+        {/* Sin selector propio: la sucursal la fija el contexto global de la cabecera. Tener
+            uno por página era lo que hacía perder la elección al navegar entre módulos. */}
       </div>
 
       <div className="h421-grid-2col" style={{ display: "grid", gridTemplateColumns: productoReceta ? "1.6fr 1fr" : "1fr", gap: 16, alignItems: "start" }}>
