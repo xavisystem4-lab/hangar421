@@ -5,6 +5,8 @@ import { useAuthLocalStore } from "./src/store/authLocalStore";
 import { abrirBaseDeDatos } from "./src/db/database";
 import { primerArranqueCompletado } from "./src/db/configFiscalRepo";
 import { iniciarSync, detenerSync } from "./src/sync/syncEngine";
+import { detenerEscuchaDeRed, iniciarEscuchaDeRed } from "./src/sync/conectividad";
+import { registrarTareaSegundoPlano } from "./src/sync/tareaSegundoPlano";
 import { ConfiguracionInicialScreen } from "./src/screens/ConfiguracionInicialScreen";
 import { LoginLocalScreen } from "./src/screens/LoginLocalScreen";
 import { PosNavigator } from "./src/screens/PosNavigator";

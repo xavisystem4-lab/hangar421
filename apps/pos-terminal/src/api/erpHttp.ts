@@ -1,10 +1,11 @@
 import Constants from "expo-constants";
 import { abrirBaseDeDatos } from "../db/database";
 import { obtenerConfig, guardarConfig } from "../db/configLocalRepo";
+import { guardarTokens, obtenerTokens } from "./tokensSeguros";
 
 const CLAVE_BASE_URL = "erp_base_url";
-const CLAVE_ACCESS_TOKEN = "erp_access_token";
-const CLAVE_REFRESH_TOKEN = "erp_refresh_token";
+// Los tokens ya NO viven aquí: pasaron al almacén cifrado de Android (api/tokensSeguros.ts).
+// Estaban en texto plano dentro del SQLite de la app, y el refresh token dura 30 días.
 
 // Mismo criterio defensivo que apps/waiter-mobile/src/api/http.ts: sin timeout, un `fetch`
 // contra un backend en la nube inalcanzable (no un rechazo activo, un simple "nadie responde")
@@ -43,16 +44,11 @@ export async function obtenerErpBaseUrl(): Promise<string> {
 }
 
 export async function guardarTokensErp(accessToken: string, refreshToken: string): Promise<void> {
-  const db = await abrirBaseDeDatos();
-  await guardarConfig(db, CLAVE_ACCESS_TOKEN, accessToken);
-  await guardarConfig(db, CLAVE_REFRESH_TOKEN, refreshToken);
+  await guardarTokens({ accessToken, refreshToken });
 }
 
 export async function obtenerTokensErp(): Promise<{ accessToken: string; refreshToken: string } | null> {
-  const db = await abrirBaseDeDatos();
-  const [accessToken, refreshToken] = await Promise.all([obtenerConfig(db, CLAVE_ACCESS_TOKEN), obtenerConfig(db, CLAVE_REFRESH_TOKEN)]);
-  if (!accessToken || !refreshToken) return null;
-  return { accessToken, refreshToken };
+  return obtenerTokens();
 }
 
 /** apiFetch contra el ERP (opcional por diseño — nunca se llama desde el flujo de venta, solo

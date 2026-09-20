@@ -10,6 +10,7 @@ import { listarTicketsPendientes } from "../db/ticketsRepo";
 import { obtenerNombreSucursal } from "../db/dispositivoLocal";
 import { useBotonAtras } from "../hooks/useBotonAtras";
 import { ModalRenombrarSucursal } from "../components/ModalRenombrarSucursal";
+import { ModalAutorizacion } from "../components/ModalAutorizacion";
 import { PosVentaScreen } from "./PosVentaScreen";
 import { PosCobroScreen } from "./PosCobroScreen";
 import { PosCajaScreen } from "./PosCajaScreen";
@@ -55,6 +56,9 @@ export function PosNavigator() {
   const [reciboPendiente, setReciboPendiente] = useState<string | null>(null);
   const [sucursalActiva, setSucursalActiva] = useState<string | null>(null);
   const [renombrando, setRenombrando] = useState(false);
+  // Qué acción sensible está esperando el PIN de un gerente: cambiar de sucursal o renombrarla.
+  // Ambas afectan a dónde acaban las ventas o a cómo se identifica la sucursal en el ERP.
+  const [autorizando, setAutorizando] = useState<"cambiar" | "renombrar" | null>(null);
 
   // Indicador de sucursal activa: se recarga al volver de la pantalla de conexión, que es el
   // único sitio donde puede cambiar. Se lee de la base local, no del ERP, para que siga
@@ -76,6 +80,7 @@ export function PosNavigator() {
    * roza constantemente y cerrar el POS a media jornada no puede ser un accidente de un toque.
    */
   useBotonAtras(() => {
+    if (autorizando) { setAutorizando(null); return true; }
     if (renombrando) { setRenombrando(false); return true; }
     if (mostrarConexion) { setMostrarConexion(false); return true; }
     if (reciboPendiente) { setReciboPendiente(null); return true; }
@@ -88,7 +93,7 @@ export function PosNavigator() {
       { text: "Salir", style: "destructive", onPress: () => BackHandler.exitApp() },
     ]);
     return true;
-  }, [renombrando, mostrarConexion, reciboPendiente, pantalla, pantallaAdmin]);
+  }, [autorizando, renombrando, mostrarConexion, reciboPendiente, pantalla, pantallaAdmin]);
 
   /** Tocar la sucursal ya no lleva directo a Conexión: desde aquí se puede tanto cambiar de
    *  sucursal como corregir su nombre, que son las dos cosas que se buscan en ese sitio. */
@@ -99,8 +104,8 @@ export function PosNavigator() {
       "¿Qué quieres hacer con esta sucursal?",
       [
         { text: "Cancelar", style: "cancel" },
-        { text: "Cambiar nombre", onPress: () => setRenombrando(true) },
-        { text: "Cambiar de sucursal", onPress: () => setMostrarConexion(true) },
+        { text: "Cambiar nombre", onPress: () => setAutorizando("renombrar") },
+        { text: "Cambiar de sucursal", onPress: () => setAutorizando("cambiar") },
       ],
     );
   }
@@ -219,6 +224,28 @@ export function PosNavigator() {
           </View>
         )}
       </View>
+
+      {/* Cambiar de sucursal o renombrarla exige PIN de gerente: un cajero no debe poder
+          reapuntar la terminal a otra sucursal, porque a partir de ahí TODAS sus ventas irían al
+          sitio equivocado. Queda registrado en el ERP al aplicarse. */}
+      {autorizando && usuario && (
+        <ModalAutorizacion
+          titulo={autorizando === "cambiar" ? "Cambiar de sucursal" : "Cambiar nombre de la sucursal"}
+          descripcion={
+            autorizando === "cambiar"
+              ? "Reapuntar esta terminal a otra sucursal cambia a dónde van todas sus ventas. Hace falta el PIN de un supervisor o administrador."
+              : "El nombre se cambia en el ERP y lo ven todas las terminales. Hace falta el PIN de un supervisor o administrador."
+          }
+          solicitanteId={usuario.id}
+          onCancelar={() => setAutorizando(null)}
+          onAutorizado={() => {
+            const accion = autorizando;
+            setAutorizando(null);
+            if (accion === "cambiar") setMostrarConexion(true);
+            else setRenombrando(true);
+          }}
+        />
+      )}
 
       {renombrando && sucursalActiva && (
         <ModalRenombrarSucursal
