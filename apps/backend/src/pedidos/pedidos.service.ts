@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import {
   EstadoMesa,
   EstadoPedido,
@@ -29,6 +29,8 @@ const ROLES_AUTORIZAN_SUPERVISOR = [RolUsuario.SUPERVISOR, RolUsuario.ADMIN_SUCU
 
 @Injectable()
 export class PedidosService {
+  private readonly logger = new Logger("Pedidos");
+
   constructor(private prisma: PrismaService, private realtime: RealtimeGateway, private auth: AuthService) {}
 
   /** `estados` (plural) filtra por una LISTA de estados — lo usa el POS para la cola de
@@ -87,6 +89,19 @@ export class PedidosService {
     // autoregistra para que un dispositivo nunca antes visto no rompa la creación del pedido.
     const dispositivoId = await resolverDispositivoId(this.prisma, dto.dispositivoId, dto.sucursalId);
 
+    // `meseroId` y `cajeroId` son llaves foráneas a Usuario. Un cliente offline puede mandar un
+    // id que aquí no existe (un cajero dado de alta en la tablet sin conexión, ver
+    // usuariosLocalesRepo.mapaUsuariosErp): con Prisma eso es un P2003 que rechaza el pedido
+    // ENTERO. Perder la atribución de quién vendió es mucho menos grave que perder la venta, así
+    // que el id que no existe se descarta y el pedido entra igual.
+    const meseroId = await this.resolverUsuarioExistente(dto.meseroId);
+    if (dto.meseroId && !meseroId) {
+      this.logger.warn(
+        `Pedido ${dto.id}: el usuario ${dto.meseroId} no existe en el ERP — se guarda sin mesero asignado ` +
+          "(probable alta de cajero hecha sin conexión, ver usuariosLocalesRepo.mapaUsuariosErp).",
+      );
+    }
+
     const pedido = await this.prisma.$transaction(async (tx) => {
       const creado = await tx.pedido.create({
         data: {
@@ -98,7 +113,7 @@ export class PedidosService {
           folio,
           tipo: dto.tipo,
           numComensales: dto.numComensales ?? 1,
-          meseroId: dto.meseroId,
+          meseroId,
           dispositivoId,
           canalOrigen: dto.canalOrigen,
           notasGenerales: dto.notasGenerales,
@@ -410,6 +425,14 @@ export class PedidosService {
   }
 
   // -- privados ---------------------------------------------------------------
+
+  /** Devuelve el id solo si ese usuario existe de verdad; si no, undefined. Evita que un id
+   *  huérfano tumbe la operación entera por violación de clave foránea. */
+  private async resolverUsuarioExistente(usuarioId?: string | null): Promise<string | undefined> {
+    if (!usuarioId) return undefined;
+    const usuario = await this.prisma.usuario.findUnique({ where: { id: usuarioId }, select: { id: true } });
+    return usuario?.id;
+  }
 
   private async resolverItem(item: { productoId: string; cantidad: number; notas?: string; modificadores?: { opcionModificadorId: string }[] }) {
     // findUniqueOrThrow revienta con un NotFoundError si el productoId no existe (ej. el POS

@@ -141,3 +141,23 @@ export async function eliminarUsuarioLocal(db: SQLiteDatabase, usuarioLocalId: s
     await db.runAsync("UPDATE usuarios_locales SET activo = 0 WHERE id = ?", usuarioLocalId);
   });
 }
+
+/**
+ * Traduce ids de usuario LOCALES a los del ERP.
+ *
+ * Es la causa por la que una venta podía no llegar nunca al ERP: `Pedido.meseroId` y
+ * `Pedido.cajeroId` son claves foráneas a `Usuario`, pero el APK mandaba el id de
+ * `usuarios_locales`, que es un uuid7 generado en la tablet. Para un cajero dado de alta sin
+ * conexión ese id no existe server-side, y Prisma rechaza el pedido ENTERO por violación de
+ * clave foránea — no solo el campo.
+ *
+ * Devuelve un mapa localId → erpId. Los que no tienen equivalente quedan fuera: quien llama debe
+ * mandar `undefined` en vez del id local. Perder la atribución de quién vendió es mucho menos
+ * grave que perder la venta.
+ */
+export async function mapaUsuariosErp(db: SQLiteDatabase): Promise<Map<string, string>> {
+  const filas = await db.getAllAsync<{ id: string; erp_usuario_id: string | null }>(
+    "SELECT id, erp_usuario_id FROM usuarios_locales WHERE erp_usuario_id IS NOT NULL",
+  );
+  return new Map(filas.filter((f) => f.erp_usuario_id).map((f) => [f.id, f.erp_usuario_id as string]));
+}

@@ -5,6 +5,7 @@ import { erpFetch, obtenerTokensErp } from "../api/erpHttp";
 import { useSyncStatusStore } from "../store/syncStatusStore";
 import { refrescarCatalogo, refrescarInventario, ejecutarPull } from "./pullEngine";
 import { obtenerOCrearDispositivoId, obtenerSucursalErp } from "../db/dispositivoLocal";
+import { mapaUsuariosErp } from "../db/usuariosLocalesRepo";
 
 // Más espaciado que los 8s de apps/waiter-mobile: ahí el destino es una Estación en la misma
 // red LAN; aquí es el ERP en la nube (Railway) — pollear cada 8s no aporta nada y sí gasta
@@ -42,6 +43,22 @@ export function detenerSync() {
   intervalo = null;
   if (intervaloCatalogo) clearInterval(intervaloCatalogo);
   intervaloCatalogo = null;
+}
+
+/** Campos del payload que en el ERP son claves foráneas a Usuario. Si llevan un id local que
+ *  no existe arriba, se quitan: la operación se guarda sin atribución en vez de rechazarse. */
+const CAMPOS_USUARIO = ["meseroId", "cajeroId", "usuarioId", "autorizadoPorId", "solicitadoPorId"] as const;
+
+function traducirUsuariosDelPayload(
+  payload: any,
+  aErp: (localId: string | null | undefined) => string | undefined,
+): any {
+  if (!payload || typeof payload !== "object") return payload;
+  const copia = { ...payload };
+  for (const campo of CAMPOS_USUARIO) {
+    if (typeof copia[campo] === "string") copia[campo] = aErp(copia[campo]);
+  }
+  return copia;
 }
 
 /** Drena sync_outbox hacia POST /sync/push, en el orden en que se encolaron (ver

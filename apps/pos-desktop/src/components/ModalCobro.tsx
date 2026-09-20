@@ -96,7 +96,7 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
       if (!idPedido) idPedido = await enviarACocina(mesaNombre);
       const solicitud = await apiFetch<PaymentRequestDTO>("/pagos/solicitudes", {
         method: "POST",
-        body: JSON.stringify({ pedidoId: idPedido, terminalId, importe: Number(montoInput), idempotencyKey: uuid7() }),
+        body: JSON.stringify({ pedidoId: idPedido, terminalId, importe: montoCobrado, idempotencyKey: uuid7() }),
       });
       setSolicitudPago(solicitud);
     } catch (e: any) {
@@ -141,30 +141,23 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
   const propina = propinaMontoTexto !== "" ? Number(propinaMontoTexto) || 0 : round2(t.total * (propinaPorcentaje / 100));
   const totalAPagar = round2(t.total + propina);
 
-  const [pagos, setPagos] = useState<{ metodo: MetodoPago; monto: number }[]>([]);
-  // Arranca en $0.00 — el cajero debe escribir el monto a mano, no se asume que paga el total
-  // exacto (así se ve/confirma lo que realmente se está tecleando antes de cobrar).
+  // Arranca en $0.00. El teclado ya no arma pagos parciales: es solo "con cuánto paga el
+  // cliente", para calcular el cambio. Dejarlo en 0 significa importe exacto — ver `montoCobrado`.
   const [montoInput, setMontoInput] = useState("0");
   const [procesando, setProcesando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const pagadoHasta = pagos.reduce((s, p) => s + p.monto, 0);
-  // Incluye lo que se está tecleando en el momento (no solo los pagos ya agregados) — así el
-  // cambio/falta-cubrir se actualiza en cuanto se escribe el importe, sin esperar a "Agregar pago".
-  const totalConTeclaActual = pagadoHasta + Number(montoInput || 0);
-  const restante = Math.max(0, totalAPagar - totalConTeclaActual);
-  const cambio = Math.max(0, totalConTeclaActual - totalAPagar);
+  const recibido = Number(montoInput || 0);
+  const montoCobrado = recibido > 0 ? recibido : totalAPagar;
+  const restante = Math.max(0, totalAPagar - montoCobrado);
+  const cambio = Math.max(0, montoCobrado - totalAPagar);
 
   // Tarjeta/Transferencia/QR son montos exactos (no hay "cambio" que calcular, a diferencia de
-  // efectivo) — se autocompleta con lo que falta cubrir para no tener que volver a teclearlo.
-  // Efectivo se deja en blanco: el cliente puede dar de más y hace falta calcular el cambio.
+  // efectivo) — se autocompletan con el total para no tener que teclearlo. Efectivo se deja en 0:
+  // el cliente puede dar de más y hace falta calcular el cambio.
   function elegirMetodo(metodo: MetodoPago) {
     setMetodoActivo(metodo);
-    // Usa `pagadoHasta` (solo pagos ya agregados), no `restante` — `restante` ya descuenta lo que
-    // esté tecleado en este momento, así que al cambiar entre Tarjeta/Transferencia/QR con un monto
-    // ya escrito, `restante` daría 0 en vez del importe real pendiente.
-    const faltante = round2(Math.max(0, totalAPagar - pagadoHasta));
-    setMontoInput(metodo === MetodoPago.EFECTIVO ? "0" : faltante > 0 ? faltante.toFixed(2) : "0");
+    setMontoInput(metodo === MetodoPago.EFECTIVO ? "0" : totalAPagar.toFixed(2));
   }
 
   function presionarTecla(tecla: string) {
@@ -175,21 +168,11 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
     });
   }
 
-  function agregarPago() {
-    const monto = Number(montoInput);
-    if (!monto || monto <= 0) return;
-    setPagos((p) => [...p, { metodo: metodoActivo, monto }]);
-    // `restante` ya descuenta lo que se acaba de escribir (ver más arriba), así que es
-    // directamente lo que falta para el próximo pago (0 si este ya cubrió todo).
-    setMontoInput(restante.toFixed(2));
-  }
-
   // Teclado físico de la PC (fila numérica o numpad) — funciona en cuanto se abre la ventana,
   // sin tener que hacerle clic al teclado en pantalla primero. Se ignora mientras el foco esté
   // en un <input>/<textarea> real (ej. "Porcentaje %", "Motivo" del descuento) para no duplicar
-  // lo que se esté escribiendo ahí. Enter confirma el cobro completo (no solo agrega un pago
-  // parcial — para eso sigue estando el botón "Agregar pago" con el mouse) y Esc cancela/cierra
-  // la ventana, igual que el botón "Cancelar".
+  // lo que se esté escribiendo ahí. Enter confirma el cobro y Esc cancela/cierra la ventana,
+  // igual que el botón "Cancelar".
   useEffect(() => {
     function manejarTecladoFisico(e: KeyboardEvent) {
       const foco = document.activeElement;
@@ -217,7 +200,7 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
     window.addEventListener("keydown", manejarTecladoFisico);
     return () => window.removeEventListener("keydown", manejarTecladoFisico);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [montoInput, restante, metodoActivo, pagos, procesando, propina, totalAPagar]);
+  }, [montoInput, restante, metodoActivo, procesando, propina, totalAPagar]);
 
   function elegirPropinaRapida(pct: number) {
     setPropinaPorcentaje(pct);
@@ -227,7 +210,9 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
 
   async function confirmar() {
     setError(null);
-    const pagosFinales = pagos.length > 0 ? pagos : [{ metodo: metodoActivo, monto: Number(montoInput) }];
+    // Un solo pago con el método activo. Si el cajero no tecleó nada se cobra el total exacto:
+    // es el caso mayoritario y ahorra teclear el importe que ya está en pantalla.
+    const pagosFinales = [{ metodo: metodoActivo, monto: montoCobrado }];
     setProcesando(true);
     try {
       // Este negocio no tiene cocina — no hay un paso separado de "enviar pedido"; el pedido
@@ -322,17 +307,6 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
             </div>
             <p style={{ margin: "4px 0 0", fontSize: 14, fontWeight: 700, color: "var(--h421-navy-texto)" }}>Requiere PIN de supervisor.</p>
 
-            {pagos.length > 0 && (
-              <ul style={{ listStyle: "none", padding: 0, marginTop: 14, fontSize: 14 }}>
-                {pagos.map((p, i) => (
-                  <li key={i} style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span>{METODOS.find((m) => m.valor === p.metodo)?.etiqueta}</span>
-                    <span>${p.monto.toFixed(2)}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-
             <div style={{ borderTop: "1px solid var(--h421-gray-200)", marginTop: 14, paddingTop: 10 }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 700, color: "var(--h421-navy-texto)" }}>
                 <span>Propina</span><span>${propina.toFixed(2)} MXN</span>
@@ -352,7 +326,7 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
             <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
               <button onClick={onCerrar} style={{ flex: 1, padding: 14, background: "var(--h421-gray-200)" }}>Cancelar</button>
               {metodoActivo !== MetodoPago.TARJETA && (
-                <button onClick={confirmar} disabled={procesando} className="btn-grande btn-pagar" style={{ flex: 2, fontSize: 16 }}>
+                <button onClick={confirmar} disabled={procesando || restante > 0} className="btn-grande btn-pagar" style={{ flex: 2, fontSize: 16 }}>
                   {procesando ? "Procesando…" : "Confirmar pago"}
                 </button>
               )}
@@ -424,7 +398,7 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
             </div>
           ) : (
             <div style={{ padding: 24, background: "var(--h421-gray-50)", display: "flex", flexDirection: "column" }}>
-              <p style={{ margin: "0 0 8px", fontSize: 13, color: "var(--h421-gray-400)", textAlign: "center" }}>Monto ingresado</p>
+              <p style={{ margin: "0 0 8px", fontSize: 13, color: "var(--h421-gray-400)", textAlign: "center" }}>Paga con (déjalo en 0 si es importe exacto)</p>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--h421-white)", borderRadius: 12, padding: "16px 20px", fontSize: 30, fontWeight: 800, border: "1px solid var(--h421-gray-200)" }}>
                 <span>$</span>
                 <span>{montoInput}</span>
@@ -446,9 +420,6 @@ export function ModalCobro({ mesaNombre, onCerrar, onCobrado }: { mesaNombre: st
                 ))}
               </div>
 
-              <button onClick={agregarPago} className="btn-grande" style={{ marginTop: 10, background: "var(--h421-navy)", color: "#fff", fontSize: 16 }}>
-                Agregar pago
-              </button>
               <p style={{ margin: "10px 0 0", fontSize: 12, color: "var(--h421-gray-400)", textAlign: "center" }}>
                 Enter confirma el cobro · Esc cancela
               </p>

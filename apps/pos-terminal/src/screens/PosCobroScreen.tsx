@@ -37,7 +37,6 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
 
   const [metodos, setMetodos] = useState<{ valor: MetodoPago; etiqueta: string; icono: string }[]>([]);
   const [metodoActivo, setMetodoActivo] = useState<MetodoPago>(MetodoPago.EFECTIVO);
-  const [pagos, setPagos] = useState<{ metodo: MetodoPago; monto: number }[]>([]);
   const [montoInput, setMontoInput] = useState("0");
   const [procesando, setProcesando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,15 +50,18 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
     })();
   }, []);
 
-  const pagadoHasta = pagos.reduce((s, p) => s + p.monto, 0);
-  const totalConTeclaActual = pagadoHasta + Number(montoInput || 0);
-  const restante = Math.max(0, t.total - totalConTeclaActual);
-  const cambio = Math.max(0, totalConTeclaActual - t.total);
+  // El teclado ya no arma pagos parciales: es solo "con cuánto paga el cliente", para calcular el
+  // cambio. Dejarlo en 0 significa pago exacto — ver `montoCobrado`.
+  const recibido = Number(montoInput || 0);
+  const montoCobrado = recibido > 0 ? recibido : t.total;
+  const restante = Math.max(0, t.total - montoCobrado);
+  const cambio = Math.max(0, montoCobrado - t.total);
 
   function elegirMetodo(metodo: MetodoPago) {
     setMetodoActivo(metodo);
-    const faltante = Math.max(0, t.total - pagadoHasta);
-    setMontoInput(metodo === MetodoPago.EFECTIVO ? "0" : faltante > 0 ? faltante.toFixed(2) : "0");
+    // En efectivo el cajero teclea con cuánto le pagan; en los demás métodos el importe es
+    // siempre el total exacto, así que no hay nada que teclear.
+    setMontoInput(metodo === MetodoPago.EFECTIVO ? "0" : t.total.toFixed(2));
   }
 
   function presionarTecla(tecla: string) {
@@ -70,21 +72,12 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
     });
   }
 
-  function agregarPago() {
-    const monto = Number(montoInput);
-    if (!monto || monto <= 0) return;
-    setPagos((p) => [...p, { metodo: metodoActivo, monto }]);
-    setMontoInput(restante.toFixed(2));
-  }
-
-  function quitarPago(i: number) {
-    setPagos((p) => p.filter((_, idx) => idx !== i));
-  }
-
   async function confirmar() {
     if (!usuario) return;
     setError(null);
-    const pagosFinales = pagos.length > 0 ? pagos : [{ metodo: metodoActivo, monto: Number(montoInput) }];
+    // Un solo pago con el método activo. Si el cajero no tecleó nada se cobra el total exacto:
+    // es el caso mayoritario y ahorra teclear el importe que ya está en pantalla.
+    const pagosFinales = [{ metodo: metodoActivo, monto: montoCobrado }];
     setProcesando(true);
     try {
       const db = await abrirBaseDeDatos();
@@ -131,20 +124,6 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
           ))}
         </View>
 
-        {pagos.length > 0 && (
-          <View style={{ marginTop: 12 }}>
-            {pagos.map((p, i) => (
-              <View key={i} style={estilos.filaTotal}>
-                <Text style={{ color: colores.texto }}>{metodos.find((m) => m.valor === p.metodo)?.etiqueta ?? p.metodo}</Text>
-                <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
-                  <Text style={{ color: colores.texto }}>${p.monto.toFixed(2)}</Text>
-                  <TouchableOpacity onPress={() => quitarPago(i)}><Text style={{ color: colores.red }}>🗑</Text></TouchableOpacity>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
-
         <View style={estilos.totalesBox}>
           <Text style={[estilos.totalGrande, { color: restante > 0 ? colores.navyTexto : colores.green }]}>
             {restante > 0 ? `Falta cubrir: $${restante.toFixed(2)}` : `Cambio: $${cambio.toFixed(2)}`}
@@ -152,6 +131,7 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
         </View>
 
         <View style={estilos.tecladoContenedor}>
+          <Text style={estilos.etiquetaMonto}>Paga con (déjalo en 0 si es importe exacto)</Text>
           <Text style={estilos.montoIngresado}>${montoInput}</Text>
           <View style={estilos.teclado}>
             {TECLAS.map((k) => (
@@ -160,9 +140,6 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
               </TouchableOpacity>
             ))}
           </View>
-          <TouchableOpacity onPress={agregarPago} style={estilos.botonAgregarPago}>
-            <Text style={{ color: "#fff", fontWeight: "700" }}>Agregar pago</Text>
-          </TouchableOpacity>
         </View>
 
         {error && <Text style={estilos.error}>{error}</Text>}
@@ -171,8 +148,17 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
           <TouchableOpacity onPress={onCerrar} style={[estilos.botonAccion, { backgroundColor: colores.gray200 }]}>
             <Text style={{ color: colores.texto }}>Cancelar</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={confirmar} disabled={procesando} style={[estilos.botonAccion, { flex: 2, backgroundColor: colores.green }]}>
-            <Text style={{ color: "#fff", fontWeight: "700", fontSize: 16 }}>{procesando ? "Procesando…" : "Confirmar pago"}</Text>
+          {/* Bloquear en vez de dejar confirmar y fallar: si el importe tecleado no alcanza,
+              `validarPagoSuficiente` rechazaría la venta con un error que el cajero ve
+              demasiado tarde. */}
+          <TouchableOpacity
+            onPress={confirmar}
+            disabled={procesando || restante > 0}
+            style={[estilos.botonAccion, { flex: 2, backgroundColor: restante > 0 ? colores.gray200 : colores.green }]}
+          >
+            <Text style={{ color: restante > 0 ? colores.texto : "#fff", fontWeight: "700", fontSize: 16 }}>
+              {procesando ? "Procesando…" : "Confirmar pago"}
+            </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -193,11 +179,11 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     botonChip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, backgroundColor: colores.gray50, borderWidth: 1, borderColor: colores.borde },
     botonChipActivo: { backgroundColor: colores.navy, borderColor: colores.navy },
     tecladoContenedor: { marginTop: 20, backgroundColor: colores.gray50, borderRadius: 12, padding: 16 },
+    etiquetaMonto: { fontSize: 12, textAlign: "center", color: colores.textoSecundario, marginBottom: 2 },
     montoIngresado: { fontSize: 30, fontWeight: "800", textAlign: "center", color: colores.texto, marginBottom: 12 },
     teclado: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
     tecla: { width: "30%", aspectRatio: 1.6, backgroundColor: colores.superficie, borderRadius: 10, borderWidth: 1, borderColor: colores.borde, alignItems: "center", justifyContent: "center" },
     teclaBorrar: { backgroundColor: colores.red + "22" },
-    botonAgregarPago: { backgroundColor: colores.navy, borderRadius: 10, padding: 14, alignItems: "center", marginTop: 12, minHeight: 48, justifyContent: "center" },
     error: { color: colores.red, marginTop: 12 },
     botonAccion: { flex: 1, padding: 16, borderRadius: 12, alignItems: "center", minHeight: 56, justifyContent: "center" },
   });
