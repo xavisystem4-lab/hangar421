@@ -339,6 +339,60 @@ export const MIGRACIONES: Migracion[] = [
       await db.execAsync(`ALTER TABLE turnos ADD COLUMN desglose_efectivo TEXT;`);
     },
   },
+  {
+    version: 6,
+    nombre: "inventario_local",
+    up: async (db) => {
+      // Inventario offline-first, igual que las ventas: se consulta y se ajusta sin red, y los
+      // movimientos salen por sync_outbox (SyncEntidad.MOVIMIENTO_INVENTARIO, que el backend ya
+      // enruta). Las existencias bajan del ERP por /inventario/existencias.
+      //
+      // `existencia` se guarda como REAL porque hay insumos en gramos y mililitros: un INTEGER
+      // convertiría 0.4 kg en 0 sin avisar.
+      await db.execAsync(`
+        CREATE TABLE insumos (
+          id TEXT PRIMARY KEY,
+          nombre TEXT NOT NULL,
+          unidad_medida TEXT NOT NULL DEFAULT 'pz',
+          costo_unitario REAL NOT NULL DEFAULT 0,
+          proveedor_id TEXT,
+          -- Desnormalizado a propósito: la lista de compras se agrupa por proveedor y tiene que
+          -- poder imprimirse sin conexión, cuando no hay forma de resolver el nombre.
+          proveedor_nombre TEXT,
+          activo INTEGER NOT NULL DEFAULT 1,
+          synced_at TEXT
+        );
+        CREATE INDEX idx_insumos_nombre ON insumos(nombre);
+
+        -- Existencias POR SUCURSAL, misma llave compuesta que InventarioSucursal en el backend:
+        -- una terminal que cambia de sucursal no debe mezclar el almacén de las dos.
+        CREATE TABLE inventario_local (
+          sucursal_id TEXT NOT NULL,
+          insumo_id TEXT NOT NULL REFERENCES insumos(id),
+          existencia REAL NOT NULL DEFAULT 0,
+          minimo REAL NOT NULL DEFAULT 0,
+          maximo REAL,
+          updated_at TEXT,
+          PRIMARY KEY (sucursal_id, insumo_id)
+        );
+
+        -- Historial local de lo que hizo ESTA terminal. El saldo autoritativo lo lleva el ERP;
+        -- esto permite revisar y deshacer un conteo sin conexión, y ver qué queda por subir.
+        CREATE TABLE movimientos_inventario (
+          id TEXT PRIMARY KEY,
+          sucursal_id TEXT NOT NULL,
+          insumo_id TEXT NOT NULL,
+          tipo TEXT NOT NULL CHECK(tipo IN ('ENTRADA','SALIDA','AJUSTE','MERMA','CONTEO')),
+          cantidad REAL NOT NULL,
+          motivo TEXT,
+          usuario_id TEXT,
+          created_at TEXT NOT NULL,
+          idempotency_key TEXT NOT NULL UNIQUE
+        );
+        CREATE INDEX idx_movimientos_inv_sucursal ON movimientos_inventario(sucursal_id, created_at);
+      `);
+    },
+  },
 ];
 
 /** Corre, en orden, toda migración con `version` mayor a la ya aplicada — cada una dentro de su

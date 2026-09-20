@@ -3,7 +3,7 @@ import { abrirBaseDeDatos } from "../db/database";
 import { pendientesParaDrenar, marcarSincronizado, marcarError, contarPendientes } from "../db/outboxRepo";
 import { erpFetch, obtenerTokensErp } from "../api/erpHttp";
 import { useSyncStatusStore } from "../store/syncStatusStore";
-import { refrescarCatalogo, ejecutarPull } from "./pullEngine";
+import { refrescarCatalogo, refrescarInventario, ejecutarPull } from "./pullEngine";
 import { obtenerOCrearDispositivoId, obtenerSucursalErp } from "../db/dispositivoLocal";
 
 // Más espaciado que los 8s de apps/waiter-mobile: ahí el destino es una Estación en la misma
@@ -24,6 +24,7 @@ let intervaloCatalogo: ReturnType<typeof setInterval> | null = null;
  *  ni, mucho menos, la pantalla de venta (ver el comentario de cabecera de erpHttp.ts). */
 async function refrescarCatalogoEnSegundoPlano(): Promise<void> {
   await refrescarCatalogo().catch(() => undefined);
+  await refrescarInventario().catch(() => undefined);
   await ejecutarPull().catch(() => undefined);
 }
 

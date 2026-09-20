@@ -5,6 +5,7 @@ import { erpFetch, obtenerTokensErp } from "../api/erpHttp";
 import { obtenerSucursalErp } from "../db/dispositivoLocal";
 import { obtenerConfig, guardarConfig } from "../db/configLocalRepo";
 import { upsertCatalogo, upsertMesas } from "../db/catalogoSyncRepo";
+import { upsertInventario } from "../db/inventarioRepo";
 
 const CLAVE_EMPRESA_ERP = "empresa_id_erp";
 const CLAVE_CURSOR_PULL = "cursor_pull";
@@ -40,6 +41,36 @@ export async function refrescarCatalogo(): Promise<void> {
       activo: p.activo, disponibleSucursal: p.disponibleSucursal,
       requierePersonalizacion: p.requierePersonalizacion, modificadores: p.modificadores,
     })),
+  );
+}
+
+/** Trae insumos y existencias por los mismos endpoints REST que usa el ERP web
+ *  (GET /inventario/insumos, GET /inventario/existencias). Igual que el catálogo, va aparte de
+ *  /sync/pull: ese solo manda deltas de INVENTARIO_SUCURSAL, sin el nombre ni la unidad del
+ *  insumo, así que no sirve para poblar la pantalla desde cero.
+ *
+ *  Best-effort de principio a fin: el inventario es consulta, nunca puede impedir vender. */
+export async function refrescarInventario(): Promise<void> {
+  const db = await abrirBaseDeDatos();
+  const [empresaId, sucursalId, tokens] = await Promise.all([
+    obtenerEmpresaErp(db),
+    obtenerSucursalErp(db),
+    obtenerTokensErp(),
+  ]);
+  if (!empresaId || !sucursalId || !tokens) return;
+
+  const [insumos, existencias] = await Promise.all([
+    erpFetch<any[]>(`/inventario/insumos?empresaId=${empresaId}`),
+    erpFetch<any[]>(`/inventario/existencias?sucursalId=${sucursalId}`),
+  ]);
+
+  await upsertInventario(
+    db,
+    insumos.map((i) => ({
+      id: i.id, nombre: i.nombre, unidadMedida: i.unidadMedida, costoUnitario: Number(i.costoUnitario) || 0,
+      proveedorId: i.proveedorId, proveedor: i.proveedor, activo: i.activo,
+    })),
+    existencias.map((e) => ({ insumoId: e.insumoId, existencia: e.existencia, minimo: e.minimo, maximo: e.maximo })),
   );
 }
 

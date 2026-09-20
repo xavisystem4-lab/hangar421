@@ -16,10 +16,11 @@ import { PosAdminCatalogoScreen } from "./PosAdminCatalogoScreen";
 import { PosAdminReportesScreen } from "./PosAdminReportesScreen";
 import { PosAdminUsuariosScreen } from "./PosAdminUsuariosScreen";
 import { PosAdminPagosScreen } from "./PosAdminPagosScreen";
+import { PosAdminInventarioScreen } from "./PosAdminInventarioScreen";
 import { ReciboEnPantallaScreen } from "./ReciboEnPantallaScreen";
 
 type Pantalla = "venta" | "cobro" | "caja" | "admin";
-type PantallaAdmin = "catalogo" | "reportes" | "usuarios" | "pagos";
+type PantallaAdmin = "catalogo" | "inventario" | "reportes" | "usuarios" | "pagos";
 
 const TABS: { id: Pantalla; etiqueta: string }[] = [
   { id: "venta", etiqueta: "Venta" },
@@ -146,6 +147,9 @@ export function PosNavigator() {
               <TouchableOpacity onPress={() => setPantallaAdmin("catalogo")} style={[estilos.subTab, pantallaAdmin === "catalogo" && estilos.subTabActivo]}>
                 <Text style={{ color: pantallaAdmin === "catalogo" ? "#fff" : colores.texto, fontWeight: "700" }}>Catálogo</Text>
               </TouchableOpacity>
+              <TouchableOpacity onPress={() => setPantallaAdmin("inventario")} style={[estilos.subTab, pantallaAdmin === "inventario" && estilos.subTabActivo]}>
+                <Text style={{ color: pantallaAdmin === "inventario" ? "#fff" : colores.texto, fontWeight: "700" }}>Inventario</Text>
+              </TouchableOpacity>
               <TouchableOpacity onPress={() => setPantallaAdmin("reportes")} style={[estilos.subTab, pantallaAdmin === "reportes" && estilos.subTabActivo]}>
                 <Text style={{ color: pantallaAdmin === "reportes" ? "#fff" : colores.texto, fontWeight: "700" }}>Reportes</Text>
               </TouchableOpacity>
@@ -161,6 +165,7 @@ export function PosNavigator() {
               {pantallaAdmin === "reportes" && <PosAdminReportesScreen onCerrar={() => setPantalla("venta")} />}
               {pantallaAdmin === "usuarios" && <PosAdminUsuariosScreen onCerrar={() => setPantalla("venta")} />}
               {pantallaAdmin === "pagos" && <PosAdminPagosScreen onCerrar={() => setPantalla("venta")} />}
+              {pantallaAdmin === "inventario" && <PosAdminInventarioScreen onCerrar={() => setPantalla("venta")} />}
             </View>
           </View>
         )}
