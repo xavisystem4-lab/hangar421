@@ -195,8 +195,11 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
 
         {/* Total y botón en la MISMA fila: antes eran dos bloques apilados y el pie del carrito
             se comía una franja alta de pantalla en una tablet, justo donde hace falta ver
-            productos. El importe queda pegado al botón, que es donde el cajero mira al cobrar.
-            El botón ya no repite la cifra porque la tiene al lado. */}
+            productos.
+
+            El botón repite el importe a propósito: es la última confirmación de cuánto se va a
+            cobrar, y el cajero mira el botón, no la etiqueta. Por eso el bloque de la izquierda
+            queda en un cuerpo menor — informa, pero el que manda es el botón. */}
         <View style={estilos.barraCobro}>
           <View style={estilos.bloqueTotal}>
             <Text style={estilos.totalEtiqueta}>Total</Text>
@@ -210,7 +213,11 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
             disabled={items.length === 0}
             style={[estilos.botonCobrar, items.length === 0 && { opacity: 0.5 }]}
           >
-            <Text style={estilos.botonCobrarTexto}>Cobrar</Text>
+            {/* `adjustsFontSizeToFit` para que un total de cuatro cifras no parta el botón en
+                una tablet estrecha. */}
+            <Text style={estilos.botonCobrarTexto} numberOfLines={1} adjustsFontSizeToFit>
+              Cobrar ${t.total.toFixed(2)}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -270,12 +277,12 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     // `flexShrink` para que con un total largo se encoja el importe y no se deforme el botón.
     bloqueTotal: { flex: 1, flexShrink: 1 },
     totalEtiqueta: { fontSize: 11, fontWeight: "700", color: colores.textoSecundario, letterSpacing: 0.5 },
-    totalImporte: { fontSize: 24, fontWeight: "800", color: colores.navyTexto },
+    totalImporte: { fontSize: 19, fontWeight: "800", color: colores.navyTexto },
     // 52 de alto es el mínimo cómodo para el pulgar en una tablet de mostrador; se mantiene
     // aunque la barra sea ahora más baja en total.
     botonCobrar: {
       backgroundColor: colores.green, borderRadius: 12,
-      paddingHorizontal: 28, minHeight: 52,
+      paddingHorizontal: 20, minHeight: 52, flexShrink: 1, minWidth: 170,
       alignItems: "center", justifyContent: "center",
     },
     botonCobrarTexto: { color: "#fff", fontWeight: "700", fontSize: 17 },
