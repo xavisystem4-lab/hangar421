@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, BackHandler, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { RolUsuario } from "@hangar421/shared";
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { useSyncStatusStore, type EstadoSync } from "../store/syncStatusStore";
@@ -8,6 +8,8 @@ import { procesarCola } from "../sync/syncEngine";
 import { abrirBaseDeDatos } from "../db/database";
 import { listarTicketsPendientes } from "../db/ticketsRepo";
 import { obtenerNombreSucursal } from "../db/dispositivoLocal";
+import { useBotonAtras } from "../hooks/useBotonAtras";
+import { ModalRenombrarSucursal } from "../components/ModalRenombrarSucursal";
 import { PosVentaScreen } from "./PosVentaScreen";
 import { PosCobroScreen } from "./PosCobroScreen";
 import { PosCajaScreen } from "./PosCajaScreen";
@@ -52,6 +54,7 @@ export function PosNavigator() {
   const [mostrarConexion, setMostrarConexion] = useState(false);
   const [reciboPendiente, setReciboPendiente] = useState<string | null>(null);
   const [sucursalActiva, setSucursalActiva] = useState<string | null>(null);
+  const [renombrando, setRenombrando] = useState(false);
 
   // Indicador de sucursal activa: se recarga al volver de la pantalla de conexión, que es el
   // único sitio donde puede cambiar. Se lee de la base local, no del ERP, para que siga
@@ -63,6 +66,44 @@ export function PosNavigator() {
       .then(setSucursalActiva)
       .catch(() => undefined);
   }, [mostrarConexion]);
+
+  /**
+   * Botón atrás de Android: un paso atrás de verdad, en vez de cerrar la app.
+   *
+   * El orden va de lo más anidado a lo más general, que es el orden en que el usuario "entró":
+   * pantalla de conexión o recibo → subpantalla de Admin → pestaña secundaria → Venta. Solo
+   * estando ya en Venta se deja salir, y preguntando: en una tablet de mostrador ese botón se
+   * roza constantemente y cerrar el POS a media jornada no puede ser un accidente de un toque.
+   */
+  useBotonAtras(() => {
+    if (renombrando) { setRenombrando(false); return true; }
+    if (mostrarConexion) { setMostrarConexion(false); return true; }
+    if (reciboPendiente) { setReciboPendiente(null); return true; }
+
+    if (pantalla === "admin" && pantallaAdmin !== "catalogo") { setPantallaAdmin("catalogo"); return true; }
+    if (pantalla !== "venta") { setPantalla("venta"); return true; }
+
+    Alert.alert("Salir del Punto de Venta", "¿Seguro que quieres cerrar la aplicación?", [
+      { text: "Cancelar", style: "cancel" },
+      { text: "Salir", style: "destructive", onPress: () => BackHandler.exitApp() },
+    ]);
+    return true;
+  }, [renombrando, mostrarConexion, reciboPendiente, pantalla, pantallaAdmin]);
+
+  /** Tocar la sucursal ya no lleva directo a Conexión: desde aquí se puede tanto cambiar de
+   *  sucursal como corregir su nombre, que son las dos cosas que se buscan en ese sitio. */
+  function tocarSucursal() {
+    if (!sucursalActiva) { setMostrarConexion(true); return; }
+    Alert.alert(
+      sucursalActiva,
+      "¿Qué quieres hacer con esta sucursal?",
+      [
+        { text: "Cancelar", style: "cancel" },
+        { text: "Cambiar nombre", onPress: () => setRenombrando(true) },
+        { text: "Cambiar de sucursal", onPress: () => setMostrarConexion(true) },
+      ],
+    );
+  }
 
   function tocarIndicadorSync() {
     if (!sync.conectadoAlErp) {
@@ -113,7 +154,7 @@ export function PosNavigator() {
           <Text style={estilos.headerTitulo} numberOfLines={1}>HANGAR 421 · {usuario?.nombre}</Text>
           {/* Selector de sucursal activa: siempre visible, y tocarlo lleva a cambiarla. Si la
               terminal no está enlazada lo dice, en vez de dejar el hueco en blanco. */}
-          <TouchableOpacity onPress={() => setMostrarConexion(true)} accessibilityLabel="Cambiar de sucursal">
+          <TouchableOpacity onPress={tocarSucursal} accessibilityLabel="Opciones de sucursal">
             <Text style={estilos.headerSucursal} numberOfLines={1}>
               {sucursalActiva ? `🏪 ${sucursalActiva}` : "🏪 Sin sucursal enlazada"} ▾
             </Text>
@@ -178,6 +219,14 @@ export function PosNavigator() {
           </View>
         )}
       </View>
+
+      {renombrando && sucursalActiva && (
+        <ModalRenombrarSucursal
+          nombreActual={sucursalActiva}
+          onCerrar={() => setRenombrando(false)}
+          onRenombrada={(nuevo) => { setSucursalActiva(nuevo); setRenombrando(false); }}
+        />
+      )}
 
       {pantalla !== "cobro" && (
         <View style={estilos.tabBar}>

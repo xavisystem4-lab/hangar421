@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Put, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Put, Query, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { RolUsuario } from "@hangar421/shared";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
@@ -42,6 +42,22 @@ export class SucursalesController {
   @Audit("SUCURSAL", "ACTUALIZAR_CONFIG_TICKET")
   actualizarConfigTicket(@Param("id") id: string, @Body() body: unknown) {
     return this.sucursales.actualizarConfigTicket(id, body);
+  }
+
+  /**
+   * Renombrar desde una terminal. El parámetro se llama `sucursalId` a propósito: así
+   * SucursalAccessGuard lo compara contra el token y una terminal solo puede renombrar LA SUYA.
+   *
+   * No lleva @Roles: la sesión de una terminal es un CAJERO. Lo que autoriza es la contraseña
+   * de un administrador, validada dentro del servicio.
+   */
+  @Patch(":sucursalId/nombre")
+  @Audit("SUCURSAL", "RENOMBRAR")
+  renombrarDesdeTerminal(
+    @Param("sucursalId") sucursalId: string,
+    @Body() body: { nombre: string; autorizadoPorId: string; password: string },
+  ) {
+    return this.sucursales.renombrarDesdeTerminal(sucursalId, body);
   }
 
   @Get(":id/areas")
