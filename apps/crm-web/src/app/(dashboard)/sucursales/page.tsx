@@ -160,25 +160,28 @@ export default function SucursalesPage() {
               </>
             )}
 
-            {/* Estado de conexión de las terminales de ESTA sucursal. Una terminal apagada de
-                noche es normal; lo que importa es poder distinguirlo de una averiada. */}
+            {/* Estado de conexión de la sucursal, sin desglosar por dispositivo: para saber si
+                el negocio está operando y mandando datos, los nombres internos de las terminales
+                ("POS Caja", "Pantalla cocina") son ruido. Basta con que la sucursal esté viva.
+                Cuando no lo está, sí importa desde cuándo — eso es lo accionable. */}
             {(() => {
               const terminales = dispositivos[s.id] ?? [];
-              const conectadas = terminales.filter(estaConectada);
+              const conectada = terminales.some(estaConectada);
+              const ultimaSenal = terminales
+                .map((d) => d.ultimaConexion)
+                .filter(Boolean)
+                .sort()
+                .pop();
               return (
-                <div style={{ margin: "10px 0", padding: "8px 10px", borderRadius: 8, background: "var(--h421-gray-50)" }}>
-                  <div style={{ fontWeight: 700, fontSize: 13, color: conectadas.length > 0 ? "var(--h421-green)" : "var(--h421-gray-400)" }}>
-                    {conectadas.length > 0
-                      ? `● ${s.nombre} — conectada`
-                      : terminales.length > 0
-                        ? `○ ${s.nombre} — sin terminales en línea`
-                        : `○ ${s.nombre} — ninguna terminal enlazada`}
+                <div style={{ margin: "10px 0", padding: "10px 12px", borderRadius: 8, background: "var(--h421-gray-50)" }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: conectada ? "var(--h421-green)" : "var(--h421-gray-400)" }}>
+                    {conectada ? `● ${s.nombre} — conectado` : `○ ${s.nombre} — sin conexión`}
                   </div>
-                  {terminales.map((d) => (
-                    <div key={d.id} style={{ fontSize: 12, color: "var(--h421-gray-400)", marginTop: 3 }}>
-                      {estaConectada(d) ? "●" : "○"} {d.nombre} · {estaConectada(d) ? "en línea" : haceCuanto(d.ultimaConexion)}
+                  {!conectada && (
+                    <div style={{ fontSize: 12, color: "var(--h421-gray-400)", marginTop: 3 }}>
+                      {terminales.length === 0 ? "Ninguna terminal enlazada todavía" : `Última señal ${haceCuanto(ultimaSenal)}`}
                     </div>
-                  ))}
+                  )}
                 </div>
               );
             })()}

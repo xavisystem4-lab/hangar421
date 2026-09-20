@@ -60,6 +60,14 @@ export function detenerMotorDeSincronizacion() {
   window.removeEventListener("online", procesarColaSalida);
 }
 
+/** Le dice al ERP que este POS sigue encendido y lo alcanza, sin nada que sincronizar.
+ *  `window.hangar.deviceId()` es la huella de instalación, la misma que ya viaja en cada
+ *  envelope del outbox — el backend la resuelve contra Dispositivo.identificador. */
+async function enviarLatido(sucursalId: string): Promise<void> {
+  const dispositivoId = await window.hangar.deviceId();
+  await apiFetch("/sync/heartbeat", { method: "POST", body: JSON.stringify({ dispositivoId, sucursalId }) });
+}
+
 /** Vacía la cola de salida hacia /sync/push, con idempotencia (id + idempotencyKey) —
  *  reintentar un lote ya aplicado no duplica nada en el servidor. */
 export async function procesarColaSalida() {
@@ -71,6 +79,11 @@ export async function procesarColaSalida() {
 
   const pendientes = await window.hangar.outbox.pendientes(SYNC_DEFAULTS.BATCH_MAX_ITEMS);
   if (pendientes.length === 0) {
+    // Sin nada que mandar, este POS no hablaba con el ERP en absoluto, así que el ERP lo veía
+    // desconectado aunque llevara todo el día abierto: `ultimaConexion` solo se refrescaba al
+    // sincronizar algo. El latido lo mantiene visible como conectado igual que el APK.
+    // Best-effort: un fallo aquí no debe cambiar el estado de la cola, que está al día.
+    await enviarLatido(auth.sucursalId).catch(() => undefined);
     useSyncStore.getState().setEstado("SYNCED");
     return;
   }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Linking, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { APP_VERSION, buscarActualizacion, type InfoActualizacion } from "../updates";
-import { usarColores } from "../store/temaStore";
+import { usarColores, useTemaStore } from "../store/temaStore";
 
 type Estado = "buscando" | "disponible" | "al-dia" | "error";
 
@@ -15,6 +15,7 @@ type Estado = "buscando" | "disponible" | "al-dia" | "error";
  *  API) el botón queda en "Reintentar" y el POS sigue vendiendo con normalidad. */
 export function BarraActualizacion() {
   const colores = usarColores();
+  const tema = useTemaStore();
   const estilos = crearEstilos(colores);
   const [estado, setEstado] = useState<Estado>("buscando");
   const [info, setInfo] = useState<InfoActualizacion | null>(null);
@@ -49,6 +50,21 @@ export function BarraActualizacion() {
   return (
     <View style={estilos.contenedor}>
       <Text style={estilos.version} numberOfLines={1}>v{APP_VERSION} — Desarrollado por Soft Gala</Text>
+
+      {/* Modo noche. El motor de temas ya existía y seguía al sistema operativo, pero no había
+          forma de forzarlo: en una barra con poca luz el turno de noche quiere oscuro aunque el
+          Android esté en claro. Vive aquí, y no en la cabecera, porque esta barra se dibuja en
+          todas las pantallas — incluida la de login, que es la primera que ve un cajero.
+          La preferencia es del dispositivo, no del usuario logeado (ver temaStore), así que
+          sobrevive al cambio de turno. */}
+      <TouchableOpacity
+        onPress={tema.alternar}
+        style={estilos.botonTema}
+        accessibilityLabel={tema.tema === "oscuro" ? "Cambiar a modo claro" : "Cambiar a modo noche"}
+      >
+        <Text style={estilos.botonTemaTexto}>{tema.tema === "oscuro" ? "☀" : "🌙"}</Text>
+      </TouchableOpacity>
+
       <TouchableOpacity
         onPress={manejarPress}
         disabled={estado === "buscando"}
@@ -70,11 +86,15 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
       flexDirection: "row",
       justifyContent: "space-between",
       alignItems: "center",
+      gap: 8,
       paddingHorizontal: 14,
       paddingVertical: 6,
       backgroundColor: colores.navy,
     },
     version: { color: "rgba(255,255,255,0.7)", fontSize: 11, flexShrink: 1 },
+    // 36x36: piso táctil cómodo para un dedo en una barra estrecha.
+    botonTema: { width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(255,255,255,0.12)", alignItems: "center", justifyContent: "center" },
+    botonTemaTexto: { fontSize: 15 },
     boton: {
       paddingHorizontal: 10,
       paddingVertical: 6,
