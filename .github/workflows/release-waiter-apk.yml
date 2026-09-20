@@ -116,7 +116,11 @@ jobs:
               exit 0
             fi
             echo "Push rechazado: main avanzó durante el build. Rebasando e intentando de nuevo…"
-            git pull --rebase origin main
+            # --autostash es imprescindible: `expo prebuild` y Gradle dejan ficheros generados
+            # sin seguimiento, y `git pull --rebase` se niega a correr con el árbol sucio
+            # ("cannot pull with rebase: You have unstaged changes"). Sin esto el reintento
+            # aborta en el primer intento y el APK ya compilado se pierde igual.
+            git pull --rebase --autostash origin main
           done
 
           echo "::error::No se pudo publicar el bump de versión tras 3 intentos."
