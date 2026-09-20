@@ -1,13 +1,17 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { EstadoTurno, MetodoPago, TipoMovimientoCaja } from "@hangar421/shared";
 import { PrismaService } from "../prisma/prisma.service";
+import { resolverUsuarioDeTerminal } from "../common/usuario-terminal.util";
 
 @Injectable()
 export class CajaService {
   constructor(private prisma: PrismaService) {}
 
-  async abrirTurno(data: { sucursalId: string; cajaId?: string | null; usuarioId: string; montoInicial: number }) {
+  async abrirTurno(data: { sucursalId: string; cajaId?: string | null; usuarioId?: string | null; montoInicial: number }) {
     const cajaId = await this.resolverCaja(data.sucursalId, data.cajaId);
+    // `Turno.usuarioId` es obligatorio, así que aquí no vale dejarlo vacío como en el cobro: si
+    // el cajero no existe en el ERP se atribuye el turno al usuario-terminal de la sucursal.
+    const usuarioId = await resolverUsuarioDeTerminal(this.prisma, data.usuarioId, data.sucursalId);
 
     const turnoActivo = await this.prisma.turno.findFirst({
       where: { cajaId, estado: EstadoTurno.ABIERTO },
@@ -18,7 +22,7 @@ export class CajaService {
       data: {
         sucursalId: data.sucursalId,
         cajaId,
-        usuarioId: data.usuarioId,
+        usuarioId,
         montoInicial: data.montoInicial,
       },
     });
@@ -60,14 +64,19 @@ export class CajaService {
 
   /** Registra una entrada/salida de efectivo de caja que no es una venta (retiro para cambio,
    *  pago a proveedor de contado, etc.) — se descuenta/suma al esperado en el corte. */
-  async registrarMovimiento(data: { turnoId: string; tipo: TipoMovimientoCaja; monto: number; motivo: string; usuarioId: string }) {
+  async registrarMovimiento(data: { turnoId: string; tipo: TipoMovimientoCaja; monto: number; motivo: string; usuarioId?: string | null }) {
     const turno = await this.prisma.turno.findUnique({ where: { id: data.turnoId } });
     if (!turno) throw new NotFoundException("Turno no encontrado");
     if (turno.estado === EstadoTurno.CERRADO) throw new BadRequestException("El turno ya está cerrado");
     if (!(data.monto > 0)) throw new BadRequestException("El monto debe ser mayor a cero");
     if (!data.motivo?.trim()) throw new BadRequestException("El motivo es obligatorio");
 
-    return this.prisma.movimientoCaja.create({ data });
+    // `MovimientoCaja.usuarioId` es obligatorio y clave foránea, igual que en `Turno`: un retiro
+    // registrado por un cajero dado de alta sin conexión reventaría con la misma violación de
+    // FK. Se resuelve por el mismo camino antes de que llegue a pasar.
+    const usuarioId = await resolverUsuarioDeTerminal(this.prisma, data.usuarioId, turno.sucursalId);
+
+    return this.prisma.movimientoCaja.create({ data: { ...data, usuarioId } });
   }
 
   async listarMovimientos(turnoId: string) {

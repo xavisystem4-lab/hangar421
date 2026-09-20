@@ -193,14 +193,26 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
           {items.length === 0 && <Text style={estilos.ayuda}>Carrito vacío — toca un producto para agregarlo.</Text>}
         </ScrollView>
 
-        <View style={estilos.filaTotal}>
-          <Text style={estilos.totalTexto}>Total</Text>
-          <Text style={estilos.totalTexto}>${t.total.toFixed(2)}</Text>
-        </View>
+        {/* Total y botón en la MISMA fila: antes eran dos bloques apilados y el pie del carrito
+            se comía una franja alta de pantalla en una tablet, justo donde hace falta ver
+            productos. El importe queda pegado al botón, que es donde el cajero mira al cobrar.
+            El botón ya no repite la cifra porque la tiene al lado. */}
+        <View style={estilos.barraCobro}>
+          <View style={estilos.bloqueTotal}>
+            <Text style={estilos.totalEtiqueta}>Total</Text>
+            <Text style={estilos.totalImporte} numberOfLines={1} adjustsFontSizeToFit>
+              ${t.total.toFixed(2)}
+            </Text>
+          </View>
 
-        <TouchableOpacity onPress={onCobrar} disabled={items.length === 0} style={[estilos.botonCobrar, items.length === 0 && { opacity: 0.5 }]}>
-          <Text style={estilos.botonCobrarTexto}>Cobrar ${t.total.toFixed(2)}</Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            onPress={onCobrar}
+            disabled={items.length === 0}
+            style={[estilos.botonCobrar, items.length === 0 && { opacity: 0.5 }]}
+          >
+            <Text style={estilos.botonCobrarTexto}>Cobrar</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {personalizando && (
@@ -254,9 +266,18 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     controlesCantidad: { flexDirection: "row", alignItems: "center", gap: 4, marginHorizontal: 8 },
     botonCantidad: { width: 26, height: 26, borderRadius: 6, backgroundColor: colores.gray50, alignItems: "center", justifyContent: "center" },
     botonCantidadTexto: { fontSize: 16, fontWeight: "700", color: colores.texto },
-    filaTotal: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 10 },
-    totalTexto: { fontSize: 18, fontWeight: "800", color: colores.navyTexto },
-    botonCobrar: { backgroundColor: colores.green, borderRadius: 12, padding: 16, alignItems: "center", minHeight: 52, justifyContent: "center" },
-    botonCobrarTexto: { color: "#fff", fontWeight: "700", fontSize: 16 },
+    barraCobro: { flexDirection: "row", alignItems: "center", gap: 12, paddingTop: 10 },
+    // `flexShrink` para que con un total largo se encoja el importe y no se deforme el botón.
+    bloqueTotal: { flex: 1, flexShrink: 1 },
+    totalEtiqueta: { fontSize: 11, fontWeight: "700", color: colores.textoSecundario, letterSpacing: 0.5 },
+    totalImporte: { fontSize: 24, fontWeight: "800", color: colores.navyTexto },
+    // 52 de alto es el mínimo cómodo para el pulgar en una tablet de mostrador; se mantiene
+    // aunque la barra sea ahora más baja en total.
+    botonCobrar: {
+      backgroundColor: colores.green, borderRadius: 12,
+      paddingHorizontal: 28, minHeight: 52,
+      alignItems: "center", justifyContent: "center",
+    },
+    botonCobrarTexto: { color: "#fff", fontWeight: "700", fontSize: 17 },
   });
 }

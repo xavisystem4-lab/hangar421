@@ -8,11 +8,20 @@ import { CajaService } from "./caja.service";
  * Mocks simples en vez de un TestingModule, igual que sync.service.spec.ts: la lógica a probar
  * no depende de nada de Nest.
  */
-function crearServicio(cajasExistentes: { id: string; nombre: string }[] = []) {
+function crearServicio(cajasExistentes: { id: string; nombre: string }[] = [], usuarios: string[] = ["user-1"]) {
   const prisma = {
     turno: {
       findFirst: jest.fn(() => Promise.resolve(null)),
       create: jest.fn((args: any) => Promise.resolve({ id: "turno-1", ...args.data })),
+    },
+    usuario: {
+      findUnique: jest.fn(({ where }: any) =>
+        Promise.resolve(usuarios.includes(where.id ?? where.username) ? { id: where.id ?? "terminal-suc-1" } : null),
+      ),
+      create: jest.fn(() => Promise.resolve({ id: "terminal-creado" })),
+    },
+    sucursal: {
+      findUniqueOrThrow: jest.fn(() => Promise.resolve({ empresaId: "emp-1", nombre: "Colonial" })),
     },
     caja: {
       findFirst: jest.fn(() => Promise.resolve(cajasExistentes[0] ?? null)),
@@ -82,6 +91,66 @@ describe("CajaService.abrirTurno", () => {
 
     expect(prisma.turno.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ cajaId: "caja-existente" }) }),
+    );
+  });
+});
+
+/**
+ * Segundo fallo, que solo apareció al arreglar el primero: con la caja ya resuelta, el turno
+ * llegaba a insertarse y chocaba con `turnos_usuarioId_fkey`. A diferencia del cobro, aquí NO
+ * vale dejar el campo vacío: `Turno.usuarioId` es obligatorio en el esquema.
+ */
+const CAJA = [{ id: "caja-existente", nombre: "Caja principal" }];
+
+describe("CajaService.abrirTurno — usuario que no existe en el ERP", () => {
+  it("conserva el usuario cuando sí existe", async () => {
+    const { service, prisma } = crearServicio(CAJA, ["user-1"]);
+    await service.abrirTurno({ ...BASE, cajaId: null });
+
+    expect(prisma.turno.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ usuarioId: "user-1" }) }),
+    );
+  });
+
+  it("cae al usuario-terminal de la sucursal si el cajero no existe", async () => {
+    // Cajero dado de alta en la tablet sin conexión: su id es un uuid7 que el ERP nunca ha visto.
+    const { service, prisma } = crearServicio(CAJA, ["terminal.suc-1"]);
+    await service.abrirTurno({ ...BASE, usuarioId: "01a0bed8-c5d4-7cf0-976e-6dc90afffa6d", cajaId: null });
+
+    expect(prisma.usuario.create).not.toHaveBeenCalled();
+    expect(prisma.turno.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ usuarioId: "terminal-suc-1" }) }),
+    );
+  });
+
+  it("busca el usuario-terminal por la convención de username de VinculacionService", async () => {
+    // Si esta convención se desincroniza, se crearían DOS identidades para la misma terminal.
+    const { service, prisma } = crearServicio(CAJA, ["terminal.suc-1"]);
+    await service.abrirTurno({ ...BASE, usuarioId: "no-existe", cajaId: null });
+
+    expect(prisma.usuario.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { username: "terminal.suc-1" } }),
+    );
+  });
+
+  it("crea el usuario-terminal si la sucursal todavía no tiene uno", async () => {
+    const { service, prisma } = crearServicio(CAJA, []);
+    await service.abrirTurno({ ...BASE, usuarioId: "no-existe", cajaId: null });
+
+    expect(prisma.usuario.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ username: "terminal.suc-1", empresaId: "emp-1" }) }),
+    );
+    expect(prisma.turno.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ usuarioId: "terminal-creado" }) }),
+    );
+  });
+
+  it("sin usuarioId también resuelve, en vez de insertar un turno sin dueño", async () => {
+    const { service, prisma } = crearServicio(CAJA, ["terminal.suc-1"]);
+    await service.abrirTurno({ ...BASE, usuarioId: null, cajaId: null });
+
+    expect(prisma.turno.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ usuarioId: "terminal-suc-1" }) }),
     );
   });
 });
