@@ -1,6 +1,6 @@
 {
   "name": "@hangar421/pos-terminal",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "private": true,
   "main": "index.js",
   "scripts": {
