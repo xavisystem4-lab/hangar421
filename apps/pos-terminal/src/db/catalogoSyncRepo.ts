@@ -91,3 +91,79 @@ export async function upsertMesas(db: SQLiteDatabase, mesas: MesaRemota[]): Prom
     }
   });
 }
+
+/**
+ * Repunta las ventas ya encoladas que referencian productos del catálogo SEMBRADO en el
+ * dispositivo (ids `hangar-prod-*`) hacia el id real del ERP.
+ *
+ * Es la causa por la que una venta hecha antes de enlazar no aparecía nunca en el ERP:
+ * `PedidosService.resolverItem` rechaza el pedido entero con "Uno de los productos del pedido ya
+ * no existe en el catálogo", porque ese id solo existe en la tablet. El item quedaba en ERROR y
+ * se reintentaba para siempre con el mismo resultado.
+ *
+ * El emparejamiento es por NOMBRE + PRECIO, que es la misma llave natural que usa el seed del
+ * backend para sus propios productos ("Solo Bagel" existe dos veces con precios distintos). Si no
+ * hay una coincidencia exacta y única, la línea se deja como está: es preferible una venta
+ * atascada y visible a una venta que se sincroniza apuntando al producto equivocado.
+ */
+export async function repararProductosLocalesEnOutbox(db: SQLiteDatabase): Promise<number> {
+  const pendientes = await db.getAllAsync<{ local_id: string; payload: string }>(
+    "SELECT local_id, payload FROM sync_outbox WHERE estado IN ('PENDING','ERROR') AND payload LIKE '%hangar-prod-%'",
+  );
+  if (pendientes.length === 0) return 0;
+
+  // Candidatos del ERP: los del catálogo que NO son los sembrados localmente.
+  const delErp = await db.getAllAsync<{ id: string; nombre: string; precio_base: number }>(
+    "SELECT id, nombre, precio_base FROM productos WHERE origen = 'ERP' AND activo = 1",
+  );
+  if (delErp.length === 0) return 0;
+
+  const porNombrePrecio = new Map<string, string[]>();
+  for (const p of delErp) {
+    const clave = `${p.nombre.trim().toLowerCase()}#${Number(p.precio_base).toFixed(2)}`;
+    porNombrePrecio.set(clave, [...(porNombrePrecio.get(clave) ?? []), p.id]);
+  }
+
+  // Nombre y precio de los productos locales, para poder construir la clave de búsqueda.
+  const locales = await db.getAllAsync<{ id: string; nombre: string; precio_base: number }>(
+    "SELECT id, nombre, precio_base FROM productos WHERE origen = 'LOCAL'",
+  );
+  const infoLocal = new Map(locales.map((p) => [p.id, p]));
+
+  let reparadas = 0;
+  for (const fila of pendientes) {
+    try {
+      const payload = JSON.parse(fila.payload);
+      if (!Array.isArray(payload?.items)) continue;
+
+      let cambiado = false;
+      let irresoluble = false;
+      for (const item of payload.items) {
+        if (typeof item?.productoId !== "string" || !item.productoId.startsWith("hangar-prod-")) continue;
+        const local = infoLocal.get(item.productoId);
+        if (!local) { irresoluble = true; continue; }
+        const candidatos = porNombrePrecio.get(`${local.nombre.trim().toLowerCase()}#${Number(local.precio_base).toFixed(2)}`);
+        // Exactamente uno: con dos coincidencias no hay forma de saber cuál cobró el cajero.
+        if (candidatos?.length === 1) {
+          item.productoId = candidatos[0];
+          cambiado = true;
+        } else {
+          irresoluble = true;
+        }
+      }
+
+      // Se guarda solo si TODAS las líneas quedaron resueltas: mandar un pedido a medias lo
+      // volvería a rechazar entero y encima habríamos perdido el rastro de qué faltaba.
+      if (cambiado && !irresoluble) {
+        await db.runAsync(
+          "UPDATE sync_outbox SET payload = ?, estado = 'PENDING', ultimo_error = NULL, next_retry_at = NULL WHERE local_id = ?",
+          JSON.stringify(payload), fila.local_id,
+        );
+        reparadas += 1;
+      }
+    } catch {
+      // Un payload ilegible no debe impedir reparar los demás.
+    }
+  }
+  return reparadas;
+}

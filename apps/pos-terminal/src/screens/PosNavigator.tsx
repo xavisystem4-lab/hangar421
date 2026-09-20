@@ -17,10 +17,11 @@ import { PosAdminReportesScreen } from "./PosAdminReportesScreen";
 import { PosAdminUsuariosScreen } from "./PosAdminUsuariosScreen";
 import { PosAdminPagosScreen } from "./PosAdminPagosScreen";
 import { PosAdminInventarioScreen } from "./PosAdminInventarioScreen";
+import { PosAdminSincronizacionScreen } from "./PosAdminSincronizacionScreen";
 import { ReciboEnPantallaScreen } from "./ReciboEnPantallaScreen";
 
 type Pantalla = "venta" | "cobro" | "caja" | "admin";
-type PantallaAdmin = "catalogo" | "inventario" | "reportes" | "usuarios" | "pagos";
+type PantallaAdmin = "catalogo" | "inventario" | "reportes" | "usuarios" | "pagos" | "sync";
 
 const TABS: { id: Pantalla; etiqueta: string }[] = [
   { id: "venta", etiqueta: "Venta" },
@@ -73,6 +74,7 @@ export function PosNavigator() {
       [
         { text: "Cerrar", style: "cancel" },
         { text: "Sincronizar ahora", onPress: () => procesarCola(true) },
+        { text: "Ver detalle", onPress: () => { setPantalla("admin"); setPantallaAdmin("sync"); } },
         { text: "Configurar conexión", onPress: () => setMostrarConexion(true) },
       ],
     );
@@ -156,6 +158,9 @@ export function PosNavigator() {
               <TouchableOpacity onPress={() => setPantallaAdmin("usuarios")} style={[estilos.subTab, pantallaAdmin === "usuarios" && estilos.subTabActivo]}>
                 <Text style={{ color: pantallaAdmin === "usuarios" ? "#fff" : colores.texto, fontWeight: "700" }}>Usuarios</Text>
               </TouchableOpacity>
+              <TouchableOpacity onPress={() => setPantallaAdmin("sync")} style={[estilos.subTab, pantallaAdmin === "sync" && estilos.subTabActivo]}>
+                <Text style={{ color: pantallaAdmin === "sync" ? "#fff" : colores.texto, fontWeight: "700" }}>Sincronización</Text>
+              </TouchableOpacity>
               <TouchableOpacity onPress={() => setPantallaAdmin("pagos")} style={[estilos.subTab, pantallaAdmin === "pagos" && estilos.subTabActivo]}>
                 <Text style={{ color: pantallaAdmin === "pagos" ? "#fff" : colores.texto, fontWeight: "700" }}>Pagos</Text>
               </TouchableOpacity>
@@ -166,6 +171,7 @@ export function PosNavigator() {
               {pantallaAdmin === "usuarios" && <PosAdminUsuariosScreen onCerrar={() => setPantalla("venta")} />}
               {pantallaAdmin === "pagos" && <PosAdminPagosScreen onCerrar={() => setPantalla("venta")} />}
               {pantallaAdmin === "inventario" && <PosAdminInventarioScreen onCerrar={() => setPantalla("venta")} />}
+              {pantallaAdmin === "sync" && <PosAdminSincronizacionScreen onCerrar={() => setPantalla("venta")} />}
             </View>
           </View>
         )}

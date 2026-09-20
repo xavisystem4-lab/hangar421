@@ -4,7 +4,7 @@ import { abrirBaseDeDatos } from "../db/database";
 import { erpFetch, obtenerTokensErp } from "../api/erpHttp";
 import { obtenerSucursalErp } from "../db/dispositivoLocal";
 import { obtenerConfig, guardarConfig } from "../db/configLocalRepo";
-import { upsertCatalogo, upsertMesas } from "../db/catalogoSyncRepo";
+import { upsertCatalogo, upsertMesas, repararProductosLocalesEnOutbox } from "../db/catalogoSyncRepo";
 import { upsertInventario } from "../db/inventarioRepo";
 
 const CLAVE_EMPRESA_ERP = "empresa_id_erp";

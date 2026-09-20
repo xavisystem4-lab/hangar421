@@ -4,7 +4,8 @@ import { usarColores } from "../store/temaStore";
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { abrirBaseDeDatos } from "../db/database";
 import { obtenerNombreSucursal } from "../db/dispositivoLocal";
-import { listarExistencias, listarMovimientosRecientes, registrarMovimiento, type MovimientoInventarioLocal } from "../db/inventarioRepo";
+import { contarMovimientosInventarioPendientes, listarExistencias, listarMovimientosRecientes, registrarMovimiento, type MovimientoInventarioLocal } from "../db/inventarioRepo";
+import { procesarCola } from "../sync/syncEngine";
 import { refrescarInventario } from "../sync/pullEngine";
 import { coincideBusqueda } from "../db/busqueda";
 import {
@@ -28,6 +29,9 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
   const [cargando, setCargando] = useState(true);
   const [sincronizando, setSincronizando] = useState(false);
   const [exportando, setExportando] = useState<"pdf" | "excel" | null>(null);
+  const [guardandoConteo, setGuardandoConteo] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const [pendientes, setPendientes] = useState(0);
   /** Lo tecleado en el conteo físico, por insumo. Vacío = ese insumo no se contó. */
   const [conteo, setConteo] = useState<Record<string, string>>({});
 
@@ -39,11 +43,25 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
     ok: colores.green,
   };
 
+  async function contarMovimientosPendientes(): Promise<number> {
+    const db = await abrirBaseDeDatos();
+    return contarMovimientosInventarioPendientes(db);
+  }
+
+  async function refrescarPendientes() {
+    setPendientes(await contarMovimientosPendientes());
+  }
+
   async function cargar() {
     const db = await abrirBaseDeDatos();
-    const [existencias, movs] = await Promise.all([listarExistencias(db), listarMovimientosRecientes(db)]);
+    const [existencias, movs, pend] = await Promise.all([
+      listarExistencias(db),
+      listarMovimientosRecientes(db),
+      contarMovimientosInventarioPendientes(db),
+    ]);
     setItems(existencias);
     setMovimientos(movs);
+    setPendientes(pend);
     setCargando(false);
   }
 
@@ -52,17 +70,58 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
     abrirBaseDeDatos().then(obtenerNombreSucursal).then((n) => n && setSucursal(n)).catch(() => undefined);
   }, []);
 
-  /** Trae del ERP. El saldo del ERP gana: él ya aplicó las ventas y los movimientos de TODAS las
-   *  terminales, así que es la única foto completa del almacén. */
-  async function sincronizar() {
-    setSincronizando(true);
+  /**
+   * DESCARGA del ERP: trae el catálogo de insumos y el stock teórico. Sobrescribe la existencia
+   * local, porque el ERP ya aplicó las ventas y los movimientos de TODAS las terminales y es la
+   * única foto completa del almacén.
+   *
+   * Lo que NO puede pisar es un conteo pendiente de subir: esos movimientos viven en
+   * `sync_outbox`, no en la tabla de existencias, así que la descarga no los toca y se vuelven a
+   * aplicar server-side cuando suban. Aun así se avisa antes, porque hasta que suban la
+   * existencia mostrada retrocede a la del ERP y eso confunde si no se explica.
+   */
+  async function descargarDelErp() {
+    const pendientes = await contarMovimientosPendientes();
+    const ejecutar = async () => {
+      setSincronizando(true);
+      try {
+        await refrescarInventario();
+        await cargar();
+        Alert.alert("Inventario", "Stock teórico actualizado desde el ERP.");
+      } catch {
+        Alert.alert("Inventario", "No se pudo contactar con el ERP. Se sigue mostrando lo último que bajó a esta terminal.");
+      } finally {
+        setSincronizando(false);
+      }
+    };
+
+    if (pendientes > 0) {
+      Alert.alert(
+        "Tienes conteos sin subir",
+        `Hay ${pendientes} movimiento(s) de esta terminal que todavía no llegan al ERP.\n\n` +
+          "No se pierden: seguirán en la cola y se aplicarán al subir. Pero hasta entonces verás la existencia del ERP, no la que acabas de contar.",
+        [{ text: "Cancelar", style: "cancel" }, { text: "Descargar igual", onPress: ejecutar }],
+      );
+      return;
+    }
+    await ejecutar();
+  }
+
+  /** ENVÍO a la nube: fuerza el drenado de la cola en vez de esperar al ciclo de 45s. */
+  async function enviarConteos() {
+    setEnviando(true);
     try {
-      await refrescarInventario();
-      await cargar();
-    } catch (e: any) {
-      Alert.alert("Inventario", "No se pudo traer el inventario del ERP. Se sigue mostrando lo último que bajó a esta terminal.");
+      await procesarCola(true);
+      await refrescarPendientes();
+      const quedan = await contarMovimientosPendientes();
+      Alert.alert(
+        "Envío a la nube",
+        quedan === 0
+          ? "Todo lo de esta terminal está en el ERP."
+          : `Quedan ${quedan} movimiento(s) por subir. Se reintentarán solos; si persiste, revisa el indicador de conexión.`,
+      );
     } finally {
-      setSincronizando(false);
+      setEnviando(false);
     }
   }
 
@@ -85,7 +144,9 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
   const refsConteo = useMemo(() => visibles.map(() => createRef<TextInput>()), [visibles.length]);
 
   async function guardarConteo() {
-    if (!usuario) return;
+    // Guarda contra el doble toque: sin esto, dos pulsaciones rápidas crearían dos movimientos
+    // CONTEO del mismo insumo y el segundo pisaría al primero en el ERP.
+    if (!usuario || guardandoConteo) return;
     const aGuardar = visibles
       .map((i) => ({ item: i, valor: conteo[i.insumoId] }))
       .filter((x) => x.valor !== undefined && x.valor !== "" && !Number.isNaN(Number(x.valor)));
@@ -106,19 +167,32 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
         {
           text: "Guardar",
           onPress: async () => {
-            const db = await abrirBaseDeDatos();
-            for (const { item, valor } of aGuardar) {
-              await registrarMovimiento(db, {
-                insumoId: item.insumoId,
-                tipo: "CONTEO",
-                cantidad: Number(valor),
-                motivo: "Conteo físico desde el Punto de Venta",
-                usuarioId: usuario.id,
-              });
+            setGuardandoConteo(true);
+            try {
+              const db = await abrirBaseDeDatos();
+              for (const { item, valor } of aGuardar) {
+                await registrarMovimiento(db, {
+                  insumoId: item.insumoId,
+                  tipo: "CONTEO",
+                  cantidad: Number(valor),
+                  motivo: "Conteo físico desde el Punto de Venta",
+                  usuarioId: usuario.id,
+                });
+              }
+              setConteo({});
+              await cargar();
+              Alert.alert(
+                "Conteo guardado",
+                `${aGuardar.length} insumo(s) actualizados en esta terminal.\nSe subirán al ERP en cuanto haya conexión.`,
+              );
+            } catch (e: any) {
+              // El conteo se guarda insumo a insumo; si falla a mitad, lo ya escrito queda
+              // guardado. Se dice explícitamente para que nadie repita el conteo entero.
+              Alert.alert("Conteo", `${e?.message ?? "No se pudo guardar el conteo"}.\nLo ya capturado antes del fallo sí quedó guardado.`);
+              await cargar();
+            } finally {
+              setGuardandoConteo(false);
             }
-            setConteo({});
-            await cargar();
-            Alert.alert("Conteo", `Guardado. Se subirá al ERP en cuanto haya conexión.`);
           },
         },
       ],
@@ -166,8 +240,15 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
     return <View style={estilos.centro}><ActivityIndicator color={colores.navy} size="large" /></View>;
   }
 
+  // Cuántos insumos llevan cantidad capturada — alimenta la barra fija de guardado.
+  const capturados = visibles.filter((i) => {
+    const v = conteo[i.insumoId];
+    return v !== undefined && v !== "" && !Number.isNaN(Number(v));
+  }).length;
+
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: colores.fondo }} contentContainerStyle={{ padding: 16 }} keyboardShouldPersistTaps="handled">
+    <View style={{ flex: 1, backgroundColor: colores.fondo }}>
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: pestana === "conteo" ? 12 : 16 }} keyboardShouldPersistTaps="handled">
       <View style={estilos.encabezado}>
         <Text style={estilos.titulo}>Inventario</Text>
         <TouchableOpacity onPress={onCerrar}><Text style={estilos.cerrar}>✕</Text></TouchableOpacity>
@@ -178,8 +259,8 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
           <Text style={estilos.ayuda}>
             Todavía no hay insumos en esta terminal. Se dan de alta en el ERP y bajan aquí al sincronizar.
           </Text>
-          <TouchableOpacity onPress={sincronizar} disabled={sincronizando} style={estilos.botonPrincipal}>
-            {sincronizando ? <ActivityIndicator color="#fff" /> : <Text style={estilos.botonPrincipalTexto}>Traer del ERP</Text>}
+          <TouchableOpacity onPress={descargarDelErp} disabled={sincronizando} style={estilos.botonPrincipal}>
+            {sincronizando ? <ActivityIndicator color="#fff" /> : <Text style={estilos.botonPrincipalTexto}>⬇ Descargar stock del ERP</Text>}
           </TouchableOpacity>
         </View>
       ) : (
@@ -215,9 +296,34 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
 
           {pestana === "existencias" && (
             <>
-              <TouchableOpacity onPress={sincronizar} disabled={sincronizando} style={estilos.botonSecundario}>
-                {sincronizando ? <ActivityIndicator color={colores.navyTexto} size="small" /> : <Text style={estilos.botonSecundarioTexto}>↻ Actualizar desde el ERP</Text>}
-              </TouchableOpacity>
+              {/* Dos acciones separadas, en direcciones opuestas. "Actualizar desde el ERP" no
+                  decía en qué sentido iban los datos, y con un conteo sin subir esa ambigüedad
+                  es exactamente donde se pierde trabajo. */}
+              <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
+                <TouchableOpacity onPress={descargarDelErp} disabled={sincronizando} style={[estilos.botonSecundario, { flex: 1, marginBottom: 0 }]}>
+                  {sincronizando
+                    ? <ActivityIndicator color={colores.navyTexto} size="small" />
+                    : <Text style={estilos.botonSecundarioTexto}>⬇ Descargar stock del ERP</Text>}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={enviarConteos}
+                  disabled={enviando || pendientes === 0}
+                  style={[estilos.botonSecundario, { flex: 1, marginBottom: 0 }, pendientes === 0 && { opacity: 0.5 }]}
+                >
+                  {enviando
+                    ? <ActivityIndicator color={colores.navyTexto} size="small" />
+                    : <Text style={estilos.botonSecundarioTexto}>⬆ Enviar conteo{pendientes > 0 ? ` (${pendientes})` : ""}</Text>}
+                </TouchableOpacity>
+              </View>
+
+              {/* Estado explícito de lo que esta terminal debe al ERP. */}
+              <View style={[estilos.estadoSync, { borderLeftColor: pendientes > 0 ? colores.amber : colores.green }]}>
+                <Text style={estilos.ayuda}>
+                  {pendientes > 0
+                    ? `◐ ${pendientes} movimiento(s) de esta terminal pendientes de llegar al ERP. Se suben solos; el botón de arriba fuerza el intento.`
+                    : "● Todo lo de esta terminal está en el ERP."}
+                </Text>
+              </View>
 
               {visibles.map((i) => {
                 const nivel = nivelDe(i);
@@ -277,9 +383,8 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
                   </View>
                 );
               })}
-              <TouchableOpacity onPress={guardarConteo} style={estilos.botonPrincipal}>
-                <Text style={estilos.botonPrincipalTexto}>Guardar conteo</Text>
-              </TouchableOpacity>
+              {/* El botón de guardar vive en la barra fija de abajo, no aquí: con 48 insumos
+                  había que recorrer toda la lista para llegar a él. */}
             </>
           )}
 
@@ -349,6 +454,37 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
         </>
       )}
     </ScrollView>
+
+    {/* Barra fija de guardado: queda pegada justo encima de la navegación (Venta/Caja/Admin),
+        visible mientras se recorre la lista. En un conteo de 48 insumos, tener que bajar hasta
+        el final para guardar es donde se pierde el trabajo.
+
+        Solo aparece en la pestaña de conteo: en Existencias y Compras no hay nada que guardar y
+        ocuparía espacio de lista sin motivo. */}
+    {pestana === "conteo" && items.length > 0 && (
+      <View style={estilos.barraFija}>
+        <View style={{ flex: 1 }}>
+          <Text style={estilos.barraTitulo}>
+            {capturados === 0 ? "Sin capturar" : `${capturados} insumo${capturados === 1 ? "" : "s"} capturado${capturados === 1 ? "" : "s"}`}
+          </Text>
+          <Text style={estilos.ayuda} numberOfLines={1}>
+            {guardandoConteo ? "Guardando…" : "El conteo fija la existencia, no la suma."}
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={guardarConteo}
+          // Deshabilitado mientras guarda: evita el doble guardado si alguien toca dos veces,
+          // que crearía dos movimientos CONTEO del mismo insumo.
+          disabled={guardandoConteo || capturados === 0}
+          style={[estilos.botonBarra, (guardandoConteo || capturados === 0) && { opacity: 0.5 }]}
+        >
+          {guardandoConteo
+            ? <ActivityIndicator color="#fff" />
+            : <Text style={estilos.botonPrincipalTexto}>Guardar conteo</Text>}
+        </TouchableOpacity>
+      </View>
+    )}
+    </View>
   );
 }
 
@@ -396,5 +532,12 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     botonSecundario: { backgroundColor: colores.gray50, borderRadius: 8, padding: 12, alignItems: "center", minHeight: 44, justifyContent: "center", marginBottom: 12 },
     botonSecundarioTexto: { color: colores.navyTexto, fontWeight: "700", fontSize: 13 },
     botonExportar: { flex: 1, borderRadius: 10, padding: 13, alignItems: "center", minHeight: 46, justifyContent: "center" },
+    barraFija: {
+      flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 10,
+      backgroundColor: colores.superficie, borderTopWidth: 1, borderTopColor: colores.borde,
+    },
+    barraTitulo: { fontSize: 14, fontWeight: "800", color: colores.texto },
+    estadoSync: { borderLeftWidth: 4, backgroundColor: colores.superficie, borderRadius: 8, padding: 10, marginBottom: 12 },
+    botonBarra: { backgroundColor: colores.navy, borderRadius: 10, paddingHorizontal: 20, minHeight: 48, minWidth: 150, alignItems: "center", justifyContent: "center" },
   });
 }

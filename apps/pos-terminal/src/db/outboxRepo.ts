@@ -96,3 +96,50 @@ export async function contarPendientes(db: SQLiteDatabase): Promise<number> {
   const fila = await db.getFirstAsync<{ total: number }>("SELECT COUNT(*) as total FROM sync_outbox WHERE estado IN ('PENDING', 'ERROR')");
   return fila?.total ?? 0;
 }
+
+export interface ProblemaSync {
+  localId: string;
+  entidad: string;
+  entidadId: string;
+  intentos: number;
+  ultimoError: string;
+  createdAt: string;
+  /** Folio de la venta cuando la entidad es un PEDIDO — es por lo que pregunta el cajero. */
+  folioLocal: number | null;
+}
+
+/**
+ * Lo que no ha conseguido llegar al ERP, CON el mensaje del servidor.
+ *
+ * Antes este dato existía en la base pero no se mostraba en ninguna parte: la app decía
+ * "Error de sincronización" y el motivo real ("Uno de los productos del pedido ya no existe en
+ * el catálogo") se quedaba en la fila. Sin esto no hay forma de saber qué ventas no llegaron ni
+ * por qué, que es exactamente lo que pide la trazabilidad.
+ */
+export async function listarProblemasSync(db: SQLiteDatabase, limite = 50): Promise<ProblemaSync[]> {
+  const filas = await db.getAllAsync<any>(
+    `SELECT o.local_id, o.entidad, o.entidad_id, o.intentos, o.ultimo_error, o.created_at, v.folio_local
+     FROM sync_outbox o LEFT JOIN ventas v ON v.id = o.entidad_id
+     WHERE o.estado = 'ERROR' AND o.ultimo_error IS NOT NULL
+     ORDER BY o.orden_secuencia DESC LIMIT ?`,
+    limite,
+  );
+  return filas.map((f) => ({
+    localId: f.local_id,
+    entidad: f.entidad,
+    entidadId: f.entidad_id,
+    intentos: f.intentos,
+    ultimoError: f.ultimo_error,
+    createdAt: f.created_at,
+    folioLocal: f.folio_local ?? null,
+  }));
+}
+
+/** Devuelve a la cola una fila en ERROR, para reintentar después de arreglar la causa (por
+ *  ejemplo tras descargar el catálogo del ERP). No borra nada: solo limpia el backoff. */
+export async function reintentarProblema(db: SQLiteDatabase, localId: string): Promise<void> {
+  await db.runAsync(
+    "UPDATE sync_outbox SET estado = 'PENDING', next_retry_at = NULL WHERE local_id = ?",
+    localId,
+  );
+}

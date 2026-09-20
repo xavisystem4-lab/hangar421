@@ -18,7 +18,10 @@ const ICONO: Record<MetodoPago, string> = {
   [MetodoPago.OTRO]: "•",
 };
 
-const TECLAS = ["7", "8", "9", "4", "5", "6", "1", "2", "3", "0", ".", "borrar"];
+// Orden de calculadora/cajero: 1-2-3 arriba y la fila final punto-cero-borrar, con el
+// cero centrado bajo el 8 — es donde lo busca el pulgar por costumbre. Antes empezaba en 7
+// (orden de teclado numérico de PC), que en una tablet de mostrador obliga a mirar.
+const TECLAS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "borrar"];
 
 /** Cobro — nunca toca la red: la venta se escribe local primero SIEMPRE (a diferencia del
  *  Comandero, que intenta en línea primero contra una Estación LAN). La confirmación es

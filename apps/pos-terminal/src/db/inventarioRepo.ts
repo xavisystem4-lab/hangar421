@@ -164,3 +164,15 @@ export async function upsertInventario(db: SQLiteDatabase, insumos: InsumoRemoto
     }
   });
 }
+
+/** Movimientos de inventario de ESTA terminal que todavía no han llegado al ERP. Sale del
+ *  outbox, que es la única fuente fiable de "qué falta por subir" — la tabla local de
+ *  movimientos guarda el histórico, no el estado de sincronización. */
+export async function contarMovimientosInventarioPendientes(db: SQLiteDatabase): Promise<number> {
+  const fila = await db.getFirstAsync<{ total: number }>(
+    `SELECT COUNT(*) AS total FROM sync_outbox
+     WHERE entidad = ? AND estado IN ('PENDING','ERROR')`,
+    SyncEntidad.MOVIMIENTO_INVENTARIO,
+  );
+  return fila?.total ?? 0;
+}
