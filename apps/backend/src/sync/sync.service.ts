@@ -40,15 +40,27 @@ export class SyncService {
       resultados.push(await this.aplicarItem(item));
     }
 
-    // marca al dispositivo como visto (usado por CRM para "en línea / offline")
-    const dispositivoId = items[0]?.dispositivoId;
-    if (dispositivoId) {
-      await this.prisma.dispositivo
-        .update({ where: { id: dispositivoId }, data: { ultimaConexion: new Date() } })
-        .catch(() => undefined);
-    }
+    await this.marcarVisto(items[0]?.dispositivoId, items[0]?.sucursalId);
 
     return { resultados, serverTime: new Date().toISOString() };
+  }
+
+  /**
+   * Marca la terminal como vista ahora (el CRM lo lee como "en línea / offline").
+   *
+   * El cliente manda su propia huella de instalación, que en el modelo es
+   * `Dispositivo.identificador`, NO `Dispositivo.id`. Esto actualizaba por `id`, así que nunca
+   * encontraba la fila y el `.catch()` se lo tragaba en silencio: el indicador de "en línea"
+   * no se encendía jamás para ningún cliente. Se resuelve la huella igual que hace
+   * `aplicarItem` antes de guardar un SyncQueueItem.
+   */
+  async marcarVisto(huella: string | undefined, sucursalId: string | undefined): Promise<void> {
+    if (!huella) return;
+    const dispositivoId = await resolverDispositivoId(this.prisma, huella, sucursalId);
+    if (!dispositivoId) return;
+    await this.prisma.dispositivo
+      .update({ where: { id: dispositivoId }, data: { ultimaConexion: new Date() } })
+      .catch(() => undefined);
   }
 
   private async aplicarItem(item: SyncEnvelope): Promise<SyncItemResult> {

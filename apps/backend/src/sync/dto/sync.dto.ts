@@ -24,3 +24,10 @@ export class SyncPushDto {
   @Type(() => SyncEnvelopeDto)
   items!: SyncEnvelopeDto[];
 }
+
+export class SyncHeartbeatDto {
+  /** Huella de instalación de la terminal (Dispositivo.identificador, no el id). */
+  @ApiProperty() @IsString() dispositivoId!: string;
+  /** Necesaria solo la primera vez, para poder autorregistrar el dispositivo. */
+  @ApiPropertyOptional() @IsOptional() @IsString() sucursalId?: string;
+}

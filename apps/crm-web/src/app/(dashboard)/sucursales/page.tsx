@@ -14,6 +14,13 @@ interface Sucursal {
   activo: boolean;
 }
 
+interface Dispositivo {
+  id: string;
+  nombre: string;
+  tipo: string;
+  ultimaConexion?: string | null;
+}
+
 export default function SucursalesPage() {
   const { contexto } = useAuthCrm();
   const [sucursales, setSucursales] = useState<Sucursal[]>([]);
@@ -54,13 +61,48 @@ export default function SucursalesPage() {
     return Math.max(0, Math.round((new Date(expiraAt).getTime() - Date.now()) / 60_000));
   }
 
+  // Terminales conectadas por sucursal. "Conectada" = dio señal hace menos de 3 min; el APK
+  // manda un latido cada 45s (ver sync/heartbeat), así que dos latidos perdidos la marcan
+  // offline — suficiente margen para un wifi que parpadea, sin mentir si de verdad se cayó.
+  const [dispositivos, setDispositivos] = useState<Record<string, Dispositivo[]>>({});
+
   async function cargar() {
     if (!contexto) return;
     const data = await apiFetch<Sucursal[]>(`/sucursales?empresaId=${contexto.usuario.empresaId}`);
     setSucursales(data);
+
+    const porSucursal: Record<string, Dispositivo[]> = {};
+    await Promise.all(
+      data.map(async (s) => {
+        // Una sucursal sin terminales, o un fallo puntual, no debe tumbar la página entera.
+        porSucursal[s.id] = await apiFetch<Dispositivo[]>(`/sucursales/${s.id}/dispositivos`).catch(() => []);
+      }),
+    );
+    setDispositivos(porSucursal);
   }
 
   useEffect(() => { cargar(); }, [contexto]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Refresco periódico: el estado de conexión envejece solo, así que una página abierta en la
+  // oficina tiene que actualizarse sin que nadie recargue.
+  useEffect(() => {
+    const t = setInterval(() => { cargar(); }, 60_000);
+    return () => clearInterval(t);
+  }, [contexto]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function estaConectada(d: Dispositivo): boolean {
+    return !!d.ultimaConexion && Date.now() - new Date(d.ultimaConexion).getTime() < 3 * 60_000;
+  }
+
+  function haceCuanto(iso?: string | null): string {
+    if (!iso) return "nunca";
+    const minutos = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
+    if (minutos < 1) return "hace segundos";
+    if (minutos < 60) return `hace ${minutos} min`;
+    const horas = Math.floor(minutos / 60);
+    if (horas < 24) return `hace ${horas} h`;
+    return `hace ${Math.floor(horas / 24)} d`;
+  }
 
   async function crear() {
     if (!contexto || !nuevo.nombre) return;
@@ -117,6 +159,29 @@ export default function SucursalesPage() {
                 <p style={{ color: "var(--h421-gray-400)", fontSize: 13, margin: "6px 0" }}>{s.direccion || "Sin dirección capturada"}</p>
               </>
             )}
+
+            {/* Estado de conexión de las terminales de ESTA sucursal. Una terminal apagada de
+                noche es normal; lo que importa es poder distinguirlo de una averiada. */}
+            {(() => {
+              const terminales = dispositivos[s.id] ?? [];
+              const conectadas = terminales.filter(estaConectada);
+              return (
+                <div style={{ margin: "10px 0", padding: "8px 10px", borderRadius: 8, background: "var(--h421-gray-50)" }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: conectadas.length > 0 ? "var(--h421-green)" : "var(--h421-gray-400)" }}>
+                    {conectadas.length > 0
+                      ? `● ${s.nombre} — conectada`
+                      : terminales.length > 0
+                        ? `○ ${s.nombre} — sin terminales en línea`
+                        : `○ ${s.nombre} — ninguna terminal enlazada`}
+                  </div>
+                  {terminales.map((d) => (
+                    <div key={d.id} style={{ fontSize: 12, color: "var(--h421-gray-400)", marginTop: 3 }}>
+                      {estaConectada(d) ? "●" : "○"} {d.nombre} · {estaConectada(d) ? "en línea" : haceCuanto(d.ultimaConexion)}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
             <p style={{ fontSize: 13 }}>Horario: {s.horarioApertura ?? "—"} – {s.horarioCierre ?? "—"}</p>
             <p style={{ fontSize: 13 }}>IVA: {(Number(s.tasaImpuesto) * 100).toFixed(0)}%</p>
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>

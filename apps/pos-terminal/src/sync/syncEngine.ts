@@ -4,6 +4,7 @@ import { pendientesParaDrenar, marcarSincronizado, marcarError, contarPendientes
 import { erpFetch, obtenerTokensErp } from "../api/erpHttp";
 import { useSyncStatusStore } from "../store/syncStatusStore";
 import { refrescarCatalogo, ejecutarPull } from "./pullEngine";
+import { obtenerOCrearDispositivoId, obtenerSucursalErp } from "../db/dispositivoLocal";
 
 // Más espaciado que los 8s de apps/waiter-mobile: ahí el destino es una Estación en la misma
 // red LAN; aquí es el ERP en la nube (Railway) — pollear cada 8s no aporta nada y sí gasta
@@ -60,7 +61,25 @@ export async function procesarCola(ignorarBackoff = false): Promise<void> {
 
   const items = await pendientesParaDrenar(db, ignorarBackoff);
   if (items.length === 0) {
-    status.setEstado("SINCRONIZADO");
+    // Nada que mandar, pero sí hay que confirmar que el ERP sigue alcanzable: si no, una
+    // terminal al día se vería "Sincronizado" para siempre aunque llevara horas sin red, y el
+    // ERP la vería desconectada aunque estuviera funcionando. El latido resuelve las dos caras.
+    try {
+      const [dispositivoId, sucursalId] = await Promise.all([
+        obtenerOCrearDispositivoId(db),
+        obtenerSucursalErp(db),
+      ]);
+      await erpFetch("/sync/heartbeat", {
+        method: "POST",
+        body: JSON.stringify({ dispositivoId, sucursalId: sucursalId ?? undefined }),
+      });
+      status.setEstado("SINCRONIZADO");
+      status.setUltimoError(null);
+    } catch (e: any) {
+      const esErrorDeRed = /network|timeout|fetch/i.test(e?.message ?? "");
+      status.setEstado(esErrorDeRed ? "SIN_CONEXION" : "ERROR");
+      status.setUltimoError(e?.message ?? "No se pudo contactar con el ERP");
+    }
     status.setPendientes(0);
     return;
   }

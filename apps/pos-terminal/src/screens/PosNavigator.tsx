@@ -29,10 +29,10 @@ const TABS: { id: Pantalla; etiqueta: string }[] = [
 const ROLES_ADMIN = new Set([RolUsuario.ADMIN_SUCURSAL, RolUsuario.ADMIN_CORPORATIVO]);
 
 const ETIQUETA_SYNC: Record<EstadoSync, string> = {
-  SIN_CONEXION: "○ Sin conexión",
-  PENDIENTE: "◐ Pendiente de sincronizar",
-  SINCRONIZADO: "● Sincronizado",
-  ERROR: "✕ Error de sync",
+  SIN_CONEXION: "○ Sin conexión con el ERP",
+  PENDIENTE: "◐ Conectado al ERP · sincronizando",
+  SINCRONIZADO: "● Conectado al ERP · sincronizado",
+  ERROR: "✕ Error de sincronización",
 };
 
 export function PosNavigator() {
