@@ -139,6 +139,16 @@ export class SyncService {
             // de un mesero es una orden que el mesero ya dio por enviada.
             enviarInmediato: p.enviarInmediato ?? true,
           });
+        } else if (item.operacion === SyncOperacion.UPDATE && p.accion === "CANCELAR") {
+          // Cancelación hecha en una terminal, con el PIN del gerente ya validado allí (ver
+          // PedidosService.cancelarDesdeTerminal). Llega por la cola como cualquier otra
+          // operación, así que funciona igual si la tienda estaba sin red al cancelar.
+          await this.pedidos.cancelarDesdeTerminal(p.pedidoId ?? item.id, {
+            motivo: p.motivo ?? "Cancelada desde la terminal",
+            autorizadoPorId: p.autorizadoPorId,
+            autorizadoPorNombre: p.autorizadoPorNombre,
+            solicitadoPorId: p.solicitadoPorId ?? item.usuarioId,
+          });
         }
         break;
 

@@ -313,6 +313,67 @@ export class PedidosService {
     return actualizado;
   }
 
+  /**
+   * Cancelación que llega desde una terminal offline (APK / POS de sucursal), donde el PIN del
+   * gerente YA se validó en el dispositivo contra su hash local.
+   *
+   * Es un camino distinto de `cancelar()` a propósito, por dos motivos:
+   *
+   *  1. Aquí NO hay contraseña que revalidar. La terminal tiene que poder cancelar sin red —es
+   *     justo cuando más falta hace—, así que el punto de autorización es el dispositivo y lo
+   *     que llega al ERP es el registro de quién autorizó. Mismo nivel de confianza con el que
+   *     esa terminal ya abre caja e inicia sesión offline.
+   *  2. Sí admite ventas COBRADAS. En un punto de venta de mostrador la venta nace cobrada, así
+   *     que la regla de `cancelar()` ("para eso hace falta una devolución") dejaría sin cancelar
+   *     absolutamente todo lo del APK.
+   *
+   * Cancelar una venta cobrada devuelve al inventario lo que consumió: si no, cada cancelación
+   * dejaría un faltante fantasma en el almacén.
+   */
+  async cancelarDesdeTerminal(
+    pedidoId: string,
+    datos: { motivo: string; autorizadoPorId?: string; autorizadoPorNombre?: string; solicitadoPorId?: string },
+  ) {
+    const pedido = await this.obtener(pedidoId);
+    if (pedido.estado === EstadoPedido.CANCELADO) return pedido; // idempotente: el reintento de la cola no duplica
+
+    const estabaCobrado = pedido.estado === EstadoPedido.COBRADO;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.pedido.update({ where: { id: pedidoId }, data: { estado: EstadoPedido.CANCELADO } });
+      await tx.pedidoItem.updateMany({ where: { pedidoId }, data: { estado: EstadoPedidoItem.CANCELADO } });
+      if (pedido.mesaId) {
+        await tx.mesa.update({ where: { id: pedido.mesaId }, data: { estado: EstadoMesa.LIBRE } });
+      }
+      await tx.auditLog.create({
+        data: {
+          empresaId: pedido.empresaId,
+          sucursalId: pedido.sucursalId,
+          entidad: "PEDIDO",
+          entidadId: pedidoId,
+          accion: "CANCELAR_DESDE_TERMINAL",
+          // El usuario auditado es quien AUTORIZÓ: es la pregunta que se hace siempre al revisar
+          // una cancelación. Quién la pidió queda en los datos.
+          usuarioId: datos.autorizadoPorId ?? datos.solicitadoPorId,
+          datosNuevos: {
+            motivo: datos.motivo,
+            autorizadoPorNombre: datos.autorizadoPorNombre,
+            solicitadoPorId: datos.solicitadoPorId,
+            estadoPrevio: pedido.estado,
+            total: Number(pedido.total),
+          },
+        },
+      });
+    });
+
+    if (estabaCobrado) await this.reponerInventarioPorReceta(pedido, pedidoId);
+
+    const actualizado = await this.obtener(pedidoId);
+    this.realtime.emitirASucursal(pedido.sucursalId, WS_EVENTS.PEDIDO_ACTUALIZADO, actualizado);
+    this.realtime.emitirAEmpresa(pedido.empresaId, WS_EVENTS.PEDIDO_ACTUALIZADO, actualizado);
+    return actualizado;
+  }
+
   async cancelar(pedidoId: string, motivo: string, autorizadoPorId: string, password: string) {
     const pedido = await this.obtener(pedidoId);
     if (pedido.estado === EstadoPedido.COBRADO) {
@@ -406,6 +467,45 @@ export class PedidosService {
       where: { sucursalId, createdAt: { gte: new Date(hoy.setHours(0, 0, 0, 0)) } },
     });
     return `${prefijo}-${String(conteo + 1).padStart(4, "0")}`;
+  }
+
+  /**
+   * Devuelve al inventario lo que consumió una venta que se cancela. Espejo exacto de
+   * `descontarInventarioPorReceta`: mismas recetas, mismas cantidades, signo contrario.
+   *
+   * Sin esto, cada cancelación dejaría un faltante fantasma en el almacén y la lista de compras
+   * pediría reponer algo que nunca se usó.
+   *
+   * Se registra como ENTRADA con `referenciaId` del pedido, así que el rastro queda emparejado
+   * con la SALIDA original y se puede auditar el par completo.
+   */
+  private async reponerInventarioPorReceta(
+    pedido: Awaited<ReturnType<PedidosService["obtener"]>>,
+    pedidoId: string,
+  ) {
+    for (const item of pedido.items) {
+      const receta = await this.prisma.recetaItem.findMany({ where: { productoId: item.productoId } });
+      for (const r of receta) {
+        const cantidadReponer = Number(r.cantidad) * item.cantidad;
+        await this.prisma.$transaction(async (tx) => {
+          await tx.movimientoInventario.create({
+            data: {
+              sucursalId: pedido.sucursalId,
+              insumoId: r.insumoId,
+              tipo: TipoMovimientoInventario.ENTRADA,
+              cantidad: cantidadReponer,
+              motivo: `Cancelación del pedido ${pedido.folio}`,
+              referenciaId: pedidoId,
+            },
+          });
+          await tx.inventarioSucursal.upsert({
+            where: { sucursalId_insumoId: { sucursalId: pedido.sucursalId, insumoId: r.insumoId } },
+            update: { existencia: { increment: cantidadReponer } },
+            create: { sucursalId: pedido.sucursalId, insumoId: r.insumoId, existencia: cantidadReponer, minimo: 0 },
+          });
+        });
+      }
+    }
   }
 
   private async descontarInventarioPorReceta(pedido: Awaited<ReturnType<PedidosService["obtener"]>>) {

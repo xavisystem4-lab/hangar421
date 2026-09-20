@@ -11,6 +11,7 @@ import { obtenerNombreSucursal } from "../db/dispositivoLocal";
 import { PosVentaScreen } from "./PosVentaScreen";
 import { PosCobroScreen } from "./PosCobroScreen";
 import { PosCajaScreen } from "./PosCajaScreen";
+import { PosConsultarVentasScreen } from "./PosConsultarVentasScreen";
 import { ConexionErpScreen } from "./ConexionErpScreen";
 import { PosAdminCatalogoScreen } from "./PosAdminCatalogoScreen";
 import { PosAdminReportesScreen } from "./PosAdminReportesScreen";
@@ -20,7 +21,7 @@ import { PosAdminInventarioScreen } from "./PosAdminInventarioScreen";
 import { PosAdminSincronizacionScreen } from "./PosAdminSincronizacionScreen";
 import { ReciboEnPantallaScreen } from "./ReciboEnPantallaScreen";
 
-type Pantalla = "venta" | "cobro" | "caja" | "admin";
+type Pantalla = "venta" | "cobro" | "caja" | "consultar" | "admin";
 type PantallaAdmin = "catalogo" | "inventario" | "reportes" | "usuarios" | "pagos" | "sync";
 
 const TABS: { id: Pantalla; etiqueta: string }[] = [
@@ -142,6 +143,7 @@ export function PosNavigator() {
         {pantalla === "venta" && <PosVentaScreen onCobrar={() => setPantalla("cobro")} />}
         {pantalla === "cobro" && <PosCobroScreen onCerrar={() => setPantalla("venta")} onCobrado={cobroConfirmado} />}
         {pantalla === "caja" && <PosCajaScreen />}
+        {pantalla === "consultar" && <PosConsultarVentasScreen onCerrar={() => setPantalla("venta")} />}
         {pantalla === "admin" && (
           <View style={{ flex: 1 }}>
             {/* Horizontal: con cuatro pestañas ya no caben en el ancho de un celular. */}

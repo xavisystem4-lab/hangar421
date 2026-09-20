@@ -393,6 +393,27 @@ export const MIGRACIONES: Migracion[] = [
       `);
     },
   },
+  {
+    version: 7,
+    nombre: "cancelacion_de_ventas",
+    up: async (db) => {
+      // Cancelación LÓGICA y auditable: una venta nunca se borra. El estado 'CANCELADA' ya
+      // existía en el CHECK de la tabla desde la migración 1, pero no había forma de llegar a él
+      // ni de saber quién lo hizo, cuándo ni por qué — que es justo lo que exige poder cancelar
+      // un ticket cobrado.
+      //
+      // Se guardan DOS usuarios: quien pide la cancelación (el cajero) y quien la autoriza (el
+      // gerente que puso su PIN). Con uno solo no se puede auditar nada: la pregunta que se hace
+      // siempre es "¿quién dio permiso?".
+      await db.execAsync(`
+        ALTER TABLE ventas ADD COLUMN cancelada_at TEXT;
+        ALTER TABLE ventas ADD COLUMN cancelada_motivo TEXT;
+        ALTER TABLE ventas ADD COLUMN cancelada_solicitada_por TEXT;
+        ALTER TABLE ventas ADD COLUMN cancelada_autorizada_por TEXT;
+        ALTER TABLE ventas ADD COLUMN cancelada_autorizada_por_nombre TEXT;
+      `);
+    },
+  },
 ];
 
 /** Corre, en orden, toda migración con `version` mayor a la ya aplicada — cada una dentro de su

@@ -134,3 +134,68 @@ export async function confirmarVenta(
 
   return { id: ventaId, folioLocal, total: datos.totales.total };
 }
+
+export interface DatosCancelacion {
+  ventaId: string;
+  motivo: string;
+  solicitadaPorId: string;
+  autorizadaPorId: string;
+  autorizadaPorNombre: string;
+}
+
+/**
+ * Cancela una venta de forma LÓGICA: cambia el estado y guarda quién, cuándo y por qué. No se
+ * borra nada — el folio, los items y los pagos siguen ahí para auditar.
+ *
+ * Efecto en caja: el corte solo suma ventas 'COBRADA' (ver efectivoDelTurno y reportesRepo), así
+ * que al cancelar baja solo el efectivo esperado, que es exactamente lo que ocurre en el cajón
+ * al devolver el dinero. No hace falta un movimiento de caja aparte, y meterlo lo contaría dos
+ * veces.
+ *
+ * Se encola como PEDIDO/UPDATE para que el ERP aplique la misma cancelación. Si la venta todavía
+ * no había subido, sube ya cancelada — y si estaba en ERROR, la cancelación no la desbloquea:
+ * son dos cosas distintas y se ven por separado en Admin → Sincronización.
+ */
+export async function cancelarVenta(db: SQLiteDatabase, datos: DatosCancelacion): Promise<void> {
+  const venta = await db.getFirstAsync<any>("SELECT id, estado, folio_local FROM ventas WHERE id = ?", datos.ventaId);
+  if (!venta) throw new Error("Venta no encontrada");
+  if (venta.estado === "CANCELADA") return; // idempotente ante un doble toque
+
+  const ahora = new Date().toISOString();
+  const [sucursalId, dispositivoId] = await Promise.all([
+    obtenerOCrearSucursalIdLocal(db),
+    obtenerOCrearDispositivoId(db),
+  ]);
+
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `UPDATE ventas SET estado = 'CANCELADA', cancelada_at = ?, cancelada_motivo = ?,
+         cancelada_solicitada_por = ?, cancelada_autorizada_por = ?, cancelada_autorizada_por_nombre = ?,
+         updated_at = ?
+       WHERE id = ?`,
+      ahora, datos.motivo, datos.solicitadaPorId, datos.autorizadaPorId, datos.autorizadaPorNombre,
+      ahora, datos.ventaId,
+    );
+
+    await encolarSync(db, {
+      entidad: SyncEntidad.PEDIDO,
+      operacion: SyncOperacion.UPDATE,
+      entidadId: datos.ventaId,
+      sucursalId,
+      dispositivoId,
+      usuarioId: datos.solicitadaPorId,
+      payload: {
+        accion: "CANCELAR",
+        pedidoId: datos.ventaId,
+        motivo: datos.motivo,
+        // Quién autorizó viaja al ERP para el registro de auditoría. La validación del PIN ya
+        // ocurrió en la terminal (ver auth/autorizacion.ts): tiene que funcionar sin red, que es
+        // cuando más falta hace poder cancelar.
+        autorizadoPorId: datos.autorizadaPorId,
+        autorizadoPorNombre: datos.autorizadaPorNombre,
+        solicitadoPorId: datos.solicitadaPorId,
+        canceladaAtLocal: ahora,
+      },
+    });
+  });
+}
