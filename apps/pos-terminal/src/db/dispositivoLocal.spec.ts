@@ -1,4 +1,4 @@
-import { guardarSucursalErp } from "./dispositivoLocal";
+import { guardarSucursalErp, guardarEmpresaErp, obtenerOCrearEmpresaIdLocal } from "./dispositivoLocal";
 
 // Mismo enfoque que migracionSucursal.spec.ts: base falsa que registra el SQL, sin expo-sqlite.
 // Lo que se fija aquí es el repunte al enlazar — si falla, un dispositivo que vendió offline y
@@ -77,5 +77,89 @@ describe("guardarSucursalErp", () => {
     await guardarSucursalErp(db, "suc-erp");
     expect(dentroDeTransaccion).toBe(false);
     expect(ejecutado.length).toBeGreaterThan(TABLAS.length); // marcador + los cuatro repuntes
+  });
+});
+
+/** Base falsa con una tabla sync_outbox mínima, para el repunte del empresaId. */
+function baseConOutbox(config: Record<string, string>, filas: { local_id: string; payload: any }[]) {
+  const outbox = filas.map((f) => ({ local_id: f.local_id, payload: JSON.stringify(f.payload), estado: "PENDING", ultimo_error: "x" }));
+  const db = {
+    runAsync: async (sql: string, ...params: any[]) => {
+      if (sql.startsWith("INSERT INTO config_local")) config[params[0]] = params[1];
+      const upd = /^UPDATE sync_outbox SET payload = \?/.test(sql.trim());
+      if (upd) {
+        const fila = outbox.find((o) => o.local_id === params[1]);
+        if (fila) { fila.payload = params[0]; fila.estado = "PENDING"; fila.ultimo_error = null as any; }
+      }
+    },
+    getFirstAsync: async (_sql: string, clave: string) => (config[clave] ? { valor: config[clave] } : null),
+    getAllAsync: async () => outbox.filter((o) => o.estado === "PENDING" || o.estado === "ERROR"),
+    withTransactionAsync: async (fn: () => Promise<void>) => { await fn(); },
+  };
+  return { db: db as any, outbox, config };
+}
+
+describe("obtenerOCrearEmpresaIdLocal", () => {
+  it("prefiere el id REAL del ERP sobre el placeholder", async () => {
+    const { db } = baseConOutbox({ empresa_id_erp: "emp-real", empresa_id_local: "placeholder" }, []);
+    expect(await obtenerOCrearEmpresaIdLocal(db)).toBe("emp-real");
+  });
+
+  it("cae al placeholder mientras no se haya enlazado", async () => {
+    const { db } = baseConOutbox({ empresa_id_local: "placeholder" }, []);
+    expect(await obtenerOCrearEmpresaIdLocal(db)).toBe("placeholder");
+  });
+
+  it("crea un placeholder si no hay ninguno", async () => {
+    const { db, config } = baseConOutbox({}, []);
+    const id = await obtenerOCrearEmpresaIdLocal(db);
+    expect(id).toBeTruthy();
+    expect(config["empresa_id_local"]).toBe(id);
+  });
+});
+
+// El fallo que hacía que una venta nunca apareciera en el ERP: el payload llevaba un empresaId
+// inventado en el dispositivo, PedidosService.crear fallaba por clave foránea y la venta se
+// quedaba en ERROR mientras la app decía "sincronizado".
+describe("guardarEmpresaErp — repunte de ventas encoladas", () => {
+  it("sustituye el placeholder por la empresa real en los payloads pendientes", async () => {
+    const { db, outbox } = baseConOutbox({ empresa_id_local: "placeholder" }, [
+      { local_id: "a", payload: { empresaId: "placeholder", items: [] } },
+      { local_id: "b", payload: { empresaId: "placeholder", items: [] } },
+    ]);
+    await guardarEmpresaErp(db, "emp-real");
+    for (const fila of outbox) expect(JSON.parse(fila.payload).empresaId).toBe("emp-real");
+  });
+
+  it("devuelve a PENDING y limpia el backoff de las que ya habían fallado", async () => {
+    const { db, outbox } = baseConOutbox({ empresa_id_local: "placeholder" }, [
+      { local_id: "a", payload: { empresaId: "placeholder" } },
+    ]);
+    await guardarEmpresaErp(db, "emp-real");
+    expect(outbox[0].estado).toBe("PENDING");
+    expect(outbox[0].ultimo_error).toBeNull();
+  });
+
+  it("no toca payloads de otra empresa", async () => {
+    const { db, outbox } = baseConOutbox({ empresa_id_local: "placeholder" }, [
+      { local_id: "a", payload: { empresaId: "otra-cosa" } },
+    ]);
+    await guardarEmpresaErp(db, "emp-real");
+    expect(JSON.parse(outbox[0].payload).empresaId).toBe("otra-cosa");
+  });
+
+  it("un payload ilegible no impide reparar los demás", async () => {
+    const { db, outbox } = baseConOutbox({ empresa_id_local: "placeholder" }, [
+      { local_id: "a", payload: { empresaId: "placeholder" } },
+    ]);
+    outbox.unshift({ local_id: "roto", payload: "{no es json", estado: "PENDING", ultimo_error: null as any });
+    await guardarEmpresaErp(db, "emp-real");
+    expect(JSON.parse(outbox[1].payload).empresaId).toBe("emp-real");
+  });
+
+  it("no hace nada si nunca hubo placeholder", async () => {
+    const { db, outbox } = baseConOutbox({}, [{ local_id: "a", payload: { empresaId: "emp-real" } }]);
+    await guardarEmpresaErp(db, "emp-real");
+    expect(JSON.parse(outbox[0].payload).empresaId).toBe("emp-real");
   });
 });

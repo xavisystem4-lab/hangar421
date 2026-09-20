@@ -29,10 +29,10 @@ const TABS: { id: Pantalla; etiqueta: string }[] = [
 const ROLES_ADMIN = new Set([RolUsuario.ADMIN_SUCURSAL, RolUsuario.ADMIN_CORPORATIVO]);
 
 const ETIQUETA_SYNC: Record<EstadoSync, string> = {
-  SIN_CONEXION: "○ Sin conexión con el ERP",
-  PENDIENTE: "◐ Conectado al ERP · sincronizando",
-  SINCRONIZADO: "● Conectado al ERP · sincronizado",
-  ERROR: "✕ Error de sincronización",
+  SIN_CONEXION: "○ Sin conexión",
+  PENDIENTE: "◐ Conectado al ERP",
+  SINCRONIZADO: "● Conectado al ERP",
+  ERROR: "✕ Error de conexión",
 };
 
 export function PosNavigator() {
@@ -117,7 +117,7 @@ export function PosNavigator() {
         </View>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
           <TouchableOpacity onPress={tocarIndicadorSync}>
-            <Text style={estilos.indicadorSync}>{ETIQUETA_SYNC[sync.estado]}{sync.pendientes > 0 ? ` (${sync.pendientes})` : ""}</Text>
+            <Text style={estilos.indicadorSync}>{ETIQUETA_SYNC[sync.estado]}</Text>
           </TouchableOpacity>
           {/* El interruptor de modo noche vive en la barra inferior (BarraActualizacion), que se
               dibuja en TODAS las pantallas — incluida la de login, que es la primera que ve un

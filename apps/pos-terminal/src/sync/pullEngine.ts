@@ -9,11 +9,8 @@ import { upsertCatalogo, upsertMesas } from "../db/catalogoSyncRepo";
 const CLAVE_EMPRESA_ERP = "empresa_id_erp";
 const CLAVE_CURSOR_PULL = "cursor_pull";
 
-export async function guardarEmpresaErp(empresaId: string): Promise<void> {
-  const db = await abrirBaseDeDatos();
-  await guardarConfig(db, CLAVE_EMPRESA_ERP, empresaId);
-}
-
+/** Guardarla vive en db/dispositivoLocal.guardarEmpresaErp, junto a la de sucursal: además de
+ *  escribir la clave, tiene que repuntar las ventas ya encoladas que llevaban el placeholder. */
 export async function obtenerEmpresaErp(db: SQLiteDatabase): Promise<string | null> {
   return obtenerConfig(db, CLAVE_EMPRESA_ERP);
 }

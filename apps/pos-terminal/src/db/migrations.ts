@@ -329,6 +329,16 @@ export const MIGRACIONES: Migracion[] = [
       `);
     },
   },
+  {
+    version: 5,
+    nombre: "desglose_efectivo_en_turnos",
+    up: async (db) => {
+      // Conteo físico de billetes y monedas del corte, en JSON y con el mismo formato que manda
+      // el POS Windows (ver CajaService.cerrarTurno, que lo guarda tal cual para auditarlo).
+      // Se guarda también en local para poder revisar o reimprimir un corte sin conexión.
+      await db.execAsync(`ALTER TABLE turnos ADD COLUMN desglose_efectivo TEXT;`);
+    },
+  },
 ];
 
 /** Corre, en orden, toda migración con `version` mayor a la ya aplicada — cada una dentro de su

@@ -74,6 +74,62 @@ export async function obtenerSucursalErp(db: SQLiteDatabase): Promise<string | n
   return obtenerConfig(db, CLAVE_SUCURSAL_ERP);
 }
 
+const CLAVE_EMPRESA_PLACEHOLDER = "empresa_id_local";
+const CLAVE_EMPRESA_ERP = "empresa_id_erp";
+
+/**
+ * Empresa que viaja en el payload de cada venta. Prefiere el id REAL del ERP igual que
+ * `obtenerOCrearSucursalIdLocal` hace con la sucursal.
+ *
+ * Antes solo devolvía un placeholder generado en el dispositivo, y nadie lo sustituía nunca por
+ * el real. Resultado: toda venta empujada a `/sync/push` llevaba un `empresaId` que no existe
+ * server-side, `PedidosService.crear` fallaba por clave foránea y la venta quedaba en ERROR —
+ * la app decía "sincronizado" pero en el ERP no aparecía ninguna venta.
+ */
+export async function obtenerOCrearEmpresaIdLocal(db: SQLiteDatabase): Promise<string> {
+  const real = await obtenerConfig(db, CLAVE_EMPRESA_ERP);
+  if (real) return real;
+  const existente = await obtenerConfig(db, CLAVE_EMPRESA_PLACEHOLDER);
+  if (existente) return existente;
+  const id = uuid7();
+  await guardarConfig(db, CLAVE_EMPRESA_PLACEHOLDER, id);
+  return id;
+}
+
+/**
+ * Guarda la empresa real del ERP y **repunta las ventas ya encoladas** que llevaban el
+ * placeholder en su payload.
+ *
+ * Sin esto, todo lo vendido antes de enlazar quedaría rechazado para siempre: el payload es un
+ * JSON congelado en el momento de la venta, así que cambiar la preferencia solo arregla las
+ * ventas futuras. Se parchea en JS y no con json_set de SQLite para no depender de que la
+ * compilación de expo-sqlite traiga la extensión JSON1.
+ */
+export async function guardarEmpresaErp(db: SQLiteDatabase, empresaId: string): Promise<void> {
+  const placeholder = await obtenerConfig(db, CLAVE_EMPRESA_PLACEHOLDER);
+  await guardarConfig(db, CLAVE_EMPRESA_ERP, empresaId);
+  if (!placeholder || placeholder === empresaId) return;
+
+  const pendientes = await db.getAllAsync<{ local_id: string; payload: string }>(
+    "SELECT local_id, payload FROM sync_outbox WHERE estado IN ('PENDING','ERROR')",
+  );
+  for (const fila of pendientes) {
+    try {
+      const payload = JSON.parse(fila.payload);
+      if (payload?.empresaId !== placeholder) continue;
+      payload.empresaId = empresaId;
+      // Se devuelve a PENDING y se limpia el backoff: la que ya había fallado por este motivo
+      // debe reintentarse de inmediato, no esperar su siguiente ventana.
+      await db.runAsync(
+        "UPDATE sync_outbox SET payload = ?, estado = 'PENDING', ultimo_error = NULL, next_retry_at = NULL WHERE local_id = ?",
+        JSON.stringify(payload), fila.local_id,
+      );
+    } catch {
+      // Un payload ilegible no debe impedir reparar los demás.
+    }
+  }
+}
+
 /** Nombre de la sucursal activa, o null si la terminal todavía no se ha enlazado al ERP. */
 export async function obtenerNombreSucursal(db: SQLiteDatabase): Promise<string | null> {
   return obtenerConfig(db, CLAVE_SUCURSAL_NOMBRE);

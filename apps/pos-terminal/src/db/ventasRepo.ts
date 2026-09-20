@@ -2,8 +2,7 @@ import type { SQLiteDatabase } from "expo-sqlite";
 import { uuid7, round2, validarPagoSuficiente, CanalOrigen, SyncEntidad, SyncOperacion, TipoPedido, type TotalesPedido } from "@hangar421/shared";
 import type { ItemCarrito } from "../store/carritoStore";
 import { encolarSync } from "./outboxRepo";
-import { obtenerOCrearDispositivoId, obtenerOCrearSucursalIdLocal } from "./dispositivoLocal";
-import { obtenerConfig, guardarConfig } from "./configLocalRepo";
+import { obtenerOCrearDispositivoId, obtenerOCrearSucursalIdLocal, obtenerOCrearEmpresaIdLocal } from "./dispositivoLocal";
 
 export interface PagoVenta {
   metodo: string;
@@ -15,16 +14,6 @@ export interface VentaConfirmada {
   id: string;
   folioLocal: number;
   total: number;
-}
-
-const CLAVE_EMPRESA_PLACEHOLDER = "empresa_id_local";
-
-async function obtenerOCrearEmpresaIdLocal(db: SQLiteDatabase): Promise<string> {
-  const existente = await obtenerConfig(db, CLAVE_EMPRESA_PLACEHOLDER);
-  if (existente) return existente;
-  const id = uuid7();
-  await guardarConfig(db, CLAVE_EMPRESA_PLACEHOLDER, id);
-  return id;
 }
 
 /** El corazón de la venta offline: UNA transacción cubre la venta + sus items + sus pagos + los

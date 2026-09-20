@@ -1,5 +1,6 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 import { uuid7, round2, SyncEntidad, SyncOperacion } from "@hangar421/shared";
+import type { DesgloseEfectivo } from "../caja/denominaciones";
 import { encolarSync } from "./outboxRepo";
 import { obtenerOCrearDispositivoId, obtenerOCrearSucursalIdLocal } from "./dispositivoLocal";
 
@@ -101,7 +102,10 @@ export async function listarMovimientosCaja(db: SQLiteDatabase, turnoId: string)
 }
 
 /** Cerrar caja — una sola transacción: actualiza el turno + su evento de sync. */
-export async function cerrarTurno(db: SQLiteDatabase, datos: { turnoId: string; montoFinalDeclarado: number }): Promise<void> {
+export async function cerrarTurno(
+  db: SQLiteDatabase,
+  datos: { turnoId: string; montoFinalDeclarado: number; desgloseEfectivo?: DesgloseEfectivo },
+): Promise<void> {
   const ahora = new Date().toISOString();
   const [sucursalId, dispositivoId, turno] = await Promise.all([
     obtenerOCrearSucursalIdLocal(db),
@@ -112,8 +116,8 @@ export async function cerrarTurno(db: SQLiteDatabase, datos: { turnoId: string; 
 
   await db.withTransactionAsync(async () => {
     await db.runAsync(
-      "UPDATE turnos SET estado = 'CERRADO', monto_final_declarado = ?, cerrado_at = ? WHERE id = ?",
-      round2(datos.montoFinalDeclarado), ahora, datos.turnoId,
+      "UPDATE turnos SET estado = 'CERRADO', monto_final_declarado = ?, cerrado_at = ?, desglose_efectivo = ? WHERE id = ?",
+      round2(datos.montoFinalDeclarado), ahora, datos.desgloseEfectivo ? JSON.stringify(datos.desgloseEfectivo) : null, datos.turnoId,
     );
     await encolarSync(db, {
       entidad: SyncEntidad.TURNO,
@@ -122,7 +126,27 @@ export async function cerrarTurno(db: SQLiteDatabase, datos: { turnoId: string; 
       sucursalId,
       dispositivoId,
       usuarioId: turno.usuario_id,
-      payload: { turnoId: datos.turnoId, montoFinalDeclarado: round2(datos.montoFinalDeclarado) },
+      payload: {
+        turnoId: datos.turnoId,
+        montoFinalDeclarado: round2(datos.montoFinalDeclarado),
+        // Mismo campo y forma que manda el POS Windows en su POST directo, para que el ERP
+        // reciba un solo formato venga de donde venga.
+        desgloseEfectivo: datos.desgloseEfectivo,
+      },
     });
   });
+}
+
+/** Efectivo cobrado durante el turno — lo que el sistema espera encontrar en el cajón, sumado
+ *  al monto de apertura y a los movimientos. Se calcula en local para que el cajero vea la
+ *  diferencia mientras cuenta, sin depender de la red; el ERP lo recalcula por su cuenta al
+ *  recibir el corte (CajaService.calcularMontoEsperado), y esa es la cifra oficial. */
+export async function efectivoDelTurno(db: SQLiteDatabase, turnoId: string): Promise<number> {
+  const fila = await db.getFirstAsync<{ total: number }>(
+    `SELECT COALESCE(SUM(p.monto), 0) AS total
+     FROM pagos p JOIN ventas v ON v.id = p.venta_id
+     WHERE v.turno_id = ? AND v.estado = 'COBRADA' AND p.metodo = 'EFECTIVO'`,
+    turnoId,
+  );
+  return round2(fila?.total ?? 0);
 }

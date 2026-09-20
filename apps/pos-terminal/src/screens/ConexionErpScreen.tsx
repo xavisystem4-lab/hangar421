@@ -4,8 +4,8 @@ import { RolUsuario, TipoDispositivo, type AccesoSucursal, type JwtPayload, type
 import { ErrorErp, erpFetch, guardarTokensErp, obtenerErpBaseUrl } from "../api/erpHttp";
 import { decodificarJwt } from "../auth/jwt";
 import { abrirBaseDeDatos } from "../db/database";
-import { guardarSucursalErp, obtenerOCrearDispositivoId } from "../db/dispositivoLocal";
-import { guardarEmpresaErp, refrescarCatalogo, ejecutarPull } from "../sync/pullEngine";
+import { guardarSucursalErp, guardarEmpresaErp, obtenerOCrearDispositivoId } from "../db/dispositivoLocal";
+import { refrescarCatalogo, ejecutarPull } from "../sync/pullEngine";
 import { obtenerDatosFiscales } from "../db/configFiscalRepo";
 import { usarColores } from "../store/temaStore";
 
@@ -62,7 +62,7 @@ export function ConexionErpScreen({ onConectado, onCerrar }: { onConectado: () =
     const db = await abrirBaseDeDatos();
     // Repunta a esta sucursal lo que se haya registrado antes de enlazar (ver dispositivoLocal).
     await guardarSucursalErp(db, sucursalId, nombre);
-    await guardarEmpresaErp(empresaId);
+    await guardarEmpresaErp(db, empresaId);
     await refrescarCatalogo().catch(() => undefined); // best-effort, no bloquea la conexión
     await ejecutarPull().catch(() => undefined);
     onConectado();

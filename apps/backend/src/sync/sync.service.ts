@@ -183,7 +183,10 @@ export class SyncService {
         if (item.operacion === SyncOperacion.CREATE) {
           await this.caja.abrirTurno({ sucursalId: item.sucursalId, cajaId: p.cajaId, usuarioId: item.usuarioId ?? p.usuarioId, montoInicial: p.montoInicial });
         } else {
-          await this.caja.cerrarTurno(p.turnoId, p.montoFinalDeclarado);
+          // `desgloseEfectivo` se perdía al llegar por la cola offline: el POS Windows sí lo
+          // manda en su POST directo, pero un corte hecho en el APK llegaba sin el conteo de
+          // billetes y monedas, así que no había forma de auditarlo después.
+          await this.caja.cerrarTurno(p.turnoId, p.montoFinalDeclarado, p.desgloseEfectivo);
         }
         break;
 

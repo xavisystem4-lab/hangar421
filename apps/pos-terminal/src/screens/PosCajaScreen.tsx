@@ -3,8 +3,10 @@ import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View 
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
-import { abrirTurno, cerrarTurno, listarMovimientosCaja, registrarMovimientoCaja, turnoAbierto, type MovimientoCajaLocal, type TurnoLocal } from "../db/turnosRepo";
+import { abrirTurno, cerrarTurno, efectivoDelTurno, listarMovimientosCaja, registrarMovimientoCaja, turnoAbierto, type MovimientoCajaLocal, type TurnoLocal } from "../db/turnosRepo";
 import { listarVentasRecientes, type VentaResumen } from "../db/ventasHistorialRepo";
+import { BILLETES_MXN, BILLETES_USD, MONEDAS_MXN, calcularDiferencia, construirDesglose, round2, type Conteo } from "../caja/denominaciones";
+import { GrupoDenominaciones } from "../components/DesgloseEfectivo";
 
 export function PosCajaScreen() {
   const { usuario } = useAuthLocalStore();
@@ -14,7 +16,12 @@ export function PosCajaScreen() {
   const [movimientos, setMovimientos] = useState<MovimientoCajaLocal[]>([]);
   const [ventas, setVentas] = useState<VentaResumen[]>([]);
   const [montoInicial, setMontoInicial] = useState("0");
-  const [montoFinal, setMontoFinal] = useState("0");
+  // Conteo físico del corte, por familia de denominación — mismas listas que el POS Windows.
+  const [billetesMXN, setBilletesMXN] = useState<Conteo>({});
+  const [monedasMXN, setMonedasMXN] = useState<Conteo>({});
+  const [billetesUSD, setBilletesUSD] = useState<Conteo>({});
+  const [observaciones, setObservaciones] = useState("");
+  const [ventasEnEfectivo, setVentasEnEfectivo] = useState(0);
   const [tipoMovimiento, setTipoMovimiento] = useState<"INGRESO" | "EGRESO">("INGRESO");
   const [montoMovimiento, setMontoMovimiento] = useState("");
   const [motivoMovimiento, setMotivoMovimiento] = useState("");
@@ -24,7 +31,10 @@ export function PosCajaScreen() {
     const db = await abrirBaseDeDatos();
     const t = await turnoAbierto(db);
     setTurno(t);
-    if (t) setMovimientos(await listarMovimientosCaja(db, t.id));
+    if (t) {
+      setMovimientos(await listarMovimientosCaja(db, t.id));
+      setVentasEnEfectivo(await efectivoDelTurno(db, t.id));
+    }
     setVentas(await listarVentasRecientes(db, 20));
   }
 
@@ -54,19 +64,50 @@ export function PosCajaScreen() {
     cargar();
   }
 
+  /** Lo esperado en caja según el sistema: apertura + ventas en efectivo + ingresos − egresos.
+   *  Se calcula en local para poder mostrar la diferencia mientras se cuenta, sin red — el ERP
+   *  lo recalcula por su cuenta al recibir el corte (CajaService.calcularMontoEsperado), así que
+   *  esto es una ayuda al cajero, no la cifra oficial. */
+  const efectivoEsperado = (() => {
+    if (!turno) return 0;
+    const ingresos = movimientos.filter((m) => m.tipo === "INGRESO").reduce((s, m) => s + m.monto, 0);
+    const egresos = movimientos.filter((m) => m.tipo === "EGRESO").reduce((s, m) => s + m.monto, 0);
+    return round2(turno.montoInicial + ventasEnEfectivo + ingresos - egresos);
+  })();
+
+  const desglose = construirDesglose(billetesMXN, monedasMXN, billetesUSD, observaciones);
+  const diferencia = calcularDiferencia(desglose.totalMXN, efectivoEsperado);
+
   function confirmarCierre() {
-    Alert.alert("Cerrar caja", "¿Confirmas el corte de caja con el monto declarado?", [
-      { text: "Cancelar", style: "cancel" },
-      { text: "Cerrar caja", style: "destructive", onPress: cerrar },
-    ]);
+    const signo = diferencia > 0 ? "sobran" : "faltan";
+    const detalle = diferencia === 0
+      ? "El conteo cuadra con lo esperado."
+      : `Según el conteo ${signo} $${Math.abs(diferencia).toFixed(2)} respecto a lo esperado ($${efectivoEsperado.toFixed(2)}).`;
+    Alert.alert(
+      "Cerrar caja",
+      `Contado: $${desglose.totalMXN.toFixed(2)}\n${detalle}\n\nEl corte no se puede deshacer.`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        { text: "Cerrar caja", style: "destructive", onPress: cerrar },
+      ],
+    );
   }
 
   async function cerrar() {
     if (!turno) return;
     const db = await abrirBaseDeDatos();
-    await cerrarTurno(db, { turnoId: turno.id, montoFinalDeclarado: Number(montoFinal) || 0 });
+    await cerrarTurno(db, {
+      turnoId: turno.id,
+      // El declarado es el TOTAL CONTADO, no un número escrito a mano: es lo que hace que el
+      // desglose y la cifra del corte no puedan contradecirse.
+      montoFinalDeclarado: desglose.totalMXN,
+      desgloseEfectivo: desglose,
+    });
     setMensaje("Turno cerrado.");
-    setMontoFinal("0");
+    setBilletesMXN({});
+    setMonedasMXN({});
+    setBilletesUSD({});
+    setObservaciones("");
     cargar();
   }
 
@@ -94,7 +135,8 @@ export function PosCajaScreen() {
             <Text style={estilos.detalle}>Fondo inicial: ${turno.montoInicial.toFixed(2)}</Text>
             <Text style={estilos.detalle}>Ventas del turno: {ventasDelTurno.length} · ${totalVentasTurno.toFixed(2)}</Text>
             <Text style={estilos.detalle}>Movimientos: {totalMovimientos >= 0 ? "+" : ""}{totalMovimientos.toFixed(2)}</Text>
-            <Text style={[estilos.detalle, estilos.esperado]}>Efectivo esperado: ${(turno.montoInicial + totalVentasTurno + totalMovimientos).toFixed(2)}</Text>
+            <Text style={[estilos.detalle, estilos.esperado]}>Efectivo esperado: ${efectivoEsperado.toFixed(2)}</Text>
+            <Text style={estilos.detalle}>(solo ventas cobradas en efectivo: ${ventasEnEfectivo.toFixed(2)})</Text>
           </View>
 
           <View style={estilos.tarjeta}>
@@ -120,8 +162,67 @@ export function PosCajaScreen() {
           </View>
 
           <View style={estilos.tarjeta}>
-            <Text style={estilos.subtitulo}>Cerrar turno</Text>
-            <TextInput placeholder="Monto final declarado (conteo físico)" placeholderTextColor={colores.textoSecundario} value={montoFinal} onChangeText={setMontoFinal} keyboardType="decimal-pad" style={estilos.input} />
+            <Text style={estilos.subtitulo}>Corte de caja</Text>
+            <Text style={estilos.detalle}>
+              Cuenta el efectivo del cajón por denominación. El total declarado sale del conteo, no se escribe a mano.
+            </Text>
+
+            <GrupoDenominaciones
+              titulo="Billetes MXN"
+              denominaciones={BILLETES_MXN}
+              conteo={billetesMXN}
+              onChange={(d, c) => setBilletesMXN((s) => ({ ...s, [d]: c }))}
+            />
+            <GrupoDenominaciones
+              titulo="Monedas MXN"
+              denominaciones={MONEDAS_MXN}
+              conteo={monedasMXN}
+              onChange={(d, c) => setMonedasMXN((s) => ({ ...s, [d]: c }))}
+            />
+            {/* El dólar va aparte y NO se suma al efectivo MXN esperado — mismo criterio que el
+                POS Windows: es informativo hasta que se cambie a pesos en una operación aparte. */}
+            <GrupoDenominaciones
+              titulo="Billetes USD (informativo)"
+              denominaciones={BILLETES_USD}
+              conteo={billetesUSD}
+              onChange={(d, c) => setBilletesUSD((s) => ({ ...s, [d]: c }))}
+              prefijo="US$"
+            />
+
+            <TextInput
+              placeholder="Observaciones del corte (opcional)"
+              placeholderTextColor={colores.textoSecundario}
+              value={observaciones}
+              onChangeText={setObservaciones}
+              multiline
+              style={[estilos.input, { marginTop: 14, minHeight: 60, textAlignVertical: "top" }]}
+            />
+
+            <View style={estilos.resumenCorte}>
+              <View style={estilos.filaResumen}>
+                <Text style={estilos.etiquetaResumen}>Contado (MXN)</Text>
+                <Text style={estilos.valorResumen}>${desglose.totalMXN.toFixed(2)}</Text>
+              </View>
+              <View style={estilos.filaResumen}>
+                <Text style={estilos.etiquetaResumen}>Esperado</Text>
+                <Text style={estilos.valorResumen}>${efectivoEsperado.toFixed(2)}</Text>
+              </View>
+              {/* En vivo, mientras se cuenta: ver el faltante aparecer es lo que hace que el
+                  cajero recuente antes de cerrar, no después. */}
+              <View style={[estilos.filaResumen, estilos.filaDiferencia]}>
+                <Text style={estilos.etiquetaResumen}>Diferencia</Text>
+                <Text style={[estilos.valorDiferencia, { color: diferencia === 0 ? colores.green : colores.red }]}>
+                  {diferencia === 0 ? "Cuadra" : `${diferencia > 0 ? "+" : "−"}$${Math.abs(diferencia).toFixed(2)}`}
+                </Text>
+              </View>
+              {desglose.totalUSD > 0 && (
+                <View style={estilos.filaResumen}>
+                  <Text style={estilos.etiquetaResumen}>Dólares contados</Text>
+                  <Text style={estilos.valorResumen}>US${desglose.totalUSD.toFixed(2)}</Text>
+                </View>
+              )}
+            </View>
+
             <TouchableOpacity onPress={confirmarCierre} style={[estilos.botonPrincipal, { backgroundColor: colores.red }]}><Text style={estilos.botonPrincipalTexto}>Cerrar caja</Text></TouchableOpacity>
           </View>
         </>
@@ -143,6 +244,12 @@ export function PosCajaScreen() {
 
 function crearEstilos(colores: ReturnType<typeof usarColores>) {
   return StyleSheet.create({
+    resumenCorte: { marginTop: 14, padding: 12, borderRadius: 10, backgroundColor: colores.gray50 },
+    filaResumen: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 },
+    filaDiferencia: { borderTopWidth: 1, borderTopColor: colores.borde, marginTop: 6, paddingTop: 8 },
+    etiquetaResumen: { fontSize: 13, color: colores.textoSecundario },
+    valorResumen: { fontSize: 13, fontWeight: "700", color: colores.texto },
+    valorDiferencia: { fontSize: 16, fontWeight: "800" },
     titulo: { fontSize: 22, fontWeight: "800", color: colores.texto, marginBottom: 10 },
     subtitulo: { fontSize: 16, fontWeight: "800", color: colores.texto, marginBottom: 8 },
     detalle: { fontSize: 13, color: colores.textoSecundario, marginTop: 2 },
