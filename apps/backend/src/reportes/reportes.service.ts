@@ -1,15 +1,21 @@
 import { Injectable } from "@nestjs/common";
 import { EstadoPedido } from "@hangar421/shared";
 import { PrismaService } from "../prisma/prisma.service";
+import { hoyEnZona, limiteDelDia } from "../pedidos/ventas-consulta";
 
 @Injectable()
 export class ReportesService {
   constructor(private prisma: PrismaService) {}
 
-  /** KPIs del día para el dashboard del CRM, con opción de filtrar por sucursal. */
+  /** KPIs del día para el dashboard del CRM, con opción de filtrar por sucursal.
+   *
+   *  "Hoy" es el día en la zona de la SUCURSAL, no en la del servidor: Railway corre en UTC, y
+   *  `new Date().setHours(0,0,0,0)` daba las 00:00 UTC — las 18:00 del día anterior en México.
+   *  Con eso el dashboard mezclaba la tarde-noche de ayer con la de hoy y cortaba el día a las
+   *  18:00. Misma regla que el módulo de Ventas, para que los dos números coincidan siempre. */
   async dashboard(empresaId: string, sucursalId?: string) {
-    const inicioDia = new Date();
-    inicioDia.setHours(0, 0, 0, 0);
+    const zona = await this.zonaHoraria(empresaId, sucursalId);
+    const inicioDia = limiteDelDia(hoyEnZona(zona), zona, "inicio");
 
     const whereBase = {
       empresaId,
@@ -60,23 +66,39 @@ export class ReportesService {
     };
   }
 
-  /** Ventas agrupadas por hora del día, útil para la gráfica del dashboard. */
+  /** Ventas agrupadas por hora del día, útil para la gráfica del dashboard.
+   *
+   *  Tanto el corte del día como la hora de cada venta van en la zona de la sucursal: con la del
+   *  servidor, una venta de las 14:00 en México aparecía en la barra de las 20:00. */
   async ventasPorHora(sucursalId: string, fecha?: string) {
-    const dia = fecha ? new Date(fecha) : new Date();
-    dia.setHours(0, 0, 0, 0);
-    const finDia = new Date(dia);
-    finDia.setHours(23, 59, 59, 999);
+    const zona = await this.zonaHoraria(undefined, sucursalId);
+    const dia = fecha ?? hoyEnZona(zona);
 
     const pedidos = await this.prisma.pedido.findMany({
-      where: { sucursalId, estado: EstadoPedido.COBRADO, createdAt: { gte: dia, lte: finDia } },
+      where: {
+        sucursalId,
+        estado: EstadoPedido.COBRADO,
+        createdAt: { gte: limiteDelDia(dia, zona, "inicio"), lte: limiteDelDia(dia, zona, "fin") },
+      },
       select: { createdAt: true, total: true },
     });
 
+    const formatoHora = new Intl.DateTimeFormat("en-US", { timeZone: zona, hour12: false, hour: "2-digit" });
     const porHora = Array.from({ length: 24 }, (_, h) => ({ hora: h, total: 0 }));
     for (const p of pedidos) {
-      porHora[p.createdAt.getHours()].total += Number(p.total);
+      const hora = Number(formatoHora.format(p.createdAt)) % 24;
+      porHora[hora].total += Number(p.total);
     }
     return porHora;
+  }
+
+  /** Zona horaria de la sucursal; si no se da una, la de la primera sucursal activa de la
+   *  empresa. El esquema tiene default America/Mexico_City, así que siempre hay valor. */
+  private async zonaHoraria(empresaId?: string, sucursalId?: string): Promise<string> {
+    const sucursal = sucursalId
+      ? await this.prisma.sucursal.findUnique({ where: { id: sucursalId }, select: { timezone: true } })
+      : await this.prisma.sucursal.findFirst({ where: { empresaId, activo: true }, select: { timezone: true } });
+    return sucursal?.timezone ?? "America/Mexico_City";
   }
 
   async ventasPorProducto(empresaId: string, desde: Date, hasta: Date) {

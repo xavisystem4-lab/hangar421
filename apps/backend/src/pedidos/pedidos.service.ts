@@ -11,7 +11,9 @@ import {
   calcularTotalesPedido,
   validarPagoSuficiente,
 } from "@hangar421/shared";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { armarResumen, hoyEnZona, limiteDelDia, normalizarPaginacion, type FiltroVentas } from "./ventas-consulta";
 import { RealtimeGateway } from "../realtime/realtime.gateway";
 import { AuthService } from "../auth/auth.service";
 import { resolverDispositivoId } from "../common/dispositivo.util";
@@ -51,6 +53,116 @@ export class PedidosService {
       },
       orderBy: { createdAt: "desc" },
     });
+  }
+
+  /**
+   * Consulta de ventas del ERP: lo que alimenta el módulo de Ventas y el detalle del ticket.
+   *
+   * Tres decisiones que no se ven en la firma:
+   *
+   *  - **Se listan TODOS los estados, no solo COBRADO.** El dashboard solo suma las cobradas, y
+   *    eso hacía que una venta que llegó a medias (el pedido entró pero su pago no, así que se
+   *    quedó en ABIERTO) desapareciera sin dejar rastro. Aquí se ve, con su estado, que es la
+   *    única forma de notar que hay algo que reparar. Al total solo suman las cobradas.
+   *  - **El día se calcula en la zona de la sucursal**, no en la del servidor (Railway corre en
+   *    UTC). Ver `limiteDelDia`.
+   *  - **Sin `sucursalId` devuelve el consolidado de la empresa.** Solo llega aquí sin él quien
+   *    pasó SucursalAccessGuard, es decir un ADMIN_CORPORATIVO.
+   */
+  async consultarVentas(empresaId: string, filtro: FiltroVentas) {
+    const zona = await this.zonaHoraria(filtro.sucursalId, empresaId);
+    const desde = filtro.desde ?? hoyEnZona(zona);
+    const hasta = filtro.hasta ?? desde;
+
+    const where: Prisma.PedidoWhereInput = {
+      empresaId,
+      ...(filtro.sucursalId ? { sucursalId: filtro.sucursalId } : {}),
+      ...(filtro.estado ? { estado: filtro.estado } : {}),
+      createdAt: { gte: limiteDelDia(desde, zona, "inicio"), lte: limiteDelDia(hasta, zona, "fin") },
+      ...(filtro.busqueda?.trim() ? this.filtroBusqueda(filtro.busqueda.trim()) : {}),
+    };
+
+    const { take, skip } = normalizarPaginacion(filtro.limite, filtro.offset);
+
+    // El resumen se calcula sobre TODO el rango, no sobre la página: si no, el total cambiaría
+    // al pasar de página, que es exactamente lo que nadie espera de un total.
+    const [items, totalFilas, paraResumen] = await Promise.all([
+      this.prisma.pedido.findMany({
+        where,
+        include: {
+          // El nombre del producto no se copia en la línea del pedido (a diferencia del SQLite
+          // del APK), así que viene por la relación.
+          items: { select: { id: true, cantidad: true, precioUnitario: true, producto: { select: { nombre: true } } } },
+          pagos: { select: { metodo: true, monto: true } },
+          mesero: { select: { id: true, nombre: true } },
+          cajero: { select: { id: true, nombre: true } },
+          sucursal: { select: { id: true, nombre: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take,
+        skip,
+      }),
+      this.prisma.pedido.count({ where }),
+      this.prisma.pedido.findMany({ where, select: { estado: true, total: true } }),
+    ]);
+
+    return {
+      rango: { desde, hasta, zona },
+      resumen: armarResumen(paraResumen.map((p) => ({ estado: p.estado, total: Number(p.total) }))),
+      paginacion: { total: totalFilas, limite: take, offset: skip },
+      items: items.map((p) => ({
+        id: p.id,
+        folio: p.folio,
+        fecha: p.createdAt,
+        estado: p.estado,
+        canalOrigen: p.canalOrigen,
+        total: Number(p.total),
+        subtotal: Number(p.subtotal),
+        descuento: Number(p.descuentoTotal),
+        impuestos: Number(p.impuesto),
+        sucursal: p.sucursal,
+        // `mesero`/`cajero` pueden venir vacíos en una venta que se sincronizó desde una terminal
+        // cuyo cajero se dio de alta sin conexión (ver usuariosLocalesRepo.mapaUsuariosErp): se
+        // guarda la venta sin atribución antes que perderla.
+        mesero: p.mesero,
+        cajero: p.cajero,
+        numItems: p.items.length,
+        items: p.items.map((i) => ({
+          id: i.id,
+          nombre: i.producto?.nombre ?? "—",
+          cantidad: i.cantidad,
+          // El subtotal de la línea no se guarda: se recompone. Puede quedar por debajo del
+          // total del ticket si el pedido llevaba modificadores con precio, por eso el importe
+          // que manda siempre es el `total` del pedido, no la suma de estas líneas.
+          subtotal: Math.round(i.cantidad * Number(i.precioUnitario) * 100) / 100,
+        })),
+        pagos: p.pagos.map((pa) => ({ metodo: pa.metodo, monto: Number(pa.monto) })),
+      })),
+    };
+  }
+
+  /** Busca por folio exacto si lo que se tecleó es un número, y si no por nombre de producto
+   *  dentro del ticket — que es como se busca "la venta del café" cuando no se recuerda el
+   *  folio. */
+  private filtroBusqueda(texto: string): Prisma.PedidoWhereInput {
+    // `folio` es texto (lo arma la terminal, no es un autoincremental), así que se busca por
+    // coincidencia parcial: tecleando "42" salen el 42 y el 1042, que es lo que se espera al
+    // recordar solo el final de un folio.
+    return {
+      OR: [
+        { folio: { contains: texto, mode: "insensitive" } },
+        { items: { some: { producto: { nombre: { contains: texto, mode: "insensitive" } } } } },
+      ],
+    };
+  }
+
+  /** Zona de la sucursal; si es el consolidado, la de la empresa a través de su primera
+   *  sucursal. El `default` del esquema es America/Mexico_City, así que siempre hay una. */
+  private async zonaHoraria(sucursalId: string | undefined, empresaId: string): Promise<string> {
+    const sucursal = sucursalId
+      ? await this.prisma.sucursal.findUnique({ where: { id: sucursalId }, select: { timezone: true } })
+      : await this.prisma.sucursal.findFirst({ where: { empresaId, activo: true }, select: { timezone: true } });
+    return sucursal?.timezone ?? "America/Mexico_City";
   }
 
   async obtener(id: string) {

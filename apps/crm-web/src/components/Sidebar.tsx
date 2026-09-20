@@ -11,6 +11,9 @@ import { useThemeStore } from "@/store/themeStore";
 // muestra accesos que de todos modos el backend va a rechazar con 403.
 const ITEMS: { href: string; label: string; icon: string; roles?: RolUsuario[] }[] = [
   { href: "/dashboard", label: "Dashboard", icon: "📊" },
+  // Ventas no lleva `roles`: consultar los tickets de la sucursal propia es lo mínimo que hace
+  // cualquier rol con acceso al ERP, y el backend ya acota por empresa y sucursal del token.
+  { href: "/ventas", label: "Ventas", icon: "🧾" },
   { href: "/reportes", label: "Reportes", icon: "📈", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL", "SUPERVISOR"] as RolUsuario[] },
   { href: "/sucursales", label: "Sucursales", icon: "🏬", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL"] as RolUsuario[] },
   { href: "/mesas", label: "Mesas", icon: "🪑", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL"] as RolUsuario[] },

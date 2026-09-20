@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { EstadoPedido, EstadoPedidoItem, RolUsuario } from "@hangar421/shared";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
@@ -30,6 +30,39 @@ export class PedidosController {
   ) {
     const estados = estadosCsv ? (estadosCsv.split(",") as EstadoPedido[]) : undefined;
     return this.pedidos.listar(sucursalId, estado, estados);
+  }
+
+  /**
+   * Consulta de ventas del ERP (módulo Ventas y tarjetas del dashboard).
+   *
+   * Va ANTES que `@Get(":id")`: Nest resuelve por orden de declaración y si no, `:id` capturaría
+   * la cadena "ventas".
+   *
+   * `empresaId` sale del token, nunca del query: es lo que impide pedir las ventas de otra
+   * empresa. `sucursalId` sí viene por query —es la sucursal elegida en el ERP— y
+   * SucursalAccessGuard lo compara contra la sesión, así que un usuario de una sucursal no puede
+   * consultar la otra. Omitirlo da el consolidado, y solo ADMIN_CORPORATIVO pasa el guard sin él.
+   */
+  @Get("ventas")
+  consultarVentas(
+    @Req() req: any,
+    @Query("sucursalId") sucursalId?: string,
+    @Query("desde") desde?: string,
+    @Query("hasta") hasta?: string,
+    @Query("estado") estado?: EstadoPedido,
+    @Query("busqueda") busqueda?: string,
+    @Query("limite") limite?: string,
+    @Query("offset") offset?: string,
+  ) {
+    return this.pedidos.consultarVentas(req.user.empresaId, {
+      sucursalId,
+      desde,
+      hasta,
+      estado,
+      busqueda,
+      limite: limite ? Number(limite) : undefined,
+      offset: offset ? Number(offset) : undefined,
+    });
   }
 
   @Get(":id")

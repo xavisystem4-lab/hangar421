@@ -54,8 +54,13 @@ export default function DashboardPage() {
       socket.on("pedido:creado", cargar);
     }
     return () => { clearInterval(t); socket.disconnect(); };
+    // `seleccion?.sucursalId` en las dependencias es imprescindible: sin él, cambiar de sucursal
+    // en la cabecera no recargaba nada. Peor aún, el `setInterval` capturaba el `cargar` de la
+    // primera carga, así que seguía refrescando LA SUCURSAL ANTERIOR cada 30 s — se veía un
+    // dashboard que decía "Sucursal de prueba" con los números de otra, y una venta recién hecha
+    // no aparecía nunca.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contexto]);
+  }, [contexto, seleccion?.sucursalId]);
 
   if (!data) return <p>Cargando…</p>;
 
