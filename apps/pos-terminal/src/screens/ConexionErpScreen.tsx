@@ -48,6 +48,12 @@ export function ConexionErpScreen({ onConectado, onCerrar }: { onConectado: () =
   const [tasaImpuestoNueva, setTasaImpuestoNueva] = useState("0.16");
   const [servidorErp, setServidorErp] = useState("");
 
+  /** Código por defecto: es el camino normal para enlazar una terminal. El login con correo y
+   *  contraseña queda como camino de administrador — hace falta para crear una sucursal nueva o
+   *  para moverse entre sucursales, pero no debe ser lo primero que ve un cajero. */
+  const [modo, setModo] = useState<"codigo" | "admin">("codigo");
+  const [codigo, setCodigo] = useState("");
+
   useEffect(() => {
     obtenerErpBaseUrl().then(setServidorErp);
   }, []);
@@ -67,6 +73,13 @@ export function ConexionErpScreen({ onConectado, onCerrar }: { onConectado: () =
    *  pedirle acceso a un administrador). */
   function describirError(e: any, porDefecto: string): string {
     if (e instanceof ErrorErp) {
+      // El backend responde lo mismo para código inexistente, ya usado y caducado (a propósito:
+      // distinguirlos ayudaría a quien prueba códigos al azar). Aquí se traduce a algo que el
+      // cajero pueda accionar sin saber cuál de los tres fue.
+      if (e.status === 401 && modo === "codigo") {
+        return "Ese código no sirve: puede haber caducado, o alguien ya lo usó. Pídele uno nuevo al administrador.";
+      }
+      if (e.status === 429) return "Demasiados intentos seguidos. Espera un minuto y vuelve a probar.";
       if (e.status === 401 || e.status === 403) return "Tu usuario no tiene acceso a esa sucursal. Pídeselo a un administrador.";
       return e.message;
     }
@@ -74,6 +87,38 @@ export function ConexionErpScreen({ onConectado, onCerrar }: { onConectado: () =
       return "Sin conexión con el ERP. Revisa la red e inténtalo de nuevo — el Punto de Venta sigue funcionando sin esto.";
     }
     return e?.message ?? porDefecto;
+  }
+
+  /** Canjea el código de vinculación. Es el único camino que NO pide credenciales: el código lo
+   *  genera un admin en el ERP, sirve una sola vez y caduca a los 15 minutos — por eso puede
+   *  teclearlo un cajero sin que el dispositivo guarde jamás una contraseña. */
+  async function vincularConCodigo() {
+    const limpio = codigo.trim().toUpperCase().replace(/[\s-]/g, "");
+    if (limpio.length < 8) return;
+    setError(null);
+    setConectando(true);
+    try {
+      const db = await abrirBaseDeDatos();
+      const dispositivoId = await obtenerOCrearDispositivoId(db);
+      const datosFiscales = await obtenerDatosFiscales(db);
+      const resp = await erpFetch<{ sucursalId: string; sucursal: string; empresaId: string; accessToken: string; refreshToken: string }>(
+        "/auth/vincular-dispositivo",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            codigo: limpio,
+            dispositivoId,
+            nombreDispositivo: datosFiscales.nombreSucursalLocal || undefined,
+          }),
+        },
+      );
+      await guardarTokensErp(resp.accessToken, resp.refreshToken);
+      await finalizarConexion(resp.sucursalId, resp.empresaId, resp.sucursal);
+    } catch (e: any) {
+      setError(describirError(e, "No se pudo enlazar la terminal"));
+    } finally {
+      setConectando(false);
+    }
   }
 
   async function entrar(sucursalId?: string) {
@@ -220,14 +265,60 @@ export function ConexionErpScreen({ onConectado, onCerrar }: { onConectado: () =
         <Text style={estilos.servidorTexto} numberOfLines={1}>{servidorErp}</Text>
       </View>
 
-      <TextInput placeholder="Correo" placeholderTextColor={colores.textoSecundario} value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" style={estilos.input} />
-      <TextInput placeholder="Contraseña" placeholderTextColor={colores.textoSecundario} value={password} onChangeText={setPassword} secureTextEntry style={estilos.input} />
+      {modo === "codigo" ? (
+        <>
+          <Text style={estilos.subtitulo}>Código de vinculación</Text>
+          <Text style={estilos.ayudaModo}>
+            Pídeselo a un administrador: lo genera desde el ERP y te lo dicta. Sirve una sola vez y
+            caduca a los 15 minutos. Esta terminal nunca guarda tu contraseña.
+          </Text>
+          <TextInput
+            placeholder="ABCD-2345"
+            placeholderTextColor={colores.textoSecundario}
+            value={codigo}
+            onChangeText={setCodigo}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            maxLength={12}
+            style={estilos.inputCodigo}
+            accessibilityLabel="Código de vinculación"
+          />
 
-      {error && <Text style={estilos.error}>{error}</Text>}
+          {error && <Text style={estilos.error}>{error}</Text>}
 
-      <TouchableOpacity onPress={() => entrar()} disabled={conectando || !email.trim() || !password} style={estilos.boton}>
-        <Text style={estilos.botonTexto}>{conectando ? "Enlazando…" : "Enlazar"}</Text>
-      </TouchableOpacity>
+          <TouchableOpacity
+            onPress={vincularConCodigo}
+            disabled={conectando || codigo.trim().replace(/[\s-]/g, "").length < 8}
+            style={[estilos.boton, (conectando || codigo.trim().replace(/[\s-]/g, "").length < 8) && { opacity: 0.5 }]}
+          >
+            <Text style={estilos.botonTexto}>{conectando ? "Enlazando…" : "Enlazar terminal"}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={() => { setModo("admin"); setError(null); }} style={estilos.enlaceModo}>
+            <Text style={estilos.enlaceModoTexto}>Soy administrador — entrar con correo y contraseña</Text>
+          </TouchableOpacity>
+        </>
+      ) : (
+        <>
+          <Text style={estilos.subtitulo}>Acceso de administrador</Text>
+          <Text style={estilos.ayudaModo}>
+            Hace falta solo para crear una sucursal nueva o para mover esta terminal a otra. Para
+            enlazarla sin más, usa un código de vinculación.
+          </Text>
+          <TextInput placeholder="Correo" placeholderTextColor={colores.textoSecundario} value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" style={estilos.input} />
+          <TextInput placeholder="Contraseña" placeholderTextColor={colores.textoSecundario} value={password} onChangeText={setPassword} secureTextEntry style={estilos.input} />
+
+          {error && <Text style={estilos.error}>{error}</Text>}
+
+          <TouchableOpacity onPress={() => entrar()} disabled={conectando || !email.trim() || !password} style={estilos.boton}>
+            <Text style={estilos.botonTexto}>{conectando ? "Enlazando…" : "Entrar"}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={() => { setModo("codigo"); setError(null); }} style={estilos.enlaceModo}>
+            <Text style={estilos.enlaceModoTexto}>← Enlazar con un código</Text>
+          </TouchableOpacity>
+        </>
+      )}
       <Text style={estilos.notaPersistencia}>Solo se pide una vez por dispositivo — después queda enlazado hasta que cierres la conexión.</Text>
     </ScrollView>
   );
@@ -259,6 +350,15 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     notaPersistencia: { fontSize: 12, color: colores.textoSecundario, textAlign: "center", marginTop: 10 },
     subtitulo: { fontSize: 15, fontWeight: "800", color: colores.texto, marginTop: 18, marginBottom: 8 },
     input: { borderWidth: 1, borderColor: colores.borde, borderRadius: 10, padding: 14, marginBottom: 10, fontSize: 15, color: colores.texto },
+    ayudaModo: { fontSize: 12, color: colores.textoSecundario, marginBottom: 12, lineHeight: 17 },
+    // Grande, centrado y con espaciado entre letras: se teclea una vez, a menudo dictado en voz
+    // alta, y conviene poder releerlo de un vistazo antes de confirmar.
+    inputCodigo: {
+      borderWidth: 1, borderColor: colores.borde, borderRadius: 10, paddingVertical: 16, marginBottom: 10,
+      fontSize: 26, letterSpacing: 4, textAlign: "center", fontWeight: "800", color: colores.texto,
+    },
+    enlaceModo: { paddingVertical: 14, alignItems: "center" },
+    enlaceModoTexto: { color: colores.navyTexto, fontSize: 13, fontWeight: "600" },
     error: { color: colores.red, marginTop: 8, marginBottom: 4 },
     // minHeight 64: la fila entera es el área táctil, no solo el texto — se toca una vez y
     // decide a qué sucursal queda ligada la terminal.

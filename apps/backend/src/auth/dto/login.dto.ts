@@ -1,4 +1,5 @@
-import { IsOptional, IsString, MinLength } from "class-validator";
+import { IsEnum, IsOptional, IsString, MinLength } from "class-validator";
+import { RolUsuario } from "@hangar421/shared";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
 export class LoginCredencialesDto {
@@ -22,4 +23,17 @@ export class RefreshTokenDto {
 
 export class SwitchSucursalDto {
   @ApiProperty() @IsString() sucursalId!: string;
+}
+
+export class CrearCodigoVinculacionDto {
+  @ApiProperty() @IsString() sucursalId!: string;
+  /** Rol con el que operará la terminal. Se omite normalmente: CAJERO es el default. */
+  @ApiPropertyOptional({ enum: RolUsuario }) @IsOptional() @IsEnum(RolUsuario) rol?: RolUsuario;
+}
+
+export class VincularDispositivoDto {
+  @ApiProperty() @IsString() codigo!: string;
+  /** Huella de instalación del APK (ver dispositivoLocal.obtenerOCrearDispositivoId). */
+  @ApiProperty() @IsString() dispositivoId!: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() nombreDispositivo?: string;
 }

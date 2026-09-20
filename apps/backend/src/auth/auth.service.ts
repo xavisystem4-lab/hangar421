@@ -189,6 +189,22 @@ export class AuthService {
     return this.emitirSesion(usuario.id, usuario.empresaId, usuario.nombre, accesos, sucursalId, acceso.rol, dispositivoId);
   }
 
+  /** Sesión para una terminal vinculada por código (ver VinculacionService). Es un punto de
+   *  entrada aparte porque NO hay contraseña ni PIN que validar: la autorización ya la dio el
+   *  canje del código, que es de un solo uso y caduca. La sucursal activa y el rol vienen del
+   *  código, no de lo que pida el cliente. */
+  async emitirSesionParaTerminal(
+    usuarioId: string,
+    empresaId: string,
+    nombre: string,
+    sucursalId: string,
+    rol: RolUsuario,
+    dispositivoId: string,
+  ): Promise<LoginResponse> {
+    const sucursal = await this.prisma.sucursal.findUniqueOrThrow({ where: { id: sucursalId }, select: { nombre: true } });
+    return this.emitirSesion(usuarioId, empresaId, nombre, [{ sucursalId, nombre: sucursal.nombre, rol }], sucursalId, rol, dispositivoId);
+  }
+
   // -- privados --------------------------------------------------------------
 
   private resolverSucursalActiva(

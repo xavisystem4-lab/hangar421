@@ -214,28 +214,29 @@ enum EstadoSincronizacionOrdenPlataforma {
 // ---------------------------------------------------------------------------
 
 model Empresa {
-  id        String   @id @default(uuid())
-  nombre    String
-  rfc       String?
-  logoUrl   String?
-  configJson Json?   @default("{}")
-  activo    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(uuid())
+  nombre     String
+  rfc        String?
+  logoUrl    String?
+  configJson Json?    @default("{}")
+  activo     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  sucursales   Sucursal[]
-  usuarios     Usuario[]
-  perfiles     Perfil[]
-  areasImpresion AreaImpresion[]
-  categorias   CategoriaProducto[]
-  productos    Producto[]
-  modificadores Modificador[]
-  insumos      Insumo[]
-  proveedores  Proveedor[]
-  clientes     Cliente[]
-  auditLogs    AuditLog[]
+  sucursales             Sucursal[]
+  usuarios               Usuario[]
+  perfiles               Perfil[]
+  areasImpresion         AreaImpresion[]
+  categorias             CategoriaProducto[]
+  productos              Producto[]
+  modificadores          Modificador[]
+  insumos                Insumo[]
+  proveedores            Proveedor[]
+  clientes               Cliente[]
+  auditLogs              AuditLog[]
   paymentProviderConfigs PaymentProviderConfig[]
   paymentTerminals       PaymentTerminal[]
+  codigosVinculacion     CodigoVinculacion[]
   paymentRequests        PaymentRequest[]
   plataformaConfigs      PlataformaConfig[]
 
@@ -243,38 +244,39 @@ model Empresa {
 }
 
 model Sucursal {
-  id          String   @id @default(uuid())
-  empresaId   String
-  nombre      String
-  direccion   String?
+  id              String   @id @default(uuid())
+  empresaId       String
+  nombre          String
+  direccion       String?
   horarioApertura String? // "07:00"
   horarioCierre   String? // "21:00"
-  timezone    String   @default("America/Mexico_City")
-  moneda      String   @default("MXN")
-  tasaImpuesto Decimal @default(0.16) @db.Decimal(5, 4)
-  configJson  Json?    @default("{}")
-  activo      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  timezone        String   @default("America/Mexico_City")
+  moneda          String   @default("MXN")
+  tasaImpuesto    Decimal  @default(0.16) @db.Decimal(5, 4)
+  configJson      Json?    @default("{}")
+  activo          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  empresa     Empresa  @relation(fields: [empresaId], references: [id])
+  empresa Empresa @relation(fields: [empresaId], references: [id])
 
-  areas             Area[]
-  dispositivos      Dispositivo[]
-  cajas             Caja[]
-  mesas             Mesa[]
-  usuariosSucursal  UsuarioSucursal[]
-  productosSucursal ProductoSucursal[]
-  inventario        InventarioSucursal[]
-  pedidos           Pedido[]
-  turnos            Turno[]
-  movimientosInv    MovimientoInventario[]
-  traspasosOrigen   Traspaso[] @relation("TraspasoOrigen")
-  traspasosDestino  Traspaso[] @relation("TraspasoDestino")
-  auditLogs         AuditLog[]
-  horarios          HorarioUsuario[]
+  areas                  Area[]
+  dispositivos           Dispositivo[]
+  cajas                  Caja[]
+  mesas                  Mesa[]
+  usuariosSucursal       UsuarioSucursal[]
+  productosSucursal      ProductoSucursal[]
+  inventario             InventarioSucursal[]
+  pedidos                Pedido[]
+  turnos                 Turno[]
+  movimientosInv         MovimientoInventario[]
+  traspasosOrigen        Traspaso[]              @relation("TraspasoOrigen")
+  traspasosDestino       Traspaso[]              @relation("TraspasoDestino")
+  auditLogs              AuditLog[]
+  horarios               HorarioUsuario[]
   paymentProviderConfigs PaymentProviderConfig[]
   paymentTerminals       PaymentTerminal[]
+  codigosVinculacion     CodigoVinculacion[]
   paymentRequests        PaymentRequest[]
   plataformaConfigs      PlataformaConfig[]
 
@@ -283,15 +285,15 @@ model Sucursal {
 }
 
 model Area {
-  id         String   @id @default(uuid())
-  sucursalId String
-  nombre     String
-  tipo       TipoArea
+  id          String   @id @default(uuid())
+  sucursalId  String
+  nombre      String
+  tipo        TipoArea
   descripcion String?
-  activo     Boolean  @default(true)
+  activo      Boolean  @default(true)
 
-  sucursal   Sucursal @relation(fields: [sucursalId], references: [id])
-  mesas       Mesa[]
+  sucursal     Sucursal      @relation(fields: [sucursalId], references: [id])
+  mesas        Mesa[]
   dispositivos Dispositivo[]
 
   @@index([sucursalId])
@@ -299,76 +301,77 @@ model Area {
 }
 
 model Dispositivo {
-  id             String   @id @default(uuid())
+  id             String          @id @default(uuid())
   sucursalId     String
   areaId         String?
   nombre         String
   tipo           TipoDispositivo
-  identificador  String   @unique // huella única del hardware/instalación
+  identificador  String          @unique // huella única del hardware/instalación
   ultimaConexion DateTime?
-  activo         Boolean  @default(true)
-  createdAt      DateTime @default(now())
+  activo         Boolean         @default(true)
+  createdAt      DateTime        @default(now())
 
-  sucursal  Sucursal @relation(fields: [sucursalId], references: [id])
-  area      Area?    @relation(fields: [areaId], references: [id])
+  sucursal Sucursal @relation(fields: [sucursalId], references: [id])
+  area     Area?    @relation(fields: [areaId], references: [id])
 
-  pedidos       Pedido[]
-  syncItems     SyncQueueItem[]
-  auditLogs     AuditLog[]
+  pedidos   Pedido[]
+  syncItems SyncQueueItem[]
+  auditLogs AuditLog[]
 
   @@index([sucursalId])
   @@map("dispositivos")
 }
 
 model Usuario {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   empresaId    String
   nombre       String
-  email        String?  @unique
-  username     String?  @unique
+  email        String?   @unique
+  username     String?   @unique
   passwordHash String?
   pinHash      String?
-  activo       Boolean  @default(true)
+  activo       Boolean   @default(true)
   // Baja lógica permanente (botón "Eliminar" en CRM) — distinta de `activo` (que solo
   // suspende temporalmente vía Activar/Desactivar). Nunca se borra el registro: conserva
   // el historial de pedidos, turnos de caja y auditoría que ya lo referencian.
-  eliminado    Boolean  @default(false)
+  eliminado    Boolean   @default(false)
   eliminadoAt  DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  empresa      Empresa  @relation(fields: [empresaId], references: [id])
+  empresa Empresa @relation(fields: [empresaId], references: [id])
 
-  sucursales     UsuarioSucursal[]
-  pedidosMesero  Pedido[] @relation("PedidoMesero")
-  pedidosCajero  Pedido[] @relation("PedidoCajero")
-  turnos         Turno[]
-  movimientosCaja MovimientoCaja[]
-  auditLogs      AuditLog[]
-  refreshTokens  RefreshToken[]
-  horarios       HorarioUsuario[]
-  terminalesAsignadas   PaymentTerminal[] @relation("TerminalMeseroAsignado")
-  pagosComoMesero       PaymentRequest[]  @relation("PaymentRequestMesero")
-  pagosCreados          PaymentRequest[]  @relation("PaymentRequestCreadoPor")
-  pushTokens            PushToken[]
+  sucursales                UsuarioSucursal[]
+  pedidosMesero             Pedido[]            @relation("PedidoMesero")
+  pedidosCajero             Pedido[]            @relation("PedidoCajero")
+  turnos                    Turno[]
+  movimientosCaja           MovimientoCaja[]
+  auditLogs                 AuditLog[]
+  refreshTokens             RefreshToken[]
+  horarios                  HorarioUsuario[]
+  terminalesAsignadas       PaymentTerminal[]   @relation("TerminalMeseroAsignado")
+  pagosComoMesero           PaymentRequest[]    @relation("PaymentRequestMesero")
+  pagosCreados              PaymentRequest[]    @relation("PaymentRequestCreadoPor")
+  pushTokens                PushToken[]
+  codigosVinculacionCreados CodigoVinculacion[] @relation("CodigoVinculacionCreadoPor")
 
   @@index([empresaId])
   @@map("usuarios")
 }
 
 model UsuarioSucursal {
-  id          String     @id @default(uuid())
-  usuarioId   String
-  sucursalId  String
-  rol         RolUsuario
-  turno       TurnoTrabajo?
-  perfilId    String?
-  permisosJson Json?     @default("{}")
-  activo      Boolean    @default(true)
+  id           String        @id @default(uuid())
+  usuarioId    String
+  sucursalId   String
+  rol          RolUsuario
+  turno        TurnoTrabajo?
+  perfilId     String?
+  permisosJson Json?         @default("{}")
+  activo       Boolean       @default(true)
 
-  usuario   Usuario  @relation(fields: [usuarioId], references: [id])
-  sucursal  Sucursal @relation(fields: [sucursalId], references: [id])
-  perfil    Perfil?  @relation(fields: [perfilId], references: [id])
+  usuario  Usuario  @relation(fields: [usuarioId], references: [id])
+  sucursal Sucursal @relation(fields: [sucursalId], references: [id])
+  perfil   Perfil?  @relation(fields: [perfilId], references: [id])
 
   @@unique([usuarioId, sucursalId])
   @@index([sucursalId])
@@ -423,9 +426,9 @@ model HorarioUsuario {
   id         String   @id @default(uuid())
   usuarioId  String
   sucursalId String
-  diaSemana  Int      // 0=domingo … 6=sábado
-  horaInicio String   // "09:00"
-  horaFin    String   // "17:00"
+  diaSemana  Int // 0=domingo … 6=sábado
+  horaInicio String // "09:00"
+  horaFin    String // "17:00"
   notas      String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -439,13 +442,13 @@ model HorarioUsuario {
 }
 
 model RefreshToken {
-  id         String   @id @default(uuid())
-  usuarioId  String
-  tokenHash  String   @unique
+  id            String    @id @default(uuid())
+  usuarioId     String
+  tokenHash     String    @unique
   dispositivoId String?
-  expiresAt  DateTime
-  revokedAt  DateTime?
-  createdAt  DateTime @default(now())
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  createdAt     DateTime  @default(now())
 
   usuario Usuario @relation(fields: [usuarioId], references: [id])
 
@@ -458,15 +461,15 @@ model RefreshToken {
 // ---------------------------------------------------------------------------
 
 model CategoriaProducto {
-  id        String   @id @default(uuid())
+  id        String  @id @default(uuid())
   empresaId String
   nombre    String
-  orden     Int      @default(0)
+  orden     Int     @default(0)
   icono     String?
   color     String?
-  activo    Boolean  @default(true)
+  activo    Boolean @default(true)
 
-  empresa   Empresa   @relation(fields: [empresaId], references: [id])
+  empresa   Empresa    @relation(fields: [empresaId], references: [id])
   productos Producto[]
 
   @@index([empresaId])
@@ -474,29 +477,29 @@ model CategoriaProducto {
 }
 
 model Producto {
-  id           String   @id @default(uuid())
-  empresaId    String
-  categoriaId  String
-  nombre       String
-  descripcion  String?
-  subcategoria String?  // agrupación visual dentro de la categoría (ej. "Galletas by Domingo")
-  imagenUrl    String?
-  precioBase   Decimal  @db.Decimal(10, 2)
-  orden        Int      @default(0) // orden visual dentro de la categoría/subcategoría
-  activo       Boolean  @default(true)
-  requierePersonalizacion Boolean @default(false) // abre el modal de personalización antes de agregarse al pedido
-  estacionPreparacion EstacionPreparacion?
-  impuestoOverride Decimal? @db.Decimal(5, 4) // null = usa la tasa de la sucursal (Sucursal.tasaImpuesto)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                      String               @id @default(uuid())
+  empresaId               String
+  categoriaId             String
+  nombre                  String
+  descripcion             String?
+  subcategoria            String? // agrupación visual dentro de la categoría (ej. "Galletas by Domingo")
+  imagenUrl               String?
+  precioBase              Decimal              @db.Decimal(10, 2)
+  orden                   Int                  @default(0) // orden visual dentro de la categoría/subcategoría
+  activo                  Boolean              @default(true)
+  requierePersonalizacion Boolean              @default(false) // abre el modal de personalización antes de agregarse al pedido
+  estacionPreparacion     EstacionPreparacion?
+  impuestoOverride        Decimal?             @db.Decimal(5, 4) // null = usa la tasa de la sucursal (Sucursal.tasaImpuesto)
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
 
-  empresa     Empresa            @relation(fields: [empresaId], references: [id])
-  categoria   CategoriaProducto  @relation(fields: [categoriaId], references: [id])
+  empresa   Empresa           @relation(fields: [empresaId], references: [id])
+  categoria CategoriaProducto @relation(fields: [categoriaId], references: [id])
 
-  sucursales       ProductoSucursal[]
-  modificadores    ProductoModificador[]
-  receta           RecetaItem[]
-  pedidoItems      PedidoItem[]
+  sucursales    ProductoSucursal[]
+  modificadores ProductoModificador[]
+  receta        RecetaItem[]
+  pedidoItems   PedidoItem[]
 
   @@index([empresaId])
   @@index([categoriaId])
@@ -504,15 +507,15 @@ model Producto {
 }
 
 model ProductoSucursal {
-  id          String   @id @default(uuid())
-  productoId  String
-  sucursalId  String
-  precio      Decimal  @db.Decimal(10, 2)
-  disponible  Boolean  @default(true)
+  id              String  @id @default(uuid())
+  productoId      String
+  sucursalId      String
+  precio          Decimal @db.Decimal(10, 2)
+  disponible      Boolean @default(true)
   stockControlado Boolean @default(false)
 
-  producto  Producto @relation(fields: [productoId], references: [id])
-  sucursal  Sucursal @relation(fields: [sucursalId], references: [id])
+  producto Producto @relation(fields: [productoId], references: [id])
+  sucursal Sucursal @relation(fields: [sucursalId], references: [id])
 
   @@unique([productoId, sucursalId])
   @@index([sucursalId])
@@ -520,14 +523,14 @@ model ProductoSucursal {
 }
 
 model Modificador {
-  id          String   @id @default(uuid())
+  id          String  @id @default(uuid())
   empresaId   String
   nombre      String
-  tipo        String   @default("SELECCION_UNICA") // SELECCION_UNICA | MULTIPLE
-  obligatorio Boolean  @default(false)
+  tipo        String  @default("SELECCION_UNICA") // SELECCION_UNICA | MULTIPLE
+  obligatorio Boolean @default(false)
 
-  empresa  Empresa @relation(fields: [empresaId], references: [id])
-  opciones OpcionModificador[]
+  empresa   Empresa               @relation(fields: [empresaId], references: [id])
+  opciones  OpcionModificador[]
   productos ProductoModificador[]
 
   @@index([empresaId])
@@ -541,7 +544,7 @@ model OpcionModificador {
   precioExtra   Decimal @default(0) @db.Decimal(10, 2)
   orden         Int     @default(0)
 
-  modificador Modificador @relation(fields: [modificadorId], references: [id])
+  modificador             Modificador             @relation(fields: [modificadorId], references: [id])
   pedidoItemModificadores PedidoItemModificador[]
 
   @@index([modificadorId])
@@ -578,9 +581,9 @@ model Mesa {
   // LIBRE, para no desactivar por error la que sigue en uso).
   activo     Boolean    @default(true)
 
-  sucursal Sucursal @relation(fields: [sucursalId], references: [id])
-  area     Area?    @relation(fields: [areaId], references: [id])
-  pedidos  Pedido[]
+  sucursal        Sucursal         @relation(fields: [sucursalId], references: [id])
+  area            Area?            @relation(fields: [areaId], references: [id])
+  pedidos         Pedido[]
   paymentRequests PaymentRequest[]
 
   @@index([sucursalId])
@@ -597,8 +600,8 @@ model Caja {
   nombre     String
   activo     Boolean @default(true)
 
-  sucursal Sucursal @relation(fields: [sucursalId], references: [id])
-  turnos   Turno[]
+  sucursal         Sucursal          @relation(fields: [sucursalId], references: [id])
+  turnos           Turno[]
   paymentTerminals PaymentTerminal[]
 
   @@index([sucursalId])
@@ -606,22 +609,22 @@ model Caja {
 }
 
 model Turno {
-  id                String    @id @default(uuid())
-  sucursalId        String
-  cajaId            String
-  usuarioId         String
-  montoInicial      Decimal   @db.Decimal(10, 2)
-  montoFinalDeclarado Decimal? @db.Decimal(10, 2)
-  montoFinalSistema Decimal?  @db.Decimal(10, 2)
-  diferencia        Decimal?  @db.Decimal(10, 2)
-  desgloseEfectivo  Json?     // conteo de billetes/monedas MXN y billetes USD declarados al corte
-  estado            EstadoTurno @default(ABIERTO)
-  fechaApertura     DateTime  @default(now())
-  fechaCierre       DateTime?
+  id                  String      @id @default(uuid())
+  sucursalId          String
+  cajaId              String
+  usuarioId           String
+  montoInicial        Decimal     @db.Decimal(10, 2)
+  montoFinalDeclarado Decimal?    @db.Decimal(10, 2)
+  montoFinalSistema   Decimal?    @db.Decimal(10, 2)
+  diferencia          Decimal?    @db.Decimal(10, 2)
+  desgloseEfectivo    Json? // conteo de billetes/monedas MXN y billetes USD declarados al corte
+  estado              EstadoTurno @default(ABIERTO)
+  fechaApertura       DateTime    @default(now())
+  fechaCierre         DateTime?
 
-  sucursal    Sucursal          @relation(fields: [sucursalId], references: [id])
-  caja        Caja              @relation(fields: [cajaId], references: [id])
-  usuario     Usuario           @relation(fields: [usuarioId], references: [id])
+  sucursal    Sucursal         @relation(fields: [sucursalId], references: [id])
+  caja        Caja             @relation(fields: [cajaId], references: [id])
+  usuario     Usuario          @relation(fields: [usuarioId], references: [id])
   movimientos MovimientoCaja[]
 
   @@index([sucursalId])
@@ -653,42 +656,42 @@ model MovimientoCaja {
 // ---------------------------------------------------------------------------
 
 model Pedido {
-  id            String       @id @default(uuid()) // generado en cliente (UUID v7)
-  empresaId     String
-  sucursalId    String
-  mesaId        String?
-  clienteId     String?
-  folio         String
-  tipo          TipoPedido
-  numComensales Int?         @default(1)
-  meseroId      String?
-  cajeroId      String?
-  dispositivoId String?
-  canalOrigen   CanalOrigen
-  estado        EstadoPedido @default(ABIERTO)
+  id             String       @id @default(uuid()) // generado en cliente (UUID v7)
+  empresaId      String
+  sucursalId     String
+  mesaId         String?
+  clienteId      String?
+  folio          String
+  tipo           TipoPedido
+  numComensales  Int?         @default(1)
+  meseroId       String?
+  cajeroId       String?
+  dispositivoId  String?
+  canalOrigen    CanalOrigen
+  estado         EstadoPedido @default(ABIERTO)
   notasGenerales String?
-  subtotal      Decimal      @default(0) @db.Decimal(10, 2)
-  impuesto      Decimal      @default(0) @db.Decimal(10, 2)
-  descuentoTotal Decimal     @default(0) @db.Decimal(10, 2)
-  total         Decimal      @default(0) @db.Decimal(10, 2)
+  subtotal       Decimal      @default(0) @db.Decimal(10, 2)
+  impuesto       Decimal      @default(0) @db.Decimal(10, 2)
+  descuentoTotal Decimal      @default(0) @db.Decimal(10, 2)
+  total          Decimal      @default(0) @db.Decimal(10, 2)
 
-  syncStatus      SyncStatus @default(SYNCED)
-  idempotencyKey  String?    @unique
-  createdAtLocal  DateTime?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  syncStatus     SyncStatus @default(SYNCED)
+  idempotencyKey String?    @unique
+  createdAtLocal DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
 
-  sucursal Sucursal      @relation(fields: [sucursalId], references: [id])
-  mesa     Mesa?         @relation(fields: [mesaId], references: [id])
-  cliente  Cliente?      @relation(fields: [clienteId], references: [id])
-  mesero   Usuario?      @relation("PedidoMesero", fields: [meseroId], references: [id])
-  cajero   Usuario?      @relation("PedidoCajero", fields: [cajeroId], references: [id])
+  sucursal    Sucursal     @relation(fields: [sucursalId], references: [id])
+  mesa        Mesa?        @relation(fields: [mesaId], references: [id])
+  cliente     Cliente?     @relation(fields: [clienteId], references: [id])
+  mesero      Usuario?     @relation("PedidoMesero", fields: [meseroId], references: [id])
+  cajero      Usuario?     @relation("PedidoCajero", fields: [cajeroId], references: [id])
   dispositivo Dispositivo? @relation(fields: [dispositivoId], references: [id])
 
-  items       PedidoItem[]
-  pagos       Pago[]
-  descuentos  Descuento[]
-  paymentRequests PaymentRequest[]
+  items                PedidoItem[]
+  pagos                Pago[]
+  descuentos           Descuento[]
+  paymentRequests      PaymentRequest[]
   plataformaOrdenSyncs PlataformaOrdenSync[]
 
   @@unique([sucursalId, folio])
@@ -698,19 +701,19 @@ model Pedido {
 }
 
 model PedidoItem {
-  id             String            @id @default(uuid())
-  pedidoId       String
-  productoId     String
-  cantidad       Int               @default(1)
-  precioUnitario Decimal           @db.Decimal(10, 2)
-  notas          String?
-  estado         EstadoPedidoItem  @default(NUEVO)
+  id               String           @id @default(uuid())
+  pedidoId         String
+  productoId       String
+  cantidad         Int              @default(1)
+  precioUnitario   Decimal          @db.Decimal(10, 2)
+  notas            String?
+  estado           EstadoPedidoItem @default(NUEVO)
   estacionCocinaId String?
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
-  pedido    Pedido   @relation(fields: [pedidoId], references: [id])
-  producto  Producto @relation(fields: [productoId], references: [id])
+  pedido   Pedido   @relation(fields: [pedidoId], references: [id])
+  producto Producto @relation(fields: [productoId], references: [id])
 
   modificadores PedidoItemModificador[]
 
@@ -720,7 +723,7 @@ model PedidoItem {
 }
 
 model PedidoItemModificador {
-  id                  String @id @default(uuid())
+  id                  String  @id @default(uuid())
   pedidoItemId        String
   opcionModificadorId String
   precioExtra         Decimal @db.Decimal(10, 2)
@@ -732,14 +735,14 @@ model PedidoItemModificador {
 }
 
 model Descuento {
-  id            String       @id @default(uuid())
-  pedidoId      String
-  tipo          TipoDescuento
-  valor         Decimal      @db.Decimal(10, 2)
-  montoAplicado Decimal      @db.Decimal(10, 2)
-  motivo        String
+  id              String        @id @default(uuid())
+  pedidoId        String
+  tipo            TipoDescuento
+  valor           Decimal       @db.Decimal(10, 2)
+  montoAplicado   Decimal       @db.Decimal(10, 2)
+  motivo          String
   autorizadoPorId String?
-  createdAt     DateTime     @default(now())
+  createdAt       DateTime      @default(now())
 
   pedido Pedido @relation(fields: [pedidoId], references: [id])
 
@@ -772,23 +775,23 @@ model Pago {
 // ---------------------------------------------------------------------------
 
 model PaymentProviderConfig {
-  id        String   @id @default(uuid())
-  empresaId String
+  id                    String                @id @default(uuid())
+  empresaId             String
   // null = aplica a toda la empresa; una sucursal puede tener su propia cuenta/credenciales
   // (ej. dos franquicias con cuentas de Mercado Pago distintas).
-  sucursalId String?
+  sucursalId            String?
   // Código del adaptador (ej. "mercadopago", "mock") — ver ProveedorPagoRegistry.
-  proveedor  String
-  ambiente   AmbienteProveedorPago @default(PRUEBAS)
+  proveedor             String
+  ambiente              AmbienteProveedorPago @default(PRUEBAS)
   // JSON cifrado (AES-256-GCM, ver common/crypto/cifrado.service.ts) con access token, public
   // key, client secret, webhook secret, etc. — el contenido varía por proveedor y NUNCA se manda
   // al frontend ni a la APK; solo el backend lo descifra para llamar al proveedor.
-  credencialesCifradas String
+  credencialesCifradas  String
   identificadorComercio String? // user_id / store_id / merchant id, según el proveedor
-  webhookUrl String?
-  activo     Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  webhookUrl            String?
+  activo                Boolean               @default(true)
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
 
   empresa    Empresa           @relation(fields: [empresaId], references: [id])
   sucursal   Sucursal?         @relation(fields: [sucursalId], references: [id])
@@ -800,25 +803,25 @@ model PaymentProviderConfig {
 }
 
 model PaymentTerminal {
-  id                 String   @id @default(uuid())
-  empresaId          String
-  sucursalId         String
-  cajaId             String?
-  proveedorConfigId  String
-  nombre             String
-  zona               String?
-  meseroAsignadoId   String?
+  id                   String                 @id @default(uuid())
+  empresaId            String
+  sucursalId           String
+  cajaId               String?
+  proveedorConfigId    String
+  nombre               String
+  zona                 String?
+  meseroAsignadoId     String?
   // device_id de Mercado Pago Point (u homólogo de otro proveedor) — lo que el adaptador manda
   // en cada llamada a la API del proveedor para identificar la terminal física.
   identificadorExterno String
   // Overrides específicos de esta terminal, cifrados (opcional — la mayoría de la config vive en
   // PaymentProviderConfig, a nivel cuenta).
   configuracionCifrada String?
-  activo               Boolean  @default(true)
+  activo               Boolean                @default(true)
   estadoConexion       EstadoConexionTerminal @default(DESCONECTADA)
   ultimaSincronizacion DateTime?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
 
   empresa         Empresa               @relation(fields: [empresaId], references: [id])
   sucursal        Sucursal              @relation(fields: [sucursalId], references: [id])
@@ -833,32 +836,32 @@ model PaymentTerminal {
 }
 
 model PaymentRequest {
-  id         String   @id @default(uuid())
-  empresaId  String
-  sucursalId String
-  pedidoId   String
-  mesaId     String?
-  meseroId   String?
-  terminalId String
-  proveedor  String
+  id                String              @id @default(uuid())
+  empresaId         String
+  sucursalId        String
+  pedidoId          String
+  mesaId            String?
+  meseroId          String?
+  terminalId        String
+  proveedor         String
   // Lo que el backend manda al proveedor como "external_reference" (ej. Mercado Pago) — permite
   // conciliar el webhook con esta solicitud sin depender de que el proveedor devuelva rápido su
   // propio id. Es distinto del `id` (UUID interno) para tener un código corto legible en tickets.
-  referenciaInterna String  @unique
+  referenciaInterna String              @unique
   // payment_intent id / payment id que asigna el proveedor — llega en la respuesta de
   // crearSolicitudDePago() y se confirma/actualiza vía webhook.
   referenciaExterna String?
-  importe        Decimal  @db.Decimal(10, 2)
-  moneda         String   @default("MXN")
-  estado         EstadoSolicitudPago @default(PENDIENTE)
+  importe           Decimal             @db.Decimal(10, 2)
+  moneda            String              @default("MXN")
+  estado            EstadoSolicitudPago @default(PENDIENTE)
   // Evita duplicar el cobro ante un doble tap de "Tarjeta" en el POS o un reintento de red —
   // ver PagosService.crearSolicitud().
-  idempotencyKey String   @unique
-  creadoPorId    String
-  motivoError    String?
-  expiraEn       DateTime
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  idempotencyKey    String              @unique
+  creadoPorId       String
+  motivoError       String?
+  expiraEn          DateTime
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
 
   empresa   Empresa         @relation(fields: [empresaId], references: [id])
   sucursal  Sucursal        @relation(fields: [sucursalId], references: [id])
@@ -876,7 +879,7 @@ model PaymentRequest {
 }
 
 model PaymentEvent {
-  id                String   @id @default(uuid())
+  id                String           @id @default(uuid())
   paymentRequestId  String
   // Ej. "CREADA", "ENVIADA_A_TERMINAL", "WEBHOOK_APROBADO", "EXPIRADA_AUTOMATICAMENTE" — texto
   // libre (no enum) para no tener que migrar cada vez que se agrega un matiz de auditoría nuevo.
@@ -885,7 +888,7 @@ model PaymentEvent {
   // Nunca incluye PAN/CVV/fecha de vencimiento — solo campos no sensibles del payload del
   // proveedor (id, status, status_detail, etc.), filtrados en el adaptador antes de guardar.
   payloadSanitizado Json?
-  createdAt         DateTime @default(now())
+  createdAt         DateTime         @default(now())
 
   paymentRequest PaymentRequest @relation(fields: [paymentRequestId], references: [id])
 
@@ -905,35 +908,35 @@ model PaymentEvent {
 // ---------------------------------------------------------------------------
 
 model PlataformaConfig {
-  id        String   @id @default(uuid())
-  empresaId String
+  id                      String                   @id @default(uuid())
+  empresaId               String
   // null = aplica a toda la empresa (único caso que ofrece la UI v1 del CRM); una sucursal
   // puede tener su propia cuenta/credenciales si más adelante se necesita.
-  sucursalId String?
+  sucursalId              String?
   // Código del adaptador (ej. "didi", "uber", "rappi") — ver PlataformaDeliveryRegistry.
-  plataforma String
-  ambiente   AmbientePlataforma @default(SANDBOX)
-  activo     Boolean            @default(false)
-  estadoConexion EstadoConexionPlataforma @default(PENDIENTE_CONFIGURACION)
+  plataforma              String
+  ambiente                AmbientePlataforma       @default(SANDBOX)
+  activo                  Boolean                  @default(false)
+  estadoConexion          EstadoConexionPlataforma @default(PENDIENTE_CONFIGURACION)
   // JSON cifrado (AES-256-GCM, ver common/crypto/cifrado.service.ts) con apiKey/clientId,
   // clientSecret, webhookSecret, etc. — el contenido varía por plataforma y NUNCA se manda al
   // frontend; solo el backend lo descifra para llamar a la API de la plataforma. null hasta el
   // primer guardado.
-  credencialesCifradas String?
+  credencialesCifradas    String?
   // Últimos 4 caracteres del campo principal (apiKey/clientId), en claro — no es secreto por sí
   // solo y es lo que el CRM muestra como "•••• 1234" en vez de pedir de nuevo la credencial.
-  credencialesUltimos4 String?
-  clientSecretConfigurado Boolean @default(false)
-  identificadorTienda String? // store/restaurant id en la plataforma externa
+  credencialesUltimos4    String?
+  clientSecretConfigurado Boolean                  @default(false)
+  identificadorTienda     String? // store/restaurant id en la plataforma externa
   // Segmento rotable de la URL de webhook — "Regenerar URL" reemplaza este valor por uno nuevo.
-  webhookSlug String @unique @default(uuid())
-  ultimaSincronizacion DateTime?
-  ultimoErrorMensaje   String?
-  ultimoErrorEn        DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  webhookSlug             String                   @unique @default(uuid())
+  ultimaSincronizacion    DateTime?
+  ultimoErrorMensaje      String?
+  ultimoErrorEn           DateTime?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
 
-  empresa  Empresa  @relation(fields: [empresaId], references: [id])
+  empresa  Empresa   @relation(fields: [empresaId], references: [id])
   sucursal Sucursal? @relation(fields: [sucursalId], references: [id])
 
   webhookEvents PlataformaWebhookEvent[]
@@ -971,7 +974,7 @@ model PlataformaWebhookEvent {
 // que un mismo pedido externo nunca se procese dos veces y deja rastro para el panel de
 // "pedidos recibidos/sincronizados" y errores recientes.
 model PlataformaOrdenSync {
-  id                 String   @id @default(uuid())
+  id                 String                              @id @default(uuid())
   plataformaConfigId String
   ordenExternaId     String
   estado             EstadoSincronizacionOrdenPlataforma @default(RECIBIDA)
@@ -982,10 +985,10 @@ model PlataformaOrdenSync {
   // items completos (nombre/cantidad tal como los mandó la plataforma) siguen viviendo dentro de
   // payloadSanitizado.items, ya que su forma varía por plataforma y no necesitan índice propio.
   clienteNombre      String?
-  totalExterno       Decimal? @db.Decimal(10, 2)
+  totalExterno       Decimal?                            @db.Decimal(10, 2)
   payloadSanitizado  Json?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime                            @default(now())
+  updatedAt          DateTime                            @updatedAt
 
   plataformaConfig PlataformaConfig @relation(fields: [plataformaConfigId], references: [id])
   pedido           Pedido?          @relation(fields: [pedidoId], references: [id])
@@ -1019,17 +1022,17 @@ model PushToken {
 // ---------------------------------------------------------------------------
 
 model Insumo {
-  id            String  @id @default(uuid())
+  id            String   @id @default(uuid())
   empresaId     String
   proveedorId   String? // opcional: de qué proveedor se compra este insumo
   nombre        String
-  unidadMedida  String  // "g", "ml", "pz", "kg", "l"
-  costoUnitario Decimal @default(0) @db.Decimal(10, 4)
+  unidadMedida  String // "g", "ml", "pz", "kg", "l"
+  costoUnitario Decimal  @default(0) @db.Decimal(10, 4)
   // Precio de venta directa (opcional) — solo aplica a insumos que también se venden tal cual
   // (ej. agua embotellada, refresco de lata) sin pasar por una receta de producto. null = este
   // insumo no se vende directo, solo se usa como ingrediente (ver RecetaItem).
   precioVenta   Decimal? @db.Decimal(10, 2)
-  activo        Boolean @default(true)
+  activo        Boolean  @default(true)
 
   empresa   Empresa    @relation(fields: [empresaId], references: [id])
   proveedor Proveedor? @relation(fields: [proveedorId], references: [id])
@@ -1075,11 +1078,11 @@ model RecetaItem {
 }
 
 model InventarioSucursal {
-  id         String  @id @default(uuid())
+  id         String   @id @default(uuid())
   sucursalId String
   insumoId   String
-  existencia Decimal @default(0) @db.Decimal(12, 4)
-  minimo     Decimal @default(0) @db.Decimal(12, 4)
+  existencia Decimal  @default(0) @db.Decimal(12, 4)
+  minimo     Decimal  @default(0) @db.Decimal(12, 4)
   maximo     Decimal? @db.Decimal(12, 4)
 
   sucursal Sucursal @relation(fields: [sucursalId], references: [id])
@@ -1091,18 +1094,18 @@ model InventarioSucursal {
 }
 
 model MovimientoInventario {
-  id            String                   @id @default(uuid())
-  sucursalId    String
-  insumoId      String
-  tipo          TipoMovimientoInventario
-  cantidad      Decimal                  @db.Decimal(12, 4)
-  motivo        String?
-  referenciaId  String?                  // p.ej. pedidoId que generó la salida
-  usuarioId     String?
-  dispositivoId String?
-  syncStatus    SyncStatus               @default(SYNCED)
-  idempotencyKey String?                 @unique
-  createdAt     DateTime                 @default(now())
+  id             String                   @id @default(uuid())
+  sucursalId     String
+  insumoId       String
+  tipo           TipoMovimientoInventario
+  cantidad       Decimal                  @db.Decimal(12, 4)
+  motivo         String?
+  referenciaId   String? // p.ej. pedidoId que generó la salida
+  usuarioId      String?
+  dispositivoId  String?
+  syncStatus     SyncStatus               @default(SYNCED)
+  idempotencyKey String?                  @unique
+  createdAt      DateTime                 @default(now())
 
   sucursal Sucursal @relation(fields: [sucursalId], references: [id])
   insumo   Insumo   @relation(fields: [insumoId], references: [id])
@@ -1116,20 +1119,20 @@ model MovimientoInventario {
 // ---------------------------------------------------------------------------
 
 model Traspaso {
-  id                 String         @id @default(uuid())
-  sucursalOrigenId   String
-  sucursalDestinoId  String
-  estado             EstadoTraspaso @default(SOLICITADO)
-  usuarioSolicitaId  String?
-  usuarioAutorizaId  String?
-  usuarioEnviaId     String?
-  usuarioRecibeId    String?
-  fechaSolicitud     DateTime       @default(now())
-  fechaAutorizacion  DateTime?
-  fechaEnvio         DateTime?
-  fechaRecepcion     DateTime?
-  fechaValidacion    DateTime?
-  notas              String?
+  id                String         @id @default(uuid())
+  sucursalOrigenId  String
+  sucursalDestinoId String
+  estado            EstadoTraspaso @default(SOLICITADO)
+  usuarioSolicitaId String?
+  usuarioAutorizaId String?
+  usuarioEnviaId    String?
+  usuarioRecibeId   String?
+  fechaSolicitud    DateTime       @default(now())
+  fechaAutorizacion DateTime?
+  fechaEnvio        DateTime?
+  fechaRecepcion    DateTime?
+  fechaValidacion   DateTime?
+  notas             String?
 
   sucursalOrigen  Sucursal @relation("TraspasoOrigen", fields: [sucursalOrigenId], references: [id])
   sucursalDestino Sucursal @relation("TraspasoDestino", fields: [sucursalDestinoId], references: [id])
@@ -1142,13 +1145,13 @@ model Traspaso {
 }
 
 model TraspasoItem {
-  id                  String  @id @default(uuid())
-  traspasoId          String
-  insumoId            String
-  cantidadSolicitada  Decimal @db.Decimal(12, 4)
-  cantidadEnviada     Decimal? @db.Decimal(12, 4)
-  cantidadRecibida    Decimal? @db.Decimal(12, 4)
-  diferencia          Decimal? @db.Decimal(12, 4)
+  id                 String   @id @default(uuid())
+  traspasoId         String
+  insumoId           String
+  cantidadSolicitada Decimal  @db.Decimal(12, 4)
+  cantidadEnviada    Decimal? @db.Decimal(12, 4)
+  cantidadRecibida   Decimal? @db.Decimal(12, 4)
+  diferencia         Decimal? @db.Decimal(12, 4)
 
   traspaso Traspaso @relation(fields: [traspasoId], references: [id])
   insumo   Insumo   @relation(fields: [insumoId], references: [id])
@@ -1161,14 +1164,14 @@ model TraspasoItem {
 // ---------------------------------------------------------------------------
 
 model Cliente {
-  id             String   @id @default(uuid())
-  empresaId      String
-  nombre         String
-  telefono       String?
-  email          String?
-  puntosLealtad  Int      @default(0)
-  preferenciasJson Json?  @default("{}")
-  createdAt      DateTime @default(now())
+  id               String   @id @default(uuid())
+  empresaId        String
+  nombre           String
+  telefono         String?
+  email            String?
+  puntosLealtad    Int      @default(0)
+  preferenciasJson Json?    @default("{}")
+  createdAt        DateTime @default(now())
 
   empresa Empresa  @relation(fields: [empresaId], references: [id])
   pedidos Pedido[]
@@ -1182,18 +1185,18 @@ model Cliente {
 // ---------------------------------------------------------------------------
 
 model AuditLog {
-  id             String   @id @default(uuid())
-  empresaId      String?
-  sucursalId     String?
-  usuarioId      String?
-  dispositivoId  String?
-  entidad        String
-  entidadId      String?
-  accion         String
+  id              String   @id @default(uuid())
+  empresaId       String?
+  sucursalId      String?
+  usuarioId       String?
+  dispositivoId   String?
+  entidad         String
+  entidadId       String?
+  accion          String
   datosAnteriores Json?
-  datosNuevos    Json?
-  ip             String?
-  createdAt      DateTime @default(now())
+  datosNuevos     Json?
+  ip              String?
+  createdAt       DateTime @default(now())
 
   empresa     Empresa?     @relation(fields: [empresaId], references: [id])
   sucursal    Sucursal?    @relation(fields: [sucursalId], references: [id])
@@ -1224,4 +1227,36 @@ model SyncQueueItem {
 
   @@index([dispositivoId, estado])
   @@map("sync_queue_items")
+}
+
+/// Código de un solo uso para enlazar una terminal (APK Punto de Venta) con una sucursal, sin
+/// meter credenciales en el dispositivo. Un admin lo genera desde el ERP, el cajero lo teclea
+/// una vez y la terminal queda enlazada; el código caduca y no se puede reusar.
+///
+/// La sesión que se emite NO es la del admin que generó el código: se usa un usuario-terminal
+/// dedicado por sucursal (sin contraseña ni PIN, así que no sirve para entrar por ningún login
+/// interactivo), para que la auditoría distinga lo que hace la terminal de lo que hace la
+/// persona que la dio de alta.
+model CodigoVinculacion {
+  id            String     @id @default(uuid())
+  /// Legible por una persona, en mayúsculas, sin caracteres ambiguos (ver generarCodigo()).
+  codigo        String     @unique
+  empresaId     String
+  sucursalId    String
+  creadoPorId   String
+  /// Rol con el que operará la terminal. CAJERO por defecto — una terminal nunca necesita más.
+  rol           RolUsuario @default(CAJERO)
+  expiraAt      DateTime
+  usadoAt       DateTime?
+  /// Huella del dispositivo que lo canjeó, para poder rastrear qué terminal usó qué código.
+  dispositivoId String?
+  createdAt     DateTime   @default(now())
+
+  empresa   Empresa  @relation(fields: [empresaId], references: [id])
+  sucursal  Sucursal @relation(fields: [sucursalId], references: [id])
+  creadoPor Usuario  @relation("CodigoVinculacionCreadoPor", fields: [creadoPorId], references: [id])
+
+  @@index([sucursalId])
+  @@index([expiraAt])
+  @@map("codigos_vinculacion")
 }

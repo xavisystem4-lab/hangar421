@@ -27,6 +27,33 @@ export default function SucursalesPage() {
   const [nombreBorrador, setNombreBorrador] = useState("");
   const [direccionBorrador, setDireccionBorrador] = useState("");
 
+  // Código de vinculación de terminales (APK Punto de Venta): se genera aquí y se le dicta al
+  // cajero, que lo teclea una vez en la app. Así la terminal queda enlazada sin que nadie
+  // escriba una contraseña en el dispositivo.
+  const [codigo, setCodigo] = useState<{ sucursalId: string; codigo: string; expiraAt: string } | null>(null);
+  const [generando, setGenerando] = useState<string | null>(null);
+  const [errorCodigo, setErrorCodigo] = useState<string | null>(null);
+
+  async function generarCodigo(sucursalId: string) {
+    setErrorCodigo(null);
+    setGenerando(sucursalId);
+    try {
+      const r = await apiFetch<{ codigo: string; expiraAt: string }>("/auth/codigos-vinculacion", {
+        method: "POST",
+        body: JSON.stringify({ sucursalId }),
+      });
+      setCodigo({ sucursalId, codigo: r.codigo, expiraAt: r.expiraAt });
+    } catch (e: any) {
+      setErrorCodigo(e?.message ?? "No se pudo generar el código");
+    } finally {
+      setGenerando(null);
+    }
+  }
+
+  function minutosRestantes(expiraAt: string): number {
+    return Math.max(0, Math.round((new Date(expiraAt).getTime() - Date.now()) / 60_000));
+  }
+
   async function cargar() {
     if (!contexto) return;
     const data = await apiFetch<Sucursal[]>(`/sucursales?empresaId=${contexto.usuario.empresaId}`);
@@ -101,10 +128,35 @@ export default function SucursalesPage() {
               ) : (
                 <button onClick={() => empezarEdicion(s)} style={{ background: "var(--h421-gray-50)", padding: "6px 12px", fontSize: 13 }}>Editar nombre y dirección</button>
               )}
+              <button
+                onClick={() => generarCodigo(s.id)}
+                disabled={generando === s.id}
+                style={{ background: "var(--h421-navy)", color: "#fff", padding: "6px 12px", fontSize: 13 }}
+              >
+                {generando === s.id ? "Generando…" : "Enlazar terminal"}
+              </button>
             </div>
+
+            {codigo?.sucursalId === s.id && (
+              <div style={{ marginTop: 12, padding: 12, borderRadius: 10, background: "var(--h421-gray-50)", textAlign: "center" }}>
+                <div style={{ fontSize: 11, color: "var(--h421-gray-400)", textTransform: "uppercase", fontWeight: 700 }}>
+                  Dictar en el Punto de Venta
+                </div>
+                {/* Partido en dos mitades y con espaciado: se lee en voz alta y se teclea en una
+                    tablet. La app acepta el código con o sin el guion. */}
+                <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: 4, margin: "6px 0", fontFamily: "monospace" }}>
+                  {codigo.codigo.slice(0, 4)}-{codigo.codigo.slice(4)}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--h421-gray-400)" }}>
+                  Sirve una sola vez · caduca en {minutosRestantes(codigo.expiraAt)} min
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </div>
+
+      {errorCodigo && <p style={{ color: "var(--h421-red)", marginTop: 12 }}>{errorCodigo}</p>}
 
       <div className="card" style={{ marginTop: 20, maxWidth: 420 }}>
         <h3 style={{ marginTop: 0 }}>Nueva sucursal</h3>
