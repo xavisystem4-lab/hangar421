@@ -23,6 +23,9 @@ function crearServicio(cajasExistentes: { id: string; nombre: string }[] = [], u
     sucursal: {
       findUniqueOrThrow: jest.fn(() => Promise.resolve({ empresaId: "emp-1", nombre: "Colonial" })),
     },
+    pedido: { count: jest.fn(() => Promise.resolve(0)) },
+    auditLog: { create: jest.fn(() => Promise.resolve({})) },
+    $transaction: jest.fn((ops) => Promise.all(ops)),
     caja: {
       findFirst: jest.fn(() => Promise.resolve(cajasExistentes[0] ?? null)),
       create: jest.fn((args: any) => Promise.resolve({ id: "caja-nueva", ...args.data })),
@@ -151,6 +154,95 @@ describe("CajaService.abrirTurno — usuario que no existe en el ERP", () => {
 
     expect(prisma.turno.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ usuarioId: "terminal-suc-1" }) }),
+    );
+  });
+});
+
+/**
+ * Relevo de cajero con la caja abierta.
+ *
+ * Solo es seguro porque las ventas se enlazan al turno por `pedidos.turnoId`: cambiar el
+ * responsable NO mueve qué ventas pertenecen al turno. Antes de esa columna, el corte deducía
+ * sus ventas comparando `cajeroId` con el dueño del turno, así que reasignarlo habría
+ * reescrito el arqueo retroactivamente.
+ */
+function servicioConTurno(turno: any, usuarios: string[] = ["cajero-a", "cajero-b"]) {
+  const prisma = {
+    turno: {
+      findUnique: jest.fn(() => Promise.resolve(turno)),
+      update: jest.fn((args: any) => Promise.resolve({ ...turno, ...args.data })),
+      findFirst: jest.fn(() => Promise.resolve(null)),
+    },
+    usuario: {
+      findUnique: jest.fn(({ where }: any) =>
+        Promise.resolve(usuarios.includes(where.id ?? where.username) ? { id: where.id ?? "terminal" } : null),
+      ),
+      create: jest.fn(() => Promise.resolve({ id: "terminal-creado" })),
+    },
+    sucursal: { findUniqueOrThrow: jest.fn(() => Promise.resolve({ empresaId: "emp-1", nombre: "Colonial" })) },
+    auditLog: { create: jest.fn(() => Promise.resolve({})) },
+    $transaction: jest.fn((ops: any[]) => Promise.all(ops)),
+  };
+  return { service: new CajaService(prisma as any), prisma };
+}
+
+const TURNO_ABIERTO = { id: "turno-1", sucursalId: "suc-1", usuarioId: "cajero-a", estado: "ABIERTO" };
+
+describe("CajaService.reasignarTurno", () => {
+  it("cambia el responsable del turno", async () => {
+    const { service, prisma } = servicioConTurno(TURNO_ABIERTO);
+    await service.reasignarTurno("turno-1", { nuevoUsuarioId: "cajero-b", autorizadoPorId: "supervisor-1" });
+
+    expect(prisma.turno.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "turno-1" }, data: { usuarioId: "cajero-b" } }),
+    );
+  });
+
+  it("deja rastro en la auditoría con quién lo tenía antes y quién lo autorizó", async () => {
+    const { service, prisma } = servicioConTurno(TURNO_ABIERTO);
+    await service.reasignarTurno("turno-1", { nuevoUsuarioId: "cajero-b", autorizadoPorId: "supervisor-1", motivo: "Cambio de turno" });
+
+    expect(prisma.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          entidad: "TURNO",
+          accion: "REASIGNAR",
+          usuarioId: "supervisor-1",
+          datosAnteriores: { usuarioId: "cajero-a" },
+        }),
+      }),
+    );
+  });
+
+  it("rechaza reasignar un turno ya cerrado", async () => {
+    // El corte está firmado: cambiar de responsable después reescribiría de quién era el dinero.
+    const { service, prisma } = servicioConTurno({ ...TURNO_ABIERTO, estado: "CERRADO" });
+
+    await expect(
+      service.reasignarTurno("turno-1", { nuevoUsuarioId: "cajero-b" }),
+    ).rejects.toThrow(/ya está cerrado/i);
+    expect(prisma.turno.update).not.toHaveBeenCalled();
+  });
+
+  it("es idempotente: reenviar el mismo lote no vuelve a auditar", async () => {
+    const { service, prisma } = servicioConTurno(TURNO_ABIERTO);
+    await service.reasignarTurno("turno-1", { nuevoUsuarioId: "cajero-a" });
+
+    expect(prisma.turno.update).not.toHaveBeenCalled();
+    expect(prisma.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it("falla claro si el turno no existe", async () => {
+    const { service } = servicioConTurno(null);
+    await expect(service.reasignarTurno("no-existe", { nuevoUsuarioId: "cajero-b" })).rejects.toThrow(/no encontrado/i);
+  });
+
+  it("un cajero desconocido cae al usuario-terminal, no revienta", async () => {
+    const { service, prisma } = servicioConTurno(TURNO_ABIERTO, ["cajero-a", "terminal.suc-1"]);
+    await service.reasignarTurno("turno-1", { nuevoUsuarioId: "uuid-de-la-tablet" });
+
+    expect(prisma.turno.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { usuarioId: "terminal" } }),
     );
   });
 });

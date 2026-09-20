@@ -626,6 +626,7 @@ model Turno {
   caja        Caja             @relation(fields: [cajaId], references: [id])
   usuario     Usuario          @relation(fields: [usuarioId], references: [id])
   movimientos MovimientoCaja[]
+  pedidos     Pedido[]
 
   @@index([sucursalId])
   @@index([cajaId])
@@ -666,6 +667,11 @@ model Pedido {
   numComensales  Int?         @default(1)
   meseroId       String?
   cajeroId       String?
+  /// Turno de caja al que pertenece la venta. Lo manda la terminal, que ya lo sabe.
+  /// Sin esto, el corte tenía que adivinar qué ventas eran suyas comparando cajeroId con
+  /// el dueño del turno: fallaba con dos cajeros en el mismo turno, y se descuadraba
+  /// entero si el turno se reasignaba. Opcional porque las ventas anteriores no lo tienen.
+  turnoId        String?
   dispositivoId  String?
   canalOrigen    CanalOrigen
   estado         EstadoPedido @default(ABIERTO)
@@ -686,6 +692,7 @@ model Pedido {
   cliente     Cliente?     @relation(fields: [clienteId], references: [id])
   mesero      Usuario?     @relation("PedidoMesero", fields: [meseroId], references: [id])
   cajero      Usuario?     @relation("PedidoCajero", fields: [cajeroId], references: [id])
+  turno       Turno?       @relation(fields: [turnoId], references: [id])
   dispositivo Dispositivo? @relation(fields: [dispositivoId], references: [id])
 
   items                PedidoItem[]
@@ -697,6 +704,7 @@ model Pedido {
   @@unique([sucursalId, folio])
   @@index([sucursalId, estado])
   @@index([mesaId])
+  @@index([turnoId])
   @@map("pedidos")
 }
 

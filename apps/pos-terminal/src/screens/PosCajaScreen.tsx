@@ -3,17 +3,23 @@ import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View 
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
-import { abrirTurno, cerrarTurno, efectivoDelTurno, listarMovimientosCaja, registrarMovimientoCaja, turnoAbierto, type MovimientoCajaLocal, type TurnoLocal } from "../db/turnosRepo";
+import { abrirTurno, cerrarTurno, efectivoDelTurno, listarMovimientosCaja, reasignarTurno, registrarMovimientoCaja, turnoAbierto, type MovimientoCajaLocal, type TurnoLocal } from "../db/turnosRepo";
 import { listarVentasRecientes, type VentaResumen } from "../db/ventasHistorialRepo";
 import { BILLETES_MXN, BILLETES_USD, MONEDAS_MXN, calcularDiferencia, construirDesglose, round2, type Conteo } from "../caja/denominaciones";
 import { ColumnaDenominaciones, usarRefsDenominaciones } from "../components/DesgloseEfectivo";
 import { sincronizarPronto } from "../sync/syncEngine";
+import { listarUsuariosLocales, type UsuarioLocal } from "../db/usuariosLocalesRepo";
+import { ModalAutorizacion } from "../components/ModalAutorizacion";
+import type { Autorizador } from "../auth/autorizacion";
 
 export function PosCajaScreen() {
   const { usuario } = useAuthLocalStore();
   const colores = usarColores();
   const estilos = crearEstilos(colores);
   const [turno, setTurno] = useState<TurnoLocal | null | undefined>(undefined);
+  const [cajeros, setCajeros] = useState<UsuarioLocal[]>([]);
+  const [asignando, setAsignando] = useState(false);
+  const [candidato, setCandidato] = useState<UsuarioLocal | null>(null);
   const [movimientos, setMovimientos] = useState<MovimientoCajaLocal[]>([]);
   const [ventas, setVentas] = useState<VentaResumen[]>([]);
   const [montoInicial, setMontoInicial] = useState("0");
@@ -41,6 +47,7 @@ export function PosCajaScreen() {
       setVentasEnEfectivo(await efectivoDelTurno(db, t.id));
     }
     setVentas(await listarVentasRecientes(db, 20));
+    setCajeros(await listarUsuariosLocales(db));
   }
 
   useEffect(() => {
@@ -57,6 +64,33 @@ export function PosCajaScreen() {
       cargar();
     } catch (e: any) {
       setMensaje(e.message);
+    }
+  }
+
+  /**
+   * Relevo de cajero con la caja abierta.
+   *
+   * Pide autorización de supervisor porque cambia quién responde por el dinero del cajón al
+   * cerrar. Se valida con el PIN local, no contra el ERP: tiene que poder hacerse sin red, igual
+   * que cancelar un ticket.
+   */
+  async function asignarA(nuevo: UsuarioLocal, autorizador: Autorizador) {
+    if (!turno) return;
+    try {
+      const db = await abrirBaseDeDatos();
+      await reasignarTurno(db, {
+        turnoId: turno.id,
+        nuevoUsuarioId: nuevo.id,
+        autorizadoPorId: autorizador.id,
+        autorizadoPorNombre: autorizador.nombre,
+      });
+      setAsignando(false);
+      setCandidato(null);
+      setMensaje(`Turno asignado a ${nuevo.nombre}.`);
+      sincronizarPronto();
+      cargar();
+    } catch (e: any) {
+      setMensaje(e?.message ?? "No se pudo asignar el turno.");
     }
   }
 
@@ -121,11 +155,16 @@ export function PosCajaScreen() {
 
   if (turno === undefined) return null;
 
+  // El turno guarda el id; el nombre sale de la lista local. Si el cajero fue dado de baja en
+  // este dispositivo ya no está en la lista, y vale más decirlo que enseñar un hueco.
+  const nombreResponsable = cajeros.find((c) => c.id === turno?.usuarioId)?.nombre ?? "Cajero no identificado";
+
   const totalMovimientos = movimientos.reduce((s, m) => s + (m.tipo === "INGRESO" ? m.monto : -m.monto), 0);
   const ventasDelTurno = turno ? ventas.filter((v) => v.estado === "COBRADA") : [];
   const totalVentasTurno = ventasDelTurno.reduce((s, v) => s + v.total, 0);
 
   return (
+    <>
     <ScrollView style={{ flex: 1, backgroundColor: colores.fondo }} contentContainerStyle={{ padding: 16 }}>
       <Text style={estilos.titulo}>Caja</Text>
       {mensaje && <Text style={estilos.mensaje}>{mensaje}</Text>}
@@ -145,6 +184,18 @@ export function PosCajaScreen() {
             <Text style={estilos.detalle}>Movimientos: {totalMovimientos >= 0 ? "+" : ""}{totalMovimientos.toFixed(2)}</Text>
             <Text style={[estilos.detalle, estilos.esperado]}>Efectivo esperado: ${efectivoEsperado.toFixed(2)}</Text>
             <Text style={estilos.detalle}>(solo ventas cobradas en efectivo: ${ventasEnEfectivo.toFixed(2)})</Text>
+
+            {/* Relevo de cajero sin cerrar la caja. El arqueo no se mueve: las ventas van
+                enlazadas al turno, no a quién las cobró. */}
+            <View style={estilos.filaResponsable}>
+              <View style={{ flex: 1 }}>
+                <Text style={estilos.etiquetaResponsable}>Turno asignado a</Text>
+                <Text style={estilos.nombreResponsable}>{nombreResponsable}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setAsignando(true)} style={estilos.botonSecundario}>
+                <Text style={estilos.botonSecundarioTexto}>Cambiar</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           <View style={estilos.tarjeta}>
@@ -261,6 +312,48 @@ export function PosCajaScreen() {
         ))}
       </View>
     </ScrollView>
+
+      {/* Paso 1: a quién se le asigna. Se excluye al responsable actual: reasignarle el turno
+          a quien ya lo tiene no es una operación, es un error de dedo. */}
+      {asignando && turno && (
+        <View style={estilos.fondoModal}>
+          <View style={estilos.tarjetaModal}>
+            <Text style={estilos.subtitulo}>Asignar turno a</Text>
+            <Text style={estilos.detalle}>
+              El arqueo no cambia: las ventas ya cobradas siguen perteneciendo a este turno. Lo que cambia es
+              quién responde por el efectivo al cerrar.
+            </Text>
+            {cajeros.filter((c) => c.id !== turno.usuarioId).length === 0 ? (
+              <Text style={estilos.detalle}>No hay otro cajero dado de alta en esta terminal.</Text>
+            ) : (
+              cajeros
+                .filter((c) => c.id !== turno.usuarioId)
+                .map((c) => (
+                  <TouchableOpacity key={c.id} onPress={() => setCandidato(c)} style={estilos.filaCajero}>
+                    <Text style={{ color: colores.texto, fontWeight: "700" }}>{c.nombre}</Text>
+                    <Text style={{ color: colores.textoSecundario, fontSize: 12 }}>{c.rol}</Text>
+                  </TouchableOpacity>
+                ))
+            )}
+            <TouchableOpacity onPress={() => setAsignando(false)} style={[estilos.botonSecundario, { marginTop: 12 }]}>
+              <Text style={estilos.botonSecundarioTexto}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Paso 2: el PIN del supervisor. Cambia quién responde por el dinero, así que no puede
+          hacerlo un cajero por su cuenta. */}
+      {candidato && usuario && (
+        <ModalAutorizacion
+          titulo={`Asignar turno a ${candidato.nombre}`}
+          descripcion="A partir de ahora esa persona es la responsable del efectivo de esta caja. Hace falta el PIN de un supervisor o administrador."
+          solicitanteId={usuario.id}
+          onCancelar={() => setCandidato(null)}
+          onAutorizado={(autorizador) => asignarA(candidato, autorizador)}
+        />
+      )}
+    </>
   );
 }
 
@@ -278,6 +371,14 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     esperado: { fontWeight: "800", color: colores.navyTexto, fontSize: 16, marginTop: 8 },
     mensaje: { color: colores.navyTexto, marginBottom: 10 },
     tarjeta: { backgroundColor: colores.superficie, borderRadius: 14, padding: 16, marginBottom: 14 },
+    filaResponsable: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: colores.borde },
+    etiquetaResponsable: { fontSize: 11, fontWeight: "700", color: colores.textoSecundario, letterSpacing: 0.5 },
+    nombreResponsable: { fontSize: 16, fontWeight: "800", color: colores.navyTexto },
+    botonSecundario: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: colores.borde, backgroundColor: colores.gray50, minHeight: 44, justifyContent: "center" },
+    botonSecundarioTexto: { color: colores.texto, fontWeight: "700" },
+    fondoModal: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(11,30,51,0.75)", justifyContent: "center", padding: 20 },
+    tarjetaModal: { backgroundColor: colores.superficie, borderRadius: 16, padding: 20, maxHeight: "85%" },
+    filaCajero: { paddingVertical: 14, paddingHorizontal: 12, borderRadius: 10, backgroundColor: colores.gray50, borderWidth: 1, borderColor: colores.borde, marginTop: 8 },
     chip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, backgroundColor: colores.gray50, borderWidth: 1, borderColor: colores.borde },
     chipActivo: { backgroundColor: colores.navy, borderColor: colores.navy },
     input: { borderWidth: 1, borderColor: colores.borde, borderRadius: 8, padding: 10, marginBottom: 8, color: colores.texto },

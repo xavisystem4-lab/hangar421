@@ -166,6 +166,7 @@ export class SyncService {
             canalOrigen: p.canalOrigen ?? CanalOrigen.APP_MESERO,
             notasGenerales: p.notasGenerales,
             idempotencyKey: item.idempotencyKey,
+            turnoId: p.turnoId,
             items: p.items,
             // Se perdía este campo al reconstruir el pedido desde la cola offline (outbox), así
             // que un pedido que se cae por corte de red y se reintenta luego por /sync/push
@@ -228,6 +229,15 @@ export class SyncService {
       case SyncEntidad.TURNO:
         if (item.operacion === SyncOperacion.CREATE) {
           await this.caja.abrirTurno({ sucursalId: item.sucursalId, cajaId: p.cajaId, usuarioId: item.usuarioId ?? p.usuarioId, montoInicial: p.montoInicial });
+        } else if (p.accion === "REASIGNAR") {
+          // Relevo de cajero con la caja abierta. Llega por la cola como todo lo demás, así
+          // que funciona igual si la tienda estaba sin red al hacerlo. La autorización ya la
+          // validó la terminal con el PIN del supervisor.
+          await this.caja.reasignarTurno(p.turnoId ?? item.id, {
+            nuevoUsuarioId: p.nuevoUsuarioId,
+            autorizadoPorId: p.autorizadoPorId ?? item.usuarioId,
+            motivo: p.motivo,
+          });
         } else {
           // `desgloseEfectivo` se perdía al llegar por la cola offline: el POS Windows sí lo
           // manda en su POST directo, pero un corte hecho en el APK llegaba sin el conteo de

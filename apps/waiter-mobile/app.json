@@ -14,7 +14,7 @@
       "versionCode": 16,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0B1E33"
+        "backgroundColor": "#E8A33D"
       },
       "permissions": [
         "INTERNET",

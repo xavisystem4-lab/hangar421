@@ -41,6 +41,10 @@ export class CrearPedidoDto {
   @ApiPropertyOptional() @IsOptional() @IsInt() numComensales?: number;
   @ApiPropertyOptional() @IsOptional() @IsString() meseroId?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() dispositivoId?: string;
+
+  /** Turno de caja al que pertenece la venta — lo manda la terminal, que ya lo sabe. Es lo que
+   *  permite que el corte sepa qué ventas son suyas sin deducirlo por el cajero. */
+  @ApiPropertyOptional() @IsOptional() @IsString() turnoId?: string;
   @ApiProperty({ enum: CanalOrigen }) @IsEnum(CanalOrigen) canalOrigen!: CanalOrigen;
   @ApiPropertyOptional() @IsOptional() @IsString() notasGenerales?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() idempotencyKey?: string;

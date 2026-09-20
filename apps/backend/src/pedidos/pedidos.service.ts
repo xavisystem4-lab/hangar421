@@ -227,6 +227,7 @@ export class PedidosService {
           numComensales: dto.numComensales ?? 1,
           meseroId,
           dispositivoId,
+          turnoId: dto.turnoId ?? null,
           canalOrigen: dto.canalOrigen,
           notasGenerales: dto.notasGenerales,
           idempotencyKey: dto.idempotencyKey,

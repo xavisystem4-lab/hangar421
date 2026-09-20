@@ -137,6 +137,50 @@ export async function cerrarTurno(
   });
 }
 
+/**
+ * Relevo de cajero con la caja abierta: cambia de quién es el turno sin cerrarlo.
+ *
+ * Es seguro porque las ventas se enlazan al turno por `turno_id`, no por quién las cobró: el
+ * responsable cambia, pero el efectivo esperado y el arqueo se quedan exactamente igual.
+ *
+ * Quien llama debe haber validado ya la autorización del supervisor (ModalAutorizacion): se hace
+ * con el PIN local porque esto tiene que funcionar sin red, igual que cancelar un ticket.
+ */
+export async function reasignarTurno(
+  db: SQLiteDatabase,
+  datos: { turnoId: string; nuevoUsuarioId: string; autorizadoPorId: string; autorizadoPorNombre: string; motivo?: string },
+): Promise<void> {
+  const [sucursalId, dispositivoId, turno] = await Promise.all([
+    obtenerOCrearSucursalIdLocal(db),
+    obtenerOCrearDispositivoId(db),
+    db.getFirstAsync<any>("SELECT * FROM turnos WHERE id = ?", datos.turnoId),
+  ]);
+  if (!turno) throw new Error("Turno no encontrado");
+  if (turno.estado === "CERRADO") throw new Error("El turno ya está cerrado — no se puede cambiar de responsable.");
+  if (turno.usuario_id === datos.nuevoUsuarioId) return;
+
+  await db.withTransactionAsync(async () => {
+    await db.runAsync("UPDATE turnos SET usuario_id = ? WHERE id = ?", datos.nuevoUsuarioId, datos.turnoId);
+    await encolarSync(db, {
+      entidad: SyncEntidad.TURNO,
+      operacion: SyncOperacion.UPDATE,
+      entidadId: datos.turnoId,
+      sucursalId,
+      dispositivoId,
+      usuarioId: datos.nuevoUsuarioId,
+      payload: {
+        accion: "REASIGNAR",
+        turnoId: datos.turnoId,
+        nuevoUsuarioId: datos.nuevoUsuarioId,
+        usuarioAnteriorId: turno.usuario_id,
+        autorizadoPorId: datos.autorizadoPorId,
+        autorizadoPorNombre: datos.autorizadoPorNombre,
+        motivo: datos.motivo,
+      },
+    });
+  });
+}
+
 /** Efectivo cobrado durante el turno — lo que el sistema espera encontrar en el cajón, sumado
  *  al monto de apertura y a los movimientos. Se calcula en local para que el cajero vea la
  *  diferencia mientras cuenta, sin depender de la red; el ERP lo recalcula por su cuenta al

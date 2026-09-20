@@ -116,6 +116,9 @@ export async function confirmarVenta(
         meseroId: datos.usuarioId,
         canalOrigen: CanalOrigen.APP_POS_MOVIL,
         idempotencyKey: idempotencyKeyVenta,
+        // El turno viaja con la venta: es lo que permite al ERP saber qué ventas pertenecen a
+        // cada corte sin deducirlo por el cajero (ver CajaService.filtroVentasDelTurno).
+        turnoId: datos.turnoId ?? undefined,
         items: itemsPayload,
         enviarInmediato: true,
       },

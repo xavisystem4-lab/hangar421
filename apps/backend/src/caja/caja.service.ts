@@ -58,6 +58,47 @@ export class CajaService {
     return creada.id;
   }
 
+  /**
+   * Cambia de quién es el turno sin cerrar la caja — el relevo de cajero a media jornada.
+   *
+   * Es seguro porque las ventas ya están enlazadas por `turnoId`: cambiar el responsable NO
+   * mueve qué ventas pertenecen al turno, así que el efectivo esperado y el arqueo no se tocan.
+   * Antes de esa columna esta operación habría descuadrado el corte, y por eso no existía.
+   *
+   * Lo que sí cambia es quién responde por el dinero al cerrar, así que se audita siempre. La
+   * autorización (PIN/contraseña de un supervisor) la valida quien llama: desde la terminal, el
+   * propio APK antes de encolarlo, igual que la cancelación de un ticket — tiene que funcionar
+   * sin red.
+   */
+  async reasignarTurno(turnoId: string, datos: { nuevoUsuarioId?: string | null; autorizadoPorId?: string | null; motivo?: string }) {
+    const turno = await this.prisma.turno.findUnique({ where: { id: turnoId } });
+    if (!turno) throw new NotFoundException("Turno no encontrado");
+    if (turno.estado === EstadoTurno.CERRADO) {
+      throw new BadRequestException("El turno ya está cerrado — no se puede cambiar de responsable");
+    }
+
+    const nuevoUsuarioId = await resolverUsuarioDeTerminal(this.prisma, datos.nuevoUsuarioId, turno.sucursalId);
+    if (nuevoUsuarioId === turno.usuarioId) return turno; // idempotente: reenviar el lote no rompe nada
+
+    const [actualizado] = await this.prisma.$transaction([
+      this.prisma.turno.update({ where: { id: turnoId }, data: { usuarioId: nuevoUsuarioId } }),
+      this.prisma.auditLog.create({
+        data: {
+          empresaId: (await this.prisma.sucursal.findUniqueOrThrow({ where: { id: turno.sucursalId }, select: { empresaId: true } })).empresaId,
+          sucursalId: turno.sucursalId,
+          entidad: "TURNO",
+          entidadId: turnoId,
+          accion: "REASIGNAR",
+          usuarioId: datos.autorizadoPorId ?? nuevoUsuarioId,
+          datosAnteriores: { usuarioId: turno.usuarioId },
+          datosNuevos: { usuarioId: nuevoUsuarioId, motivo: datos.motivo ?? null },
+        },
+      }),
+    ]);
+
+    return actualizado;
+  }
+
   async turnoActivo(cajaId: string) {
     return this.prisma.turno.findFirst({ where: { cajaId, estado: EstadoTurno.ABIERTO } });
   }
@@ -83,14 +124,33 @@ export class CajaService {
     return this.prisma.movimientoCaja.findMany({ where: { turnoId }, orderBy: { createdAt: "desc" } });
   }
 
+  /**
+   * Qué ventas pertenecen a este turno.
+   *
+   * La forma correcta es `pedidos.turnoId`, que la terminal manda desde que existe la columna.
+   * Antes había que deducirlo: "ventas de esta sucursal cuyo cajero es el dueño del turno,
+   * hechas después de abrirlo". Eso tenía dos agujeros reales:
+   *
+   *  - Dos cajeros cobrando en el mismo turno: solo contaban las ventas de uno.
+   *  - Reasignar el turno a otra persona reescribía retroactivamente qué ventas eran suyas, y el
+   *    arqueo se descuadraba solo.
+   *
+   * Los turnos anteriores a la columna no tienen ninguna venta enlazada, así que para ellos se
+   * conserva el criterio viejo: es impreciso, pero es el único dato que existe, y cambiarlo
+   * haría que un corte ya cerrado mostrara cifras distintas a las que se firmaron.
+   */
+  private async filtroVentasDelTurno(turno: { id: string; sucursalId: string; usuarioId: string; fechaApertura: Date }) {
+    const enlazadas = await this.prisma.pedido.count({ where: { turnoId: turno.id } });
+    if (enlazadas > 0) return { turnoId: turno.id };
+    return { sucursalId: turno.sucursalId, cajeroId: turno.usuarioId, createdAt: { gte: turno.fechaApertura } };
+  }
+
   /** Efectivo esperado en caja: monto inicial + ventas en efectivo del turno + ingresos - egresos. */
   private async calcularMontoEsperado(turno: { id: string; sucursalId: string; usuarioId: string; fechaApertura: Date; montoInicial: any }) {
+    const filtroPedido = await this.filtroVentasDelTurno(turno);
     const [pagosEfectivo, movimientos] = await Promise.all([
       this.prisma.pago.aggregate({
-        where: {
-          metodo: MetodoPago.EFECTIVO,
-          pedido: { sucursalId: turno.sucursalId, cajeroId: turno.usuarioId, createdAt: { gte: turno.fechaApertura } },
-        },
+        where: { metodo: MetodoPago.EFECTIVO, pedido: filtroPedido },
         _sum: { monto: true },
       }),
       this.prisma.movimientoCaja.groupBy({ by: ["tipo"], where: { turnoId: turno.id }, _sum: { monto: true } }),
@@ -129,12 +189,11 @@ export class CajaService {
 
   async resumenTurno(turnoId: string) {
     const turno = await this.prisma.turno.findUniqueOrThrow({ where: { id: turnoId } });
+    const filtroPedido = await this.filtroVentasDelTurno(turno);
     const [pagos, movimientos, esperado] = await Promise.all([
       this.prisma.pago.groupBy({
         by: ["metodo"],
-        where: {
-          pedido: { sucursalId: turno.sucursalId, cajeroId: turno.usuarioId, createdAt: { gte: turno.fechaApertura } },
-        },
+        where: { pedido: filtroPedido },
         _sum: { monto: true },
         _count: true,
       }),
