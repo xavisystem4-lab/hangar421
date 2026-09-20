@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { RolUsuario, TipoDispositivo, type AccesoSucursal, type JwtPayload, type LoginResponse } from "@hangar421/shared";
 import { ErrorErp, erpFetch, guardarTokensErp, obtenerErpBaseUrl } from "../api/erpHttp";
 import { decodificarJwt } from "../auth/jwt";
@@ -7,6 +7,7 @@ import { abrirBaseDeDatos } from "../db/database";
 import { guardarSucursalErp, guardarEmpresaErp, obtenerOCrearDispositivoId } from "../db/dispositivoLocal";
 import { refrescarCatalogo, ejecutarPull } from "../sync/pullEngine";
 import { obtenerDatosFiscales } from "../db/configFiscalRepo";
+import { contarPendientes } from "../db/outboxRepo";
 import { usarColores } from "../store/temaStore";
 
 interface SesionErp {
@@ -89,16 +90,46 @@ export function ConexionErpScreen({ onConectado, onCerrar }: { onConectado: () =
     return e?.message ?? porDefecto;
   }
 
+  /** Aviso antes de reenlazar con cola pendiente. Se resuelve a `true` solo si el usuario lo
+   *  confirma explícitamente; cerrar o cancelar deja la terminal como está. */
+  function confirmarEnlaceConPendientes(pendientes: number): Promise<boolean> {
+    return new Promise((resolver) => {
+      Alert.alert(
+        "Hay información sin enviar",
+        `Esta terminal tiene ${pendientes} evento(s) sin subir al ERP (ventas, cortes o movimientos de inventario).\n\n` +
+          "Si la enlazas con un código de otra sucursal, esa información se enviará como si fuera de la sucursal nueva.\n\n" +
+          "Si esta terminal solo estaba mal asignada, es justo lo que quieres. Si de verdad cambió de local, sincroniza antes.",
+        [
+          { text: "Cancelar", style: "cancel", onPress: () => resolver(false) },
+          { text: "Enlazar de todos modos", style: "destructive", onPress: () => resolver(true) },
+        ],
+        { onDismiss: () => resolver(false) },
+      );
+    });
+  }
+
   /** Canjea el código de vinculación. Es el único camino que NO pide credenciales: el código lo
    *  genera un admin en el ERP, sirve una sola vez y caduca a los 15 minutos — por eso puede
    *  teclearlo un cajero sin que el dispositivo guarde jamás una contraseña. */
   async function vincularConCodigo() {
     const limpio = codigo.trim().toUpperCase().replace(/[\s-]/g, "");
     if (limpio.length < 8) return;
+
+    // Enlazar repunta a la nueva sucursal TODO lo que esté en la cola (ver guardarSucursalErp).
+    // Si hay ventas sin enviar, eso significa que saldrían como de la sucursal nueva.
+    //
+    // Se avisa en vez de bloquear a propósito: el motivo más común para volver a enlazar es
+    // precisamente que el enlace esté roto, y en ese estado no se puede sincronizar — bloquear
+    // dejaría la terminal sin salida. La decisión es de quien está delante, que es el único que
+    // sabe si la terminal estaba mal asignada (repuntar es lo correcto) o si de verdad cambió de
+    // local con ventas viejas encima (habría que sincronizar antes).
+    const db = await abrirBaseDeDatos();
+    const pendientes = await contarPendientes(db);
+    if (pendientes > 0 && !(await confirmarEnlaceConPendientes(pendientes))) return;
+
     setError(null);
     setConectando(true);
     try {
-      const db = await abrirBaseDeDatos();
       const dispositivoId = await obtenerOCrearDispositivoId(db);
       const datosFiscales = await obtenerDatosFiscales(db);
       const resp = await erpFetch<{ sucursalId: string; sucursal: string; empresaId: string; accessToken: string; refreshToken: string }>(

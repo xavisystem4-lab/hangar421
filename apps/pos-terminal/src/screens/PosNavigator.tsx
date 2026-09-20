@@ -110,6 +110,36 @@ export function PosNavigator() {
     );
   }
 
+  /**
+   * Sincroniza y cuenta qué pasó.
+   *
+   * Antes "Sincronizar ahora" disparaba `procesarCola` y cerraba el diálogo sin decir nada: si
+   * fallaba —que es justo cuando se pulsa— no había ninguna señal ni salida. Ahora el resultado
+   * se muestra y ofrece enlazar de nuevo con un código, que es lo que resuelve el caso en el que
+   * el enlace de la terminal es lo que está roto (token revocado, sucursal reasignada, terminal
+   * dada de baja desde el ERP).
+   */
+  async function sincronizarAhora() {
+    const antes = useSyncStatusStore.getState().pendientes;
+    await procesarCola(true).catch(() => undefined);
+    const despues = useSyncStatusStore.getState();
+
+    const enviados = Math.max(0, antes - despues.pendientes);
+    const fallo = despues.estado === "ERROR" || despues.estado === "SIN_CONEXION";
+
+    const titulo = fallo ? "No se pudo sincronizar" : "Sincronización terminada";
+    const detalle = fallo
+      ? `${despues.ultimoError ?? "El ERP no respondió."}${despues.pendientes > 0 ? `\n\nQuedan ${despues.pendientes} evento(s) sin enviar. No se pierde nada: se reintenta solo.` : ""}`
+      : enviados > 0
+        ? `Se enviaron ${enviados} evento(s) al ERP.`
+        : "Todo estaba al día, no había nada pendiente.";
+
+    Alert.alert(titulo, `${detalle}\n\n¿Quieres volver a enlazar esta terminal con un código nuevo?`, [
+      { text: "No, cerrar", style: "cancel" },
+      { text: "Poner código nuevo", onPress: () => setMostrarConexion(true) },
+    ]);
+  }
+
   function tocarIndicadorSync() {
     if (!sync.conectadoAlErp) {
       setMostrarConexion(true);
@@ -120,7 +150,7 @@ export function PosNavigator() {
       `${ETIQUETA_SYNC[sync.estado]}${sync.pendientes > 0 ? `\n${sync.pendientes} evento(s) pendiente(s)` : ""}${sync.ultimoError ? `\n\n${sync.ultimoError}` : ""}`,
       [
         { text: "Cerrar", style: "cancel" },
-        { text: "Sincronizar ahora", onPress: () => procesarCola(true) },
+        { text: "Sincronizar ahora", onPress: () => { sincronizarAhora(); } },
         { text: "Ver detalle", onPress: () => { setPantalla("admin"); setPantallaAdmin("sync"); } },
         { text: "Configurar conexión", onPress: () => setMostrarConexion(true) },
       ],
