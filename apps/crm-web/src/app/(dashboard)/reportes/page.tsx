@@ -98,7 +98,7 @@ export default function ReportesPage() {
           <h3 style={{ marginTop: 0 }}>Top productos (por unidades vendidas)</h3>
           {topProductos.length > 0 ? (
             <>
-              <BarChart data={topProductos.map((p) => ({ etiqueta: nombreProducto(p.productoId).slice(0, 6), valor: p._sum.cantidad ?? 0 }))} alto={180} />
+              <BarChart data={topProductos.map((p) => ({ etiqueta: nombreProducto(p.productoId), valor: p._sum.cantidad ?? 0 }))} alto={180} />
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, marginTop: 10 }}>
                 <tbody>
                   {topProductos.map((p) => (
@@ -117,7 +117,7 @@ export default function ReportesPage() {
           <h3 style={{ marginTop: 0 }}>Ventas por método de pago</h3>
           {porMetodo.length > 0 ? (
             <>
-              <BarChart data={porMetodo.map((m) => ({ etiqueta: ETIQUETA_METODO[m.metodo] ?? m.metodo, valor: Number(m._sum.monto ?? 0) }))} alto={160} />
+              <BarChart data={porMetodo.map((m) => ({ etiqueta: ETIQUETA_METODO[m.metodo] ?? m.metodo, valor: Number(m._sum.monto ?? 0) }))} alto={160} formatoValor={(v) => `${v.toFixed(2)}`} />
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, marginTop: 10 }}>
                 <tbody>
                   {porMetodo.map((m) => (

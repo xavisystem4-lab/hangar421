@@ -582,7 +582,7 @@ export default function PlataformasPage() {
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
           {pedidosEntrantes.map((p) => (
-            <div key={p.id} className="card" style={{ borderTop: `4px solid ${INFO_PLATAFORMA[p.plataforma as CodigoPlataforma]?.acento ?? "var(--h421-navy)"}` }}>
+            <div key={p.id} className="card" style={{ borderTop: `4px solid ${INFO_PLATAFORMA[p.plataforma as CodigoPlataforma]?.acento ?? "var(--h421-navy-texto)"}` }}>
               <strong style={{ fontSize: 14 }}>{INFO_PLATAFORMA[p.plataforma as CodigoPlataforma]?.icono} {p.nombreVisible}</strong>
               <p style={{ fontSize: 12, color: "var(--h421-gray-400)", margin: "6px 0" }}>Orden #{p.ordenExternaId}</p>
               <p style={{ fontSize: 13, margin: "0 0 4px" }}>{p.clienteNombre ?? "Cliente sin nombre"}</p>

@@ -7,6 +7,7 @@ import { useSucursalActiva } from "@/store/sucursalActiva";
 import { StatTile } from "@/components/StatTile";
 import { IndicadorEnVivo } from "@/components/IndicadorEnVivo";
 import { suscribirVentas } from "@/lib/realtime";
+import { CanalOrigen } from "@hangar421/shared";
 
 interface LineaVenta {
   id: string;
@@ -73,11 +74,15 @@ const COLOR_ESTADO: Record<string, string> = {
   POR_COBRAR: "var(--h421-amber)",
 };
 
-const ETIQUETA_CANAL: Record<string, string> = {
-  APP_POS_MOVIL: "APK Punto de Venta",
-  POS_ESCRITORIO: "POS Windows",
-  APP_MESERO: "Comandero",
-  WEB: "Web",
+/** Debe coincidir con el enum `CanalOrigen` de @hangar421/shared. Estaba escrito a mano con dos
+ *  valores inventados (`POS_ESCRITORIO`, `WEB`) que no existen: una venta del POS de Windows
+ *  salía en la tabla como el texto crudo "POS_WINDOWS". */
+const ETIQUETA_CANAL: Record<CanalOrigen, string> = {
+  [CanalOrigen.APP_POS_MOVIL]: "APK Punto de Venta",
+  [CanalOrigen.POS_WINDOWS]: "POS Windows",
+  [CanalOrigen.APP_MESERO]: "Comandero",
+  [CanalOrigen.CRM]: "ERP web",
+  [CanalOrigen.PLATAFORMA_DELIVERY]: "Plataforma de reparto",
 };
 
 function hoyLocal(): string {
@@ -93,6 +98,7 @@ export default function VentasPage() {
   const [hasta, setHasta] = useState(hoyLocal());
   const [estado, setEstado] = useState("");
   const [busqueda, setBusqueda] = useState("");
+  const [busquedaAplicada, setBusquedaAplicada] = useState("");
   const [pagina, setPagina] = useState(0);
 
   const [datos, setDatos] = useState<RespuestaVentas | null>(null);
@@ -110,7 +116,7 @@ export default function VentasPage() {
       const params = new URLSearchParams({ desde, hasta, limite: String(POR_PAGINA), offset: String(pagina * POR_PAGINA) });
       if (seleccion?.sucursalId) params.set("sucursalId", seleccion.sucursalId);
       if (estado) params.set("estado", estado);
-      if (busqueda.trim()) params.set("busqueda", busqueda.trim());
+      if (busquedaAplicada.trim()) params.set("busqueda", busquedaAplicada.trim());
       setDatos(await apiFetch<RespuestaVentas>(`/pedidos/ventas?${params}`));
       setActualizadoEn(new Date());
 
@@ -127,7 +133,7 @@ export default function VentasPage() {
     } finally {
       setCargando(false);
     }
-  }, [contexto, seleccion?.sucursalId, desde, hasta, estado, busqueda, pagina]);
+  }, [contexto, seleccion?.sucursalId, desde, hasta, estado, busquedaAplicada, pagina]);
 
   useEffect(() => {
     cargar();
@@ -145,6 +151,16 @@ export default function VentasPage() {
     if (!contexto) return;
     return suscribirVentas(contexto.usuario.empresaId, seleccion?.sucursalId ?? null, () => cargarRef.current());
   }, [contexto, seleccion?.sucursalId]);
+
+  // El buscador lanzaba una consulta por cada tecla: escribir "Latte" eran cinco peticiones al
+  // ERP, de las que solo la última importa. Se espera a que el cajero deje de escribir.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setBusquedaAplicada(busqueda);
+      setPagina(0);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [busqueda]);
 
   // Cambiar cualquier filtro vuelve a la primera página: quedarse en la página 3 de un resultado
   // que ahora tiene 4 filas enseñaría una tabla vacía.
@@ -191,7 +207,7 @@ export default function VentasPage() {
           <span style={etiqueta}>Buscar folio o producto</span>
           <input
             value={busqueda}
-            onChange={(e) => cambiarFiltro(() => setBusqueda(e.target.value))}
+            onChange={(e) => setBusqueda(e.target.value)}
             placeholder="Ej. 1042, Latte…"
             style={entrada}
           />
@@ -252,7 +268,7 @@ export default function VentasPage() {
         </div>
       )}
 
-      <div className="card" style={{ marginTop: 16, overflowX: "auto" }}>
+      <div className="card h421-tabla-wrap" style={{ marginTop: 16, overflowX: "auto" }}>
         {!datos ? (
           <p>Cargando…</p>
         ) : datos.items.length === 0 ? (
@@ -293,7 +309,7 @@ export default function VentasPage() {
                         {v.estado}
                       </span>
                     </td>
-                    <td style={celda}>{ETIQUETA_CANAL[v.canalOrigen] ?? v.canalOrigen}</td>
+                    <td style={celda}>{ETIQUETA_CANAL[v.canalOrigen as CanalOrigen] ?? v.canalOrigen}</td>
                     {!seleccion?.sucursalId && <td style={celda}>{v.sucursal?.nombre ?? "—"}</td>}
                     <td style={celda}>{v.cajero?.nombre ?? v.mesero?.nombre ?? "—"}</td>
                     <td style={celda}>{v.pagos.map((p) => p.metodo).join(", ") || "—"}</td>
