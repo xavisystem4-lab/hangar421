@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Put, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Put, Query, Req, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { RolUsuario } from "@hangar421/shared";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
@@ -18,6 +18,20 @@ export class SucursalesController {
     return this.sucursales.listar(empresaId);
   }
 
+  /**
+   * Sucursales con las que el usuario de la sesión puede trabajar, en vivo.
+   *
+   * Va DECLARADO ANTES que `@Get(":id")` a propósito: Nest resuelve las rutas en orden de
+   * declaración, y al revés `:id` capturaría la cadena "mias".
+   *
+   * No lleva `empresaId` por query —lo toma del token— porque es justamente la lista con la que
+   * se decide el contexto: aceptarlo del cliente sería dejar que se pida el de otra empresa.
+   */
+  @Get("mias")
+  listarMias(@Req() req: any) {
+    return this.sucursales.listarParaUsuario(req.user);
+  }
+
   @Get(":id")
   obtener(@Param("id") id: string) {
     return this.sucursales.obtener(id);
@@ -26,8 +40,10 @@ export class SucursalesController {
   @Post()
   @Roles(RolUsuario.ADMIN_CORPORATIVO)
   @Audit("SUCURSAL", "CREAR")
-  crear(@Body() body: any) {
-    return this.sucursales.crear(body);
+  crear(@Body() body: any, @Req() req: any) {
+    // El id del creador viene del token, nunca del cuerpo: es quien queda con acceso a la
+    // sucursal recién creada.
+    return this.sucursales.crear(body, req.user?.sub);
   }
 
   @Put(":id")

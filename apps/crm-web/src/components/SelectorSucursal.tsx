@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuthCrm } from "@/lib/authClient";
 import { opcionesDisponibles, useSucursalActiva, type SeleccionSucursal } from "@/store/sucursalActiva";
 import { RolUsuario } from "@hangar421/shared";
@@ -15,11 +15,19 @@ import { RolUsuario } from "@hangar421/shared";
  */
 export function SelectorSucursal({ onCerrar }: { onCerrar?: () => void }) {
   const { contexto } = useAuthCrm();
-  const { elegir, cambiando, error, seleccion } = useSucursalActiva();
+  const { elegir, cambiando, error, seleccion, opciones: accesos, cargandoOpciones, refrescarOpciones } = useSucursalActiva();
   const [eligiendo, setEligiendo] = useState<string | null>(null);
 
+  // Se refresca cada vez que se abre el diálogo: una sucursal dada de alta hace un momento debe
+  // poder elegirse aquí sin cerrar sesión.
+  useEffect(() => {
+    refrescarOpciones();
+  }, [refrescarOpciones]);
+
   if (!contexto) return null;
-  const opciones = opcionesDisponibles(contexto.usuario.sucursales ?? [], contexto.rol);
+  // Mientras llega la lista del backend se usa la del login como respaldo, para que el diálogo
+  // no aparezca vacío un instante al abrirlo.
+  const opciones = opcionesDisponibles(accesos ?? contexto.usuario.sucursales ?? [], contexto.rol);
   const esCorporativo = contexto.rol === RolUsuario.ADMIN_CORPORATIVO;
 
   async function seleccionar(opcion: SeleccionSucursal) {
@@ -43,7 +51,9 @@ export function SelectorSucursal({ onCerrar }: { onCerrar?: () => void }) {
           Puedes cambiarla luego desde la cabecera.
         </p>
 
-        {opciones.length === 0 ? (
+        {opciones.length === 0 && cargandoOpciones ? (
+          <p style={{ color: "var(--h421-gray-400)", fontSize: 14 }}>Cargando sucursales…</p>
+        ) : opciones.length === 0 ? (
           <p style={{ color: "var(--h421-red)", fontSize: 14 }}>
             Tu usuario no tiene ninguna sucursal asignada. Pídele a un administrador que te dé acceso.
           </p>

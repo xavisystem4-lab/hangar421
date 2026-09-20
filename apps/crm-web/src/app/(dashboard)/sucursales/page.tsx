@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useAuthCrm } from "@/lib/authClient";
+import { useSucursalActiva } from "@/store/sucursalActiva";
 
 interface Sucursal {
   id: string;
@@ -23,6 +24,7 @@ interface Dispositivo {
 
 export default function SucursalesPage() {
   const { contexto } = useAuthCrm();
+  const refrescarOpciones = useSucursalActiva((s) => s.refrescarOpciones);
   const [sucursales, setSucursales] = useState<Sucursal[]>([]);
   const [nuevo, setNuevo] = useState({ nombre: "", direccion: "" });
 
@@ -112,6 +114,9 @@ export default function SucursalesPage() {
     });
     setNuevo({ nombre: "", direccion: "" });
     cargar();
+    // Para que la sucursal recién creada se pueda elegir en la cabecera en el acto, sin
+    // recargar la página ni volver a entrar.
+    refrescarOpciones();
   }
 
   function empezarEdicion(s: Sucursal) {

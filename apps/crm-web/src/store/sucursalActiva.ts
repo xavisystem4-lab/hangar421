@@ -16,8 +16,13 @@ interface SucursalActivaState {
   seleccion: SeleccionSucursal | null;
   cambiando: boolean;
   error: string | null;
+  /** Opciones traídas del backend. `null` = todavía no se consultaron. */
+  opciones: AccesoSucursal[] | null;
+  cargandoOpciones: boolean;
   /** Lee lo guardado. `null` obliga a elegir antes de mostrar nada. */
   cargar: () => void;
+  /** Pide al backend las sucursales que este usuario puede ver AHORA. */
+  refrescarOpciones: () => Promise<void>;
   elegir: (opcion: SeleccionSucursal, esCorporativo: boolean) => Promise<void>;
   limpiar: () => void;
 }
@@ -36,11 +41,27 @@ export const useSucursalActiva = create<SucursalActivaState>((set) => ({
   seleccion: null,
   cambiando: false,
   error: null,
+  opciones: null,
+  cargandoOpciones: false,
 
   cargar: () => {
     if (typeof window === "undefined") return;
     const raw = localStorage.getItem(CLAVE);
     set({ seleccion: raw ? JSON.parse(raw) : null });
+  },
+
+  // Se consulta cada vez que se abre el selector, no una sola vez al entrar: es lo que hace que
+  // una sucursal recién dada de alta aparezca sin cerrar sesión.
+  refrescarOpciones: async () => {
+    set({ cargandoOpciones: true });
+    try {
+      const lista = await apiFetch<AccesoSucursal[]>("/sucursales/mias");
+      set({ opciones: lista, cargandoOpciones: false });
+    } catch (e: any) {
+      // No se limpian las opciones que ya hubiera: un fallo de red no debe dejar al usuario sin
+      // poder elegir nada si ya tenía la lista.
+      set({ error: e?.message ?? "No se pudieron cargar las sucursales", cargandoOpciones: false });
+    }
   },
 
   elegir: async (opcion, esCorporativo) => {
@@ -73,16 +94,18 @@ export const useSucursalActiva = create<SucursalActivaState>((set) => ({
 
   limpiar: () => {
     if (typeof window !== "undefined") localStorage.removeItem(CLAVE);
-    set({ seleccion: null, error: null });
+    set({ seleccion: null, error: null, opciones: null });
   },
 }));
 
 /** Opciones que puede elegir este usuario: las sucursales a las que tiene acceso, más el
  *  consolidado si es corporativo.
  *
- *  Se construyen desde `usuario.sucursales` (lo que el login devuelve desde UsuarioSucursal) y
- *  no desde `GET /sucursales`: así el selector no puede ofrecer una sucursal a la que el backend
- *  luego respondería 403. Lo que se ve es exactamente lo que se puede consultar. */
+ *  La lista viene de `GET /sucursales/mias`, que el backend calcula en vivo contra
+ *  UsuarioSucursal (o contra todas las de la empresa si es corporativo). Antes se armaba con
+ *  `usuario.sucursales` del login, que quedaba congelado en localStorage: una sucursal creada
+ *  después no aparecía hasta cerrar y volver a abrir sesión. Sigue sin poder ofrecer una
+ *  sucursal a la que el backend respondería 403 — lo que se ve es lo que se puede consultar. */
 export function opcionesDisponibles(sucursales: AccesoSucursal[], rol: string): SeleccionSucursal[] {
   const propias = sucursales.map((s) => ({ sucursalId: s.sucursalId, nombre: s.nombre || "Sucursal" }));
   const esCorporativo = rol === RolUsuario.ADMIN_CORPORATIVO;

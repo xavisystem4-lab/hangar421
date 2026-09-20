@@ -23,17 +23,65 @@ export class SucursalesService {
     });
   }
 
-  crear(data: {
-    empresaId: string;
-    nombre: string;
-    direccion?: string;
-    horarioApertura?: string;
-    horarioCierre?: string;
-    timezone?: string;
-    moneda?: string;
-    tasaImpuesto?: number;
-  }) {
-    return this.prisma.sucursal.create({ data });
+  /**
+   * Sucursales con las que este usuario puede trabajar AHORA, calculado en vivo.
+   *
+   * Es la única fuente de verdad del selector del ERP. Antes el selector se armaba con la lista
+   * que venía en la respuesta del login y quedaba congelada en localStorage: una sucursal dada
+   * de alta después no aparecía hasta cerrar y volver a abrir sesión.
+   *
+   * ADMIN_CORPORATIVO ve todas las de su empresa (SucursalAccessGuard lo exime, así que puede
+   * consultarlas todas de verdad). El resto ve solo sus filas de UsuarioSucursal: ofrecerle una
+   * sucursal a la que el backend le respondería 403 sería peor que no ofrecerla.
+   */
+  async listarParaUsuario(usuario: { sub: string; empresaId: string; rol?: string }) {
+    if (usuario.rol === RolUsuario.ADMIN_CORPORATIVO) {
+      const todas = await this.prisma.sucursal.findMany({
+        where: { empresaId: usuario.empresaId, activo: true },
+        orderBy: { nombre: "asc" },
+        select: { id: true, nombre: true },
+      });
+      return todas.map((s) => ({ sucursalId: s.id, nombre: s.nombre, rol: RolUsuario.ADMIN_CORPORATIVO }));
+    }
+
+    const accesos = await this.prisma.usuarioSucursal.findMany({
+      where: { usuarioId: usuario.sub, activo: true, sucursal: { activo: true, empresaId: usuario.empresaId } },
+      include: { sucursal: { select: { nombre: true } } },
+      orderBy: { sucursal: { nombre: "asc" } },
+    });
+    return accesos.map((a) => ({ sucursalId: a.sucursalId, nombre: a.sucursal.nombre, rol: a.rol }));
+  }
+
+  /**
+   * Alta de sucursal.
+   *
+   * Le da acceso a quien la crea en la misma transacción. Sin esto, la sucursal nacía sin
+   * ningún UsuarioSucursal: no aparecía en el selector de nadie y `POST /auth/switch-sucursal`
+   * la rechazaba con "Sin acceso a esa sucursal" incluso para el administrador corporativo que
+   * acababa de darla de alta.
+   */
+  crear(
+    data: {
+      empresaId: string;
+      nombre: string;
+      direccion?: string;
+      horarioApertura?: string;
+      horarioCierre?: string;
+      timezone?: string;
+      moneda?: string;
+      tasaImpuesto?: number;
+    },
+    creadorId?: string,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const sucursal = await tx.sucursal.create({ data });
+      if (creadorId) {
+        await tx.usuarioSucursal.create({
+          data: { usuarioId: creadorId, sucursalId: sucursal.id, rol: RolUsuario.ADMIN_CORPORATIVO },
+        });
+      }
+      return sucursal;
+    });
   }
 
   actualizar(id: string, data: Partial<{ nombre: string; direccion: string; horarioApertura: string; horarioCierre: string; tasaImpuesto: number; activo: boolean }>) {
