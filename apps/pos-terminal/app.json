@@ -2,7 +2,7 @@
   "expo": {
     "name": "HANGAR 421 Punto de Venta",
     "slug": "hangar421-pos-terminal",
-    "version": "0.1.17",
+    "version": "0.1.18",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -11,7 +11,7 @@
     },
     "android": {
       "package": "com.hangar421.pos",
-      "versionCode": 18,
+      "versionCode": 19,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0B1E33"
