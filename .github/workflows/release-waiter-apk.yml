@@ -95,15 +95,32 @@ jobs:
 
       # DESPUÉS de compilar y ANTES de publicar — mismo razonamiento, comentado en detalle, que
       # en release-pos-terminal.yml: si Gradle falla, `main` no debe quedarse con una versión que
-      # nunca se publicó; y si el push se rechaza, es preferible quedarse sin release que
-      # publicar un tag cuyo número `main` todavía no ha consumido.
+      # nunca se publicó.
+      #
+      # El push se rechaza si `main` avanza durante el build, y no hace falta nada raro para
+      # que pase: basta con lanzar este release mientras el del POS compila, porque ese también
+      # empuja su propio bump. Pasó de verdad en release-pos-terminal.yml y costó un APK ya
+      # compilado, porque el paso de publicar va después de este. Se reintenta con rebase: el
+      # commit solo toca los dos ficheros de versión de ESTA app, así que no puede chocar con
+      # el bump de la otra.
       - name: Confirmar el bump de versión en el repo
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add apps/waiter-mobile/package.json apps/waiter-mobile/app.json
           git commit -m "chore(waiter-mobile): bump versión a ${{ steps.version.outputs.version }} [skip ci]"
-          git push origin HEAD:main
+
+          for intento in 1 2 3; do
+            if git push origin HEAD:main; then
+              echo "Bump de versión publicado (intento $intento)."
+              exit 0
+            fi
+            echo "Push rechazado: main avanzó durante el build. Rebasando e intentando de nuevo…"
+            git pull --rebase origin main
+          done
+
+          echo "::error::No se pudo publicar el bump de versión tras 3 intentos."
+          exit 1
 
       - name: Publicar como GitHub Release
         uses: softprops/action-gh-release@v2
