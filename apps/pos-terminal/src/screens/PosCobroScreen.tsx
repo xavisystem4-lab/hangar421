@@ -6,6 +6,7 @@ import { useAuthLocalStore } from "../store/authLocalStore";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
 import { confirmarVenta } from "../db/ventasRepo";
+import { sincronizarPronto } from "../sync/syncEngine";
 import { turnoAbierto } from "../db/turnosRepo";
 import { listarMetodosPago, etiquetaMetodoPago } from "../db/metodosPagoRepo";
 import { imprimirTicket } from "../printing/imprimirTicket";
@@ -85,6 +86,11 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
       if (!turno) throw new Error("No hay un turno de caja abierto — abre caja antes de cobrar.");
       const venta = await confirmarVenta(db, { items, pagos: pagosFinales, totales: t, turnoId: turno.id, usuarioId: usuario.id });
       limpiar();
+      // Empuje inmediato al ERP. Antes la venta solo se encolaba y esperaba hasta 45 s al
+      // siguiente tick del temporizador: era la causa principal de que una venta recién cobrada
+      // no se viera en la web. No se espera (`await`) a propósito — la venta ya está confirmada
+      // e irrevocable, y el cajero no debe quedarse mirando una pantalla bloqueada por la red.
+      sincronizarPronto();
       // La venta ya está confirmada e irrevocable en este punto — lo que pase con la impresión
       // de aquí en adelante nunca la afecta (ver printing/imprimirTicket.ts).
       await imprimirTicket(db, venta.id);

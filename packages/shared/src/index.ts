@@ -6,4 +6,5 @@ export * from "./types/ticket";
 export * from "./types/pagos";
 export * from "./constants";
 export * from "./utils/uuid7";
+export * from "./utils/urlBackend";
 export * from "./calculos";

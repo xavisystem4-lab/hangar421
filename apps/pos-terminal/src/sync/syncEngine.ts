@@ -38,7 +38,34 @@ export function iniciarSync() {
   intervaloCatalogo = setInterval(refrescarCatalogoEnSegundoPlano, INTERVALO_CATALOGO_MS);
 }
 
+/**
+ * Empuja la cola AHORA, no en el próximo tick.
+ *
+ * Es lo que hace que una venta aparezca en el ERP en segundos en vez de esperar hasta 45 s al
+ * temporizador. Se llama justo después de confirmar una venta, un cobro o una cancelación.
+ *
+ * Se agrupan las llamadas seguidas en una sola pasada: confirmar una venta encola dos eventos
+ * (PEDIDO y PAGO) y no tiene sentido salir a la red dos veces con 20 ms de diferencia. El
+ * retardo es corto a propósito — lo justo para agrupar, no lo bastante para que se note.
+ *
+ * Nunca lanza: se llama desde la pantalla de cobro, justo después de una venta ya confirmada e
+ * irrevocable. Un fallo de red aquí no puede afectar a esa venta, que ya está guardada en
+ * SQLite y seguirá en la cola hasta que salga.
+ */
+const AGRUPAR_MS = 150;
+let disparoPendiente: ReturnType<typeof setTimeout> | null = null;
+
+export function sincronizarPronto(): void {
+  if (disparoPendiente) clearTimeout(disparoPendiente);
+  disparoPendiente = setTimeout(() => {
+    disparoPendiente = null;
+    procesarCola(true).catch(() => undefined);
+  }, AGRUPAR_MS);
+}
+
 export function detenerSync() {
+  if (disparoPendiente) clearTimeout(disparoPendiente);
+  disparoPendiente = null;
   if (intervalo) clearInterval(intervalo);
   intervalo = null;
   if (intervaloCatalogo) clearInterval(intervaloCatalogo);

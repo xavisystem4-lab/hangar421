@@ -54,6 +54,42 @@ export class SyncService {
    * no se encendía jamás para ningún cliente. Se resuelve la huella igual que hace
    * `aplicarItem` antes de guardar un SyncQueueItem.
    */
+  /**
+   * Operaciones rechazadas por el ERP que siguen sin aplicarse.
+   *
+   * `SyncQueueItem` no tiene `empresaId` ni `sucursalId` propios: cuelga del dispositivo, así
+   * que el acotamiento va por la sucursal del dispositivo. Es también lo que garantiza que un
+   * usuario no vea los problemas de otra empresa.
+   *
+   * Se devuelve el `ultimoError` tal cual lo generó el backend: quien lee esto es un
+   * administrador tratando de entender por qué falta una venta, y un mensaje genérico no le
+   * serviría de nada. No lleva el `payload`, que puede contener datos del ticket completo.
+   */
+  async listarProblemas(empresaId: string, sucursalId?: string) {
+    const items = await this.prisma.syncQueueItem.findMany({
+      where: {
+        estado: SyncStatus.ERROR,
+        dispositivo: { sucursal: { empresaId, ...(sucursalId ? { id: sucursalId } : {}) } },
+      },
+      include: { dispositivo: { select: { nombre: true, tipo: true, sucursal: { select: { id: true, nombre: true } } } } },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+
+    return items.map((i) => ({
+      id: i.id,
+      entidad: i.entidad,
+      entidadId: i.entidadId,
+      operacion: i.operacion,
+      intentos: i.intentos,
+      ultimoError: i.ultimoError,
+      createdAt: i.createdAt,
+      terminal: i.dispositivo.nombre,
+      tipoTerminal: i.dispositivo.tipo,
+      sucursal: i.dispositivo.sucursal,
+    }));
+  }
+
   async marcarVisto(huella: string | undefined, sucursalId: string | undefined): Promise<void> {
     if (!huella) return;
     const dispositivoId = await resolverDispositivoId(this.prisma, huella, sucursalId);

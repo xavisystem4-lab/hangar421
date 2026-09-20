@@ -7,6 +7,7 @@ import { abrirTurno, cerrarTurno, efectivoDelTurno, listarMovimientosCaja, regis
 import { listarVentasRecientes, type VentaResumen } from "../db/ventasHistorialRepo";
 import { BILLETES_MXN, BILLETES_USD, MONEDAS_MXN, calcularDiferencia, construirDesglose, round2, type Conteo } from "../caja/denominaciones";
 import { ColumnaDenominaciones, usarRefsDenominaciones } from "../components/DesgloseEfectivo";
+import { sincronizarPronto } from "../sync/syncEngine";
 
 export function PosCajaScreen() {
   const { usuario } = useAuthLocalStore();
@@ -107,6 +108,9 @@ export function PosCajaScreen() {
       montoFinalDeclarado: desglose.totalMXN,
       desgloseEfectivo: desglose,
     });
+    // El corte alimenta los indicadores de caja del ERP: se sube en el momento, no al
+    // siguiente tick del temporizador.
+    sincronizarPronto();
     setMensaje("Turno cerrado.");
     setBilletesMXN({});
     setMonedasMXN({});

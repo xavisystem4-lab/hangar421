@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { io } from "socket.io-client";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useAuthCrm } from "@/lib/authClient";
 import { useSucursalActiva } from "@/store/sucursalActiva";
 import { StatTile } from "@/components/StatTile";
+import { IndicadorEnVivo } from "@/components/IndicadorEnVivo";
+import { suscribirVentas } from "@/lib/realtime";
 
 interface LineaVenta {
   id: string;
@@ -44,7 +45,19 @@ interface RespuestaVentas {
   items: Venta[];
 }
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "http://localhost:3000";
+interface ProblemaSync {
+  id: string;
+  entidad: string;
+  entidadId: string;
+  operacion: string;
+  intentos: number;
+  ultimoError: string | null;
+  createdAt: string;
+  terminal: string;
+  tipoTerminal: string;
+  sucursal: { id: string; nombre: string } | null;
+}
+
 const POR_PAGINA = 50;
 
 /** Colores por estado. Solo COBRADO cuenta como venta cerrada; el resto son tickets en curso o
@@ -86,6 +99,8 @@ export default function VentasPage() {
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [abierta, setAbierta] = useState<string | null>(null);
+  const [actualizadoEn, setActualizadoEn] = useState<Date | null>(null);
+  const [problemas, setProblemas] = useState<ProblemaSync[]>([]);
 
   const cargar = useCallback(async () => {
     if (!contexto) return;
@@ -97,6 +112,16 @@ export default function VentasPage() {
       if (estado) params.set("estado", estado);
       if (busqueda.trim()) params.set("busqueda", busqueda.trim());
       setDatos(await apiFetch<RespuestaVentas>(`/pedidos/ventas?${params}`));
+      setActualizadoEn(new Date());
+
+      // Aparte y sin bloquear la tabla: son operaciones que el ERP RECHAZÓ, así que por
+      // definición no están entre las ventas de arriba. Si esta consulta falla, la pantalla
+      // principal debe seguir funcionando.
+      const paramsProblemas = new URLSearchParams();
+      if (seleccion?.sucursalId) paramsProblemas.set("sucursalId", seleccion.sucursalId);
+      apiFetch<ProblemaSync[]>(`/sync/problemas?${paramsProblemas}`)
+        .then(setProblemas)
+        .catch(() => setProblemas([]));
     } catch (e: any) {
       setError(e?.message ?? "No se pudieron cargar las ventas");
     } finally {
@@ -110,14 +135,16 @@ export default function VentasPage() {
 
   // Una venta que entra por sincronización debe aparecer sin recargar: es justo lo que se está
   // mirando cuando se abre esta pantalla después de cobrar en la terminal.
+  //
+  // `cargar` se guarda en una ref y NO va en las dependencias: cambia con cada filtro, y si la
+  // suscripción dependiera de ella el socket se re-suscribiría en cada tecla del buscador.
+  const cargarRef = useRef(cargar);
+  cargarRef.current = cargar;
+
   useEffect(() => {
     if (!contexto) return;
-    const socket = io(WS_URL, { path: "/realtime", transports: ["websocket"] });
-    socket.on("connect", () => socket.emit("join", { empresaId: contexto.usuario.empresaId }));
-    socket.on("pedido:creado", cargar);
-    socket.on("pedido:actualizado", cargar);
-    return () => { socket.disconnect(); };
-  }, [contexto, cargar]);
+    return suscribirVentas(contexto.usuario.empresaId, seleccion?.sucursalId ?? null, () => cargarRef.current());
+  }, [contexto, seleccion?.sucursalId]);
 
   // Cambiar cualquier filtro vuelve a la primera página: quedarse en la página 3 de un resultado
   // que ahora tiene 4 filas enseñaría una tabla vacía.
@@ -131,7 +158,10 @@ export default function VentasPage() {
 
   return (
     <div>
-      <h1 style={{ marginTop: 0 }}>Ventas</h1>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+        <h1 style={{ marginTop: 0, marginBottom: 0 }}>Ventas</h1>
+        <IndicadorEnVivo actualizadoEn={actualizadoEn} />
+      </div>
       <p style={{ color: "var(--h421-gray-400)", marginTop: -8 }}>
         Tickets de {seleccion?.nombre ?? "todas las sucursales"}. Solo consulta: cancelar un ticket o
         reabrir una cuenta se hace desde la terminal de la sucursal, con autorización.
@@ -189,6 +219,36 @@ export default function VentasPage() {
             Suele ser una venta que llegó a medias: el pedido se sincronizó pero su pago no. Revísalo en la terminal,
             en Sincronización.
           </p>
+        </div>
+      )}
+
+      {/* Operaciones que el ERP rechazó. NO están en la tabla de abajo — por definición nunca
+          llegaron a registrarse — así que esta es la única forma de enterarse de que faltan. */}
+      {problemas.length > 0 && (
+        <div className="card" style={{ marginTop: 16, borderLeft: "4px solid var(--h421-red)" }}>
+          <strong>{problemas.length} operación(es) rechazadas por el ERP.</strong>
+          <p style={{ margin: "6px 0 10px", fontSize: 14 }}>
+            No se registraron y no aparecen abajo. Siguen en la cola de su terminal: se reintentan solas, pero
+            si el motivo no se corrige volverán a fallar.
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
+            {problemas.slice(0, 10).map((p) => (
+              <li key={p.id} style={{ marginBottom: 4 }}>
+                <strong>{p.entidad}</strong> · {p.terminal}
+                {p.sucursal && !seleccion?.sucursalId && ` · ${p.sucursal.nombre}`}
+                {" · "}
+                {new Date(p.createdAt).toLocaleString("es-MX", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                {" · "}
+                {p.intentos} intento(s)
+                <div style={{ color: "var(--h421-red-texto)" }}>{p.ultimoError ?? "Sin detalle"}</div>
+              </li>
+            ))}
+          </ul>
+          {problemas.length > 10 && (
+            <p style={{ fontSize: 12, color: "var(--h421-gray-400)", margin: "8px 0 0" }}>
+              Y {problemas.length - 10} más.
+            </p>
+          )}
         </div>
       )}
 

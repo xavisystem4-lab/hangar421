@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { io } from "socket.io-client";
 import { apiFetch } from "@/lib/api";
 import { useAuthCrm } from "@/lib/authClient";
 import { useSucursalActiva } from "@/store/sucursalActiva";
 import { StatTile } from "@/components/StatTile";
 import { BarChart } from "@/components/BarChart";
+import { IndicadorEnVivo } from "@/components/IndicadorEnVivo";
+import { suscribirVentas } from "@/lib/realtime";
 
 interface DashboardData {
   ventasHoy: number;
@@ -15,8 +16,6 @@ interface DashboardData {
   topProductos: { productoId: string; nombre: string; cantidad: number }[];
   estadoSucursales: { sucursalId: string; nombre: string; dispositivos: { id: string; nombre: string; enLinea: boolean }[] }[];
 }
-
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "http://localhost:3000";
 
 export default function DashboardPage() {
   const { contexto } = useAuthCrm();
@@ -44,16 +43,17 @@ export default function DashboardPage() {
 
   useEffect(() => {
     cargar();
+    // El temporizador es la red de seguridad, no el mecanismo principal: si el socket se cae, el
+    // dashboard sigue refrescándose, solo que más despacio.
     const t = setInterval(cargar, 30_000);
 
-    // el dashboard se refresca en vivo cuando llega una venta desde cualquier sucursal
-    const socket = io(WS_URL, { path: "/realtime", transports: ["websocket"] });
-    if (contexto) {
-      socket.on("connect", () => socket.emit("join", { empresaId: contexto.usuario.empresaId }));
-      socket.on("pedido:actualizado", cargar);
-      socket.on("pedido:creado", cargar);
-    }
-    return () => { clearInterval(t); socket.disconnect(); };
+    // Se refresca en vivo cuando llega una venta. El socket es compartido por toda la app y
+    // filtra por la sucursal activa (ver lib/realtime.ts).
+    const desuscribir = contexto
+      ? suscribirVentas(contexto.usuario.empresaId, seleccion?.sucursalId ?? null, () => cargar())
+      : undefined;
+
+    return () => { clearInterval(t); desuscribir?.(); };
     // `seleccion?.sucursalId` en las dependencias es imprescindible: sin él, cambiar de sucursal
     // en la cabecera no recargaba nada. Peor aún, el `setInterval` capturaba el `cargar` de la
     // primera carga, así que seguía refrescando LA SUCURSAL ANTERIOR cada 30 s — se veía un
@@ -66,7 +66,10 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <h1 style={{ marginTop: 0 }}>Dashboard</h1>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginBottom: 12 }}>
+        <h1 style={{ marginTop: 0, marginBottom: 0 }}>Dashboard</h1>
+        <IndicadorEnVivo />
+      </div>
 
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
         <StatTile etiqueta="Ventas hoy" valor={`$${data.ventasHoy.toFixed(2)}`} acento="var(--h421-green)" />

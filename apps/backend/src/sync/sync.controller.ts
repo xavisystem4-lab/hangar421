@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { SyncService } from "./sync.service";
@@ -18,6 +18,22 @@ export class SyncController {
   @Get("pull")
   pull(@Query("sucursalId") sucursalId: string, @Query("since") since?: string) {
     return this.sync.pull(sucursalId, since);
+  }
+
+  /**
+   * Operaciones que el ERP rechazó y siguen sin aplicarse — el monitoreo de "ventas que no
+   * lograron sincronizarse".
+   *
+   * Los errores ya se guardaban en `sync_queue_items` con su motivo, pero no había forma de
+   * verlos salvo entrando a los logs del servidor. Desde el ERP eran invisibles: una venta
+   * rechazada por el backend (producto inexistente, usuario que no existe, importe inválido)
+   * simplemente no aparecía y nadie se enteraba.
+   *
+   * Solo lectura y acotado a la empresa del token; `sucursalId` lo valida SucursalAccessGuard.
+   */
+  @Get("problemas")
+  problemas(@Req() req: any, @Query("sucursalId") sucursalId?: string) {
+    return this.sync.listarProblemas(req.user.empresaId, sucursalId);
   }
 
   /**
