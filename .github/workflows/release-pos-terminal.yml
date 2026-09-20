@@ -92,16 +92,32 @@ jobs:
       # sin release (se reintenta limpio con el mismo número) que publicar el tag v0.1.4 con
       # `main` todavía en 0.1.3 — ahí el siguiente intento chocaría contra un tag existente.
       #
-      # El push puede rechazarse si alguien empuja a main durante los ~7 min del build. Es raro
-      # (y `concurrency` ya descarta el choque entre dos releases); si pasa, el job falla de
-      # forma ruidosa y limpia, sin dejar nada a medias.
+      # El push se rechaza si alguien empuja a main durante los ~7 min del build, y no es nada
+      # raro: basta con seguir trabajando mientras compila. Pasó de verdad, y el resultado NO era
+      # "limpio" como decía el comentario anterior — el APK ya estaba compilado y se perdía
+      # entero, porque el paso de publicar va después de este.
+      #
+      # Se reintenta con rebase: este commit solo toca los dos ficheros de versión, así que
+      # rebasarlo sobre un main que avanzó no puede entrar en conflicto con nada salvo con otro
+      # bump, y eso ya lo descarta `concurrency`.
       - name: Confirmar el bump de versión en el repo
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add apps/pos-terminal/package.json apps/pos-terminal/app.json
           git commit -m "chore(pos-terminal): bump versión a ${{ steps.version.outputs.version }} [skip ci]"
-          git push origin HEAD:main
+
+          for intento in 1 2 3; do
+            if git push origin HEAD:main; then
+              echo "Bump de versión publicado (intento $intento)."
+              exit 0
+            fi
+            echo "Push rechazado: main avanzó durante el build. Rebasando e intentando de nuevo…"
+            git pull --rebase origin main
+          done
+
+          echo "::error::No se pudo publicar el bump de versión tras 3 intentos."
+          exit 1
 
       - name: Publicar como GitHub Release
         uses: softprops/action-gh-release@v2
