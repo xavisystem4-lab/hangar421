@@ -392,12 +392,22 @@ export class PedidosService {
       );
     }
 
-    // Si `cajeroId` no corresponde a un usuario real de esta base (ej. sesión vieja en el
-    // cliente apuntando a un usuario que ya no existe aquí), que falle con un mensaje claro en
-    // vez de un 500 genérico al chocar contra la relación en `pagos`/`pedidos`.
-    if (dto.cajeroId) {
-      const cajero = await this.prisma.usuario.findUnique({ where: { id: dto.cajeroId }, select: { id: true } });
-      if (!cajero) throw new BadRequestException(`El usuario que cobra (${dto.cajeroId}) no existe en esta base — vuelve a iniciar sesión.`);
+    // `cajeroId` puede no existir en esta base: el caso real es un cajero dado de alta en la
+    // terminal SIN conexión, cuyo id es un uuid7 generado en la tablet que el ERP nunca ha
+    // visto (ver usuariosLocalesRepo.mapaUsuariosErp).
+    //
+    // Esto RECHAZABA el cobro entero con un 400. El pedido ya se había creado —`crear` sí lo
+    // tolera— así que la venta se quedaba en ENVIADO: existía en el ERP pero sin pago, no
+    // sumaba a ningún total y no había forma de verla. Tres tickets reales acabaron así.
+    //
+    // Mismo criterio que en `crear`: se cobra sin atribución y se deja constancia en el log.
+    // Perder de quién fue el cobro es mucho menos grave que perder el cobro.
+    const cajeroId = await this.resolverUsuarioExistente(dto.cajeroId);
+    if (dto.cajeroId && !cajeroId) {
+      this.logger.warn(
+        `Cobro del pedido ${pedidoId}: el cajero ${dto.cajeroId} no existe en el ERP — se registra el pago sin ` +
+          "cajero asignado (probable alta de cajero hecha sin conexión).",
+      );
     }
 
     try {
@@ -408,12 +418,12 @@ export class PedidosService {
             metodo: p.metodo,
             monto: p.monto,
             referencia: p.referencia,
-            usuarioId: dto.cajeroId,
+            usuarioId: cajeroId,
           })),
         });
         await tx.pedido.update({
           where: { id: pedidoId },
-          data: { estado: EstadoPedido.COBRADO, cajeroId: dto.cajeroId },
+          data: { estado: EstadoPedido.COBRADO, cajeroId },
         });
         if (pedido.mesaId) {
           await tx.mesa.update({ where: { id: pedido.mesaId }, data: { estado: EstadoMesa.LIBRE } });

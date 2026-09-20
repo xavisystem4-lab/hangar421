@@ -6,20 +6,52 @@ import { PrismaService } from "../prisma/prisma.service";
 export class CajaService {
   constructor(private prisma: PrismaService) {}
 
-  async abrirTurno(data: { sucursalId: string; cajaId: string; usuarioId: string; montoInicial: number }) {
+  async abrirTurno(data: { sucursalId: string; cajaId?: string | null; usuarioId: string; montoInicial: number }) {
+    const cajaId = await this.resolverCaja(data.sucursalId, data.cajaId);
+
     const turnoActivo = await this.prisma.turno.findFirst({
-      where: { cajaId: data.cajaId, estado: EstadoTurno.ABIERTO },
+      where: { cajaId, estado: EstadoTurno.ABIERTO },
     });
     if (turnoActivo) throw new BadRequestException("Ya existe un turno abierto para esta caja");
 
     return this.prisma.turno.create({
       data: {
         sucursalId: data.sucursalId,
-        cajaId: data.cajaId,
+        cajaId,
         usuarioId: data.usuarioId,
         montoInicial: data.montoInicial,
       },
     });
+  }
+
+  /**
+   * Caja contra la que se abre el turno.
+   *
+   * El APK manda `cajaId: null` a propósito: una tablet no es una caja registrada en el ERP, no
+   * tiene con qué rellenar ese campo. Prisma reventaba con
+   * `Argument 'cajaId' must not be null` y el corte se quedaba en la cola reintentándose para
+   * siempre, arrastrando con él todo lo que viniera detrás en ese lote.
+   *
+   * Si no viene, se usa la primera caja activa de la sucursal, y si la sucursal no tiene
+   * ninguna se crea una. Crear una caja implícita es mucho menos malo que rechazar un corte:
+   * el corte es dinero real ya contado, y una sucursal sin caja dada de alta es una omisión de
+   * configuración, no una decisión.
+   */
+  private async resolverCaja(sucursalId: string, cajaId?: string | null): Promise<string> {
+    if (cajaId) return cajaId;
+
+    const existente = await this.prisma.caja.findFirst({
+      where: { sucursalId, activo: true },
+      orderBy: { nombre: "asc" },
+      select: { id: true },
+    });
+    if (existente) return existente.id;
+
+    const creada = await this.prisma.caja.create({
+      data: { sucursalId, nombre: "Caja principal" },
+      select: { id: true },
+    });
+    return creada.id;
   }
 
   async turnoActivo(cajaId: string) {
