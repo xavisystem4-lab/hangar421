@@ -6,7 +6,7 @@ import { abrirBaseDeDatos } from "../db/database";
 import { abrirTurno, cerrarTurno, efectivoDelTurno, listarMovimientosCaja, registrarMovimientoCaja, turnoAbierto, type MovimientoCajaLocal, type TurnoLocal } from "../db/turnosRepo";
 import { listarVentasRecientes, type VentaResumen } from "../db/ventasHistorialRepo";
 import { BILLETES_MXN, BILLETES_USD, MONEDAS_MXN, calcularDiferencia, construirDesglose, round2, type Conteo } from "../caja/denominaciones";
-import { GrupoDenominaciones } from "../components/DesgloseEfectivo";
+import { ColumnaDenominaciones, usarRefsDenominaciones } from "../components/DesgloseEfectivo";
 
 export function PosCajaScreen() {
   const { usuario } = useAuthLocalStore();
@@ -22,6 +22,10 @@ export function PosCajaScreen() {
   const [billetesUSD, setBilletesUSD] = useState<Conteo>({});
   const [observaciones, setObservaciones] = useState("");
   const [ventasEnEfectivo, setVentasEnEfectivo] = useState(0);
+  // Refs de cada columna, para encadenar el foco con Enter al contar.
+  const refsBilletes = usarRefsDenominaciones(BILLETES_MXN.length);
+  const refsMonedas = usarRefsDenominaciones(MONEDAS_MXN.length);
+  const refsDolares = usarRefsDenominaciones(BILLETES_USD.length);
   const [tipoMovimiento, setTipoMovimiento] = useState<"INGRESO" | "EGRESO">("INGRESO");
   const [montoMovimiento, setMontoMovimiento] = useState("");
   const [motivoMovimiento, setMotivoMovimiento] = useState("");
@@ -167,27 +171,41 @@ export function PosCajaScreen() {
               Cuenta el efectivo del cajón por denominación. El total declarado sale del conteo, no se escribe a mano.
             </Text>
 
-            <GrupoDenominaciones
-              titulo="Billetes MXN"
-              denominaciones={BILLETES_MXN}
-              conteo={billetesMXN}
-              onChange={(d, c) => setBilletesMXN((s) => ({ ...s, [d]: c }))}
-            />
-            <GrupoDenominaciones
-              titulo="Monedas MXN"
-              denominaciones={MONEDAS_MXN}
-              conteo={monedasMXN}
-              onChange={(d, c) => setMonedasMXN((s) => ({ ...s, [d]: c }))}
-            />
+            {/* Billetes y monedas lado a lado: es como está el dinero en el cajón, y así se
+                cuenta sin desplazarse por la pantalla. Enter baja al siguiente campo de la
+                columna, y de la última fila de billetes salta a la primera de monedas. */}
+            <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
+              <ColumnaDenominaciones
+                titulo="Billetes"
+                denominaciones={BILLETES_MXN}
+                conteo={billetesMXN}
+                onChange={(d, c) => setBilletesMXN((s) => ({ ...s, [d]: c }))}
+                refs={refsBilletes}
+                onUltimo={() => refsMonedas[0]?.current?.focus()}
+              />
+              <ColumnaDenominaciones
+                titulo="Monedas"
+                denominaciones={MONEDAS_MXN}
+                conteo={monedasMXN}
+                onChange={(d, c) => setMonedasMXN((s) => ({ ...s, [d]: c }))}
+                refs={refsMonedas}
+                onUltimo={() => refsDolares[0]?.current?.focus()}
+              />
+            </View>
+
             {/* El dólar va aparte y NO se suma al efectivo MXN esperado — mismo criterio que el
                 POS Windows: es informativo hasta que se cambie a pesos en una operación aparte. */}
-            <GrupoDenominaciones
-              titulo="Billetes USD (informativo)"
-              denominaciones={BILLETES_USD}
-              conteo={billetesUSD}
-              onChange={(d, c) => setBilletesUSD((s) => ({ ...s, [d]: c }))}
-              prefijo="US$"
-            />
+            <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+              <ColumnaDenominaciones
+                titulo="Dólares (informativo)"
+                denominaciones={BILLETES_USD}
+                conteo={billetesUSD}
+                onChange={(d, c) => setBilletesUSD((s) => ({ ...s, [d]: c }))}
+                prefijo="US$"
+                refs={refsDolares}
+              />
+              <View style={{ flex: 1 }} />
+            </View>
 
             <TextInput
               placeholder="Observaciones del corte (opcional)"
