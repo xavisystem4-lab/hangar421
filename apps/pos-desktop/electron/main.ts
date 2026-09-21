@@ -78,9 +78,25 @@ async function resolverBackend(log: (msg: string) => void): Promise<string | nul
   const guardado = Number(obtenerConfig(CLAVE_PUERTO));
   const puertoPreferido = Number.isInteger(guardado) && guardado > 0 && guardado <= 65535 ? guardado : 3000;
 
-  backendEmbebido = await iniciarBackendEmbebido(log, puertoPreferido);
-  return backendEmbebido.url;
+  // Autorreparación: un arranque fallido limpia lo que alcanzó a levantar (ver el catch de
+  // `iniciarBackendEmbebido`) y en el log de producción el segundo intento casi siempre entra —
+  // Postgres ya recuperó un cierre abrupto, el antivirus ya escaneó los binarios, el puerto ya se
+  // liberó. Se reintenta solo antes de mostrarle un error al usuario; el botón "Reintentar" de la
+  // pantalla de arranque queda para cuando ni esto alcanzó.
+  for (let intento = 1; ; intento++) {
+    try {
+      backendEmbebido = await iniciarBackendEmbebido(log, puertoPreferido);
+      return backendEmbebido.url;
+    } catch (e) {
+      if (intento >= INTENTOS_ARRANQUE) throw e;
+      const motivo = e instanceof Error ? e.message : String(e);
+      log(`Arranque ${intento}/${INTENTOS_ARRANQUE} fallido (${motivo}) — reintentando automáticamente…`);
+      await new Promise((r) => setTimeout(r, 3_000));
+    }
+  }
 }
+
+const INTENTOS_ARRANQUE = 3;
 
 function crearVentana() {
   // Tamaño inicial = el área de trabajo real de la pantalla donde corre la app (resta la barra
@@ -121,6 +137,15 @@ function crearVentana() {
 
   win.on("closed", () => {
     if (ventanaPrincipal === win) ventanaPrincipal = null;
+  });
+  // Apagar o reiniciar Windows con el POS abierto NO pasa por "before-quit": Windows mata el
+  // árbol de procesos y Postgres arranca la próxima vez en modo recuperación ("database system
+  // was not properly shut down" en el log). Se intenta el mismo apagado limpio — Windows da unos
+  // segundos antes de forzar, suficiente para un `pg_ctl stop -m fast`.
+  win.on("session-end", () => {
+    if (!backendEmbebido || apagando) return;
+    apagando = true;
+    backendEmbebido.detener().catch((e) => console.error("[main] error al detener backend en session-end:", e));
   });
   ventanaPrincipal = win;
 }

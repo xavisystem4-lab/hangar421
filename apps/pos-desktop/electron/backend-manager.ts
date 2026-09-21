@@ -442,15 +442,20 @@ function conTimeout<T>(promesa: Promise<T>, ms: number, mensaje: string): Promis
   ]);
 }
 
-/** Antes, si esta espera agotaba los 60 intentos, el único mensaje era genérico ("no respondió a
- *  tiempo") sin decir POR QUÉ cada intento fallaba — visto en producción: el backend sí llega a
- *  loguear "Nest application successfully started" y "escuchando en http://localhost:<puerto>",
- *  pero el `GET /api/v1/health` de esta misma función igual agota los 60 intentos, así que el
- *  problema está en la conexión entre este proceso (Electron) y el puerto, no en que el backend
- *  tarde en arrancar — sin el error real (¿ECONNREFUSED? ¿timeout? ¿un status distinto de 200?)
- *  cada caso de esto exige pedirle el log completo al usuario para poder avanzar. Ahora se
- *  guarda el último error visto y se incluye tanto en el log como en el mensaje final. */
-function esperarSalud(url: string, proceso: ChildProcess, log: (msg: string) => void, intentos = 60): Promise<void> {
+/** Espera máxima a que el backend responda /health. Antes eran 30s fijos, y el log de producción
+ *  mostró el patrón exacto del "a veces da error al iniciar": en el PRIMER arranque tras encender
+ *  la PC, node.exe no imprime nada durante más de 30s (ni siquiera "Starting Nest application")
+ *  porque el antivirus escanea en frío los miles de archivos de node_modules que carga; se le
+ *  mataba justo antes de llegar, y el segundo intento (archivos ya escaneados) entraba en ~11s.
+ *  Mientras el proceso siga vivo no hay motivo para rendirse pronto: si muere, `esperarSalud`
+ *  falla al instante de todos modos. */
+const ESPERA_SALUD_MS = 150_000;
+
+/** Antes, si esta espera se agotaba, el único mensaje era genérico ("no respondió a tiempo") sin
+ *  decir POR QUÉ cada intento fallaba — sin el error real (¿ECONNREFUSED? ¿timeout? ¿un status
+ *  distinto de 200?) cada caso exigía pedirle el log completo al usuario. Se guarda el último
+ *  error visto y se incluye tanto en el log como en el mensaje final. */
+function esperarSalud(url: string, proceso: ChildProcess, log: (msg: string) => void, intentos = ESPERA_SALUD_MS / 500): Promise<void> {
   return new Promise((resolve, reject) => {
     let restantes = intentos;
     let ultimoError: string | null = null;
@@ -483,8 +488,8 @@ function esperarSalud(url: string, proceso: ChildProcess, log: (msg: string) => 
       }
       if (restantes <= 0) {
         const detalle = ultimoError ?? "ningún intento llegó a dar una respuesta ni un error — muy raro";
-        log(`[backend] esperarSalud agotó los 60 intentos — último error: ${detalle}`);
-        reject(new Error(`El backend local no respondió a tiempo (30s) — último error: ${detalle}. Revisa el log en local-data/arranque.log`));
+        log(`[backend] esperarSalud agotó los ${intentos} intentos — último error: ${detalle}`);
+        reject(new Error(`El backend local no respondió a tiempo (${ESPERA_SALUD_MS / 1000}s) — último error: ${detalle}. Revisa el log en local-data/arranque.log`));
         return;
       }
       setTimeout(intentar, 500);
