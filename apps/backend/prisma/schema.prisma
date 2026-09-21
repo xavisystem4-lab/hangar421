@@ -154,6 +154,12 @@ enum EstadoTurno {
   CERRADO
 }
 
+enum EstadoSolicitudProducto {
+  PENDIENTE
+  ATENDIDA
+  DESCARTADA
+}
+
 enum TipoMovimientoCaja {
   INGRESO
   EGRESO
@@ -239,6 +245,7 @@ model Empresa {
   codigosVinculacion     CodigoVinculacion[]
   paymentRequests        PaymentRequest[]
   plataformaConfigs      PlataformaConfig[]
+  solicitudesProducto    SolicitudProducto[]
 
   @@map("empresas")
 }
@@ -279,6 +286,7 @@ model Sucursal {
   codigosVinculacion     CodigoVinculacion[]
   paymentRequests        PaymentRequest[]
   plataformaConfigs      PlataformaConfig[]
+  solicitudesProducto    SolicitudProducto[]
 
   @@index([empresaId])
   @@map("sucursales")
@@ -314,9 +322,10 @@ model Dispositivo {
   sucursal Sucursal @relation(fields: [sucursalId], references: [id])
   area     Area?    @relation(fields: [areaId], references: [id])
 
-  pedidos   Pedido[]
-  syncItems SyncQueueItem[]
-  auditLogs AuditLog[]
+  pedidos             Pedido[]
+  syncItems           SyncQueueItem[]
+  auditLogs           AuditLog[]
+  solicitudesProducto SolicitudProducto[]
 
   @@index([sucursalId])
   @@map("dispositivos")
@@ -354,6 +363,8 @@ model Usuario {
   pagosCreados              PaymentRequest[]    @relation("PaymentRequestCreadoPor")
   pushTokens                PushToken[]
   codigosVinculacionCreados CodigoVinculacion[] @relation("CodigoVinculacionCreadoPor")
+  solicitudesProducto       SolicitudProducto[] @relation("SolicitudProductoUsuario")
+  solicitudesResueltas      SolicitudProducto[] @relation("SolicitudProductoResueltaPor")
 
   @@index([empresaId])
   @@map("usuarios")
@@ -500,6 +511,7 @@ model Producto {
   modificadores ProductoModificador[]
   receta        RecetaItem[]
   pedidoItems   PedidoItem[]
+  solicitudes   SolicitudProducto[]
 
   @@index([empresaId])
   @@index([categoriaId])
@@ -1272,4 +1284,39 @@ model CodigoVinculacion {
   @@index([sucursalId])
   @@index([expiraAt])
   @@map("codigos_vinculacion")
+}
+
+/// Producto que alguien intentó vender en un punto de venta y no existe en el catálogo. Nunca
+/// se da de alta solo: la venta se detiene y queda esta solicitud para que un administrador lo
+/// registre a mano. Conserva quién, dónde, desde qué equipo y cuándo se pidió.
+model SolicitudProducto {
+  /// Generado en el cliente (uuid7), igual que las ventas: la solicitud puede nacer sin conexión
+  /// y viajar por la cola; reenviarla no la duplica.
+  id             String                  @id
+  empresaId      String
+  sucursalId     String
+  usuarioId      String?
+  dispositivoId  String?
+  /// Lo que se tecleó en el buscador, tal cual (nombre o descripción del producto).
+  texto          String
+  estado         EstadoSolicitudProducto @default(PENDIENTE)
+  /// Hora real en la terminal, no la de llegada al servidor (puede sincronizarse horas después).
+  solicitadaEn   DateTime
+  createdAt      DateTime                @default(now())
+  resueltaEn     DateTime?
+  resueltaPorId  String?
+  /// Producto con el que se atendió, si el admin lo dio de alta o ya existía con otro nombre.
+  productoId     String?
+  notaResolucion String?
+
+  empresa     Empresa      @relation(fields: [empresaId], references: [id])
+  sucursal    Sucursal     @relation(fields: [sucursalId], references: [id])
+  usuario     Usuario?     @relation("SolicitudProductoUsuario", fields: [usuarioId], references: [id])
+  dispositivo Dispositivo? @relation(fields: [dispositivoId], references: [id])
+  resueltaPor Usuario?     @relation("SolicitudProductoResueltaPor", fields: [resueltaPorId], references: [id])
+  producto    Producto?    @relation(fields: [productoId], references: [id])
+
+  @@index([empresaId, estado])
+  @@index([sucursalId])
+  @@map("solicitudes_producto")
 }

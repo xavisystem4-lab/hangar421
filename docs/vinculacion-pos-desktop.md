@@ -161,7 +161,7 @@ Requisitos del negocio que amplían este diseño, con las decisiones ya tomadas:
 | A | ✅ **Hecho** — Seguridad de `/sync/push` (empresa/sucursal del token) + usuario real en cada venta (alta de usuarios del APK en el ERP) + `turnoId` en las ventas del POS Windows |
 | B | ✅ **Hecho** — Filtros del Dashboard y pantalla de turnos y cortes |
 | C | ✅ **Hecho** — Aviso de turno abierto de un día anterior (POS Windows, APK y Dashboard) |
-| D | Solicitudes de alta de productos no registrados |
+| D | ✅ **Hecho** — Solicitudes de alta de productos no registrados |
 | E | APK vinculado a la empresa, sucursal elegida por sesión |
 | F | Ventas del POS Windows a la nube (fases 1–4 de §7) |
 
@@ -216,3 +216,19 @@ Requisitos del negocio que amplían este diseño, con las decisiones ya tomadas:
 - APK: el mismo aviso calculado desde la base local (`turnoPendienteDeDiaAnterior`), así que sale
   aunque la tablet esté sin conexión.
 - Solo avisa, nunca bloquea la venta (decisión del negocio).
+
+**Fase D, cómo quedó:**
+
+- Modelo `SolicitudProducto` (migración `20260921150000_solicitudes_producto`): texto capturado,
+  empresa, sucursal, usuario, dispositivo, `solicitadaEn` (hora real del equipo), estado
+  `PENDIENTE` | `ATENDIDA` | `DESCARTADA`, quién y cuándo la resolvió, y con qué producto.
+- Nunca se crea un producto: la venta de ese producto se detiene y solo queda la solicitud.
+- Entradas: `POST /solicitudes-producto` (POS Windows, cualquier rol, con respaldo en su outbox) y
+  `SyncEntidad.SOLICITUD_PRODUCTO` por `/sync/push` (APK, funciona sin conexión). Ambas son
+  idempotentes por id y validan el alcance como el resto de la sincronización.
+- ERP: `GET /solicitudes-producto` y `/resumen` (supervisor y admins), `PATCH /:id` para atender o
+  descartar (solo admins; un admin de sucursal solo las de su sucursal). Pantalla **Solicitudes**
+  con contador de pendientes en el menú.
+- Límite hasta la fase F: una solicitud hecha en el POS de Windows en modo standalone se guarda
+  en su backend local, no en la nube; el Dashboard en la nube no la ve hasta que exista el
+  envío hub → nube.

@@ -5,6 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import type { RolUsuario } from "@hangar421/shared";
 import { useAuthCrm } from "@/lib/authClient";
 import { useThemeStore } from "@/store/themeStore";
+import { useSucursalActiva } from "@/store/sucursalActiva";
+import { usarSolicitudesPendientes } from "@/lib/solicitudes";
 
 // `roles` refleja los mismos roles que exige el backend en cada @Roles() del controlador
 // correspondiente (sucursales/inventario/usuarios/catalogo .controller.ts) — así el menú no
@@ -18,6 +20,7 @@ const ITEMS: { href: string; label: string; icon: string; roles?: RolUsuario[] }
   { href: "/reportes", label: "Reportes", icon: "📈", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL", "SUPERVISOR"] as RolUsuario[] },
   { href: "/sucursales", label: "Sucursales", icon: "🏬", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL"] as RolUsuario[] },
   { href: "/mesas", label: "Mesas", icon: "🪑", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL"] as RolUsuario[] },
+  { href: "/solicitudes", label: "Solicitudes", icon: "📝", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL", "SUPERVISOR"] as RolUsuario[] },
   { href: "/catalogo", label: "Catálogo", icon: "☕", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL"] as RolUsuario[] },
   { href: "/inventario", label: "Inventario", icon: "📦", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL", "SUPERVISOR"] as RolUsuario[] },
   { href: "/usuarios", label: "Usuarios", icon: "👥", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL"] as RolUsuario[] },
@@ -35,6 +38,9 @@ export function Sidebar({ abierto, onCerrar }: { abierto: boolean; onCerrar: () 
   const rol = contexto?.rol as RolUsuario | undefined;
   const items = ITEMS.filter((item) => !item.roles || (rol && item.roles.includes(rol)));
   const { tema, alternar } = useThemeStore();
+  const { seleccion } = useSucursalActiva();
+  // Contador de solicitudes de producto pendientes: solo para quien ve esa pantalla.
+  const pendientes = usarSolicitudesPendientes(items.some((i) => i.href === "/solicitudes"), seleccion?.sucursalId);
 
   return (
     <aside className="h421-sidebar" data-abierto={abierto} style={{ width: 220, background: "var(--h421-navy)", color: "#fff", display: "flex", flexDirection: "column", padding: "20px 12px" }}>
@@ -52,7 +58,15 @@ export function Sidebar({ abierto, onCerrar }: { abierto: boolean; onCerrar: () 
               background: pathname === item.href ? "rgba(255,255,255,0.12)" : "transparent",
             }}>
             <span>{item.icon}</span>
-            <span>{item.label}</span>
+            <span style={{ flex: 1 }}>{item.label}</span>
+            {item.href === "/solicitudes" && pendientes > 0 && (
+              <span
+                aria-label={`${pendientes} solicitudes pendientes`}
+                style={{ background: "var(--h421-amber)", color: "var(--h421-navy)", borderRadius: 999, padding: "1px 8px", fontSize: 12, fontWeight: 800 }}
+              >
+                {pendientes}
+              </span>
+            )}
           </Link>
         ))}
       </nav>

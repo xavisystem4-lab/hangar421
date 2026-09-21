@@ -1,5 +1,7 @@
 import { useRef, useState } from "react";
-import type { Producto } from "@hangar421/shared";
+import { uuid7, type Producto } from "@hangar421/shared";
+import { apiFetch } from "../api/http";
+import { encolarSyncSiFalla } from "../sync/syncEngine";
 import { useCatalogoStore } from "../store/catalogStore";
 import { useOrderStore } from "../store/orderStore";
 import { ProductoCard } from "../components/ProductoCard";
@@ -40,6 +42,30 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
   const sugerencias = busqueda
     ? productos.filter((p) => p.nombre.toLowerCase().includes(busqueda.toLowerCase())).slice(0, 8)
     : [];
+
+  // Producto que no existe en el catálogo: la venta de ese producto se detiene. No se crea ni se
+  // vende "pendiente" — solo se deja una solicitud para que el administrador lo registre.
+  const [solicitudEnviada, setSolicitudEnviada] = useState<string | null>(null);
+  const [errorSolicitud, setErrorSolicitud] = useState<string | null>(null);
+  const sinResultados = busqueda.trim().length > 0 && sugerencias.length === 0;
+
+  async function solicitarAlta() {
+    const texto = busqueda.trim();
+    const auth = useAuthStore.getState();
+    const id = uuid7();
+    const payload = { id, sucursalId, texto, dispositivoId: auth.dispositivoId, solicitadaEn: new Date().toISOString() };
+    setErrorSolicitud(null);
+    try {
+      await encolarSyncSiFalla(
+        () => apiFetch("/solicitudes-producto", { method: "POST", body: JSON.stringify(payload) }),
+        { id, entidad: "SOLICITUD_PRODUCTO", operacion: "CREATE", entidadId: id, idempotencyKey: `${auth.dispositivoId}-SOLICITUD-${id}`, payload: { texto } },
+      );
+      setSolicitudEnviada(texto);
+      setBusqueda("");
+    } catch (e: any) {
+      setErrorSolicitud(e?.message ?? "No se pudo registrar la solicitud");
+    }
+  }
 
   function elegirSugerencia(producto: Producto) {
     seleccionarProducto(producto);
@@ -115,7 +141,7 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
             ref={inputBusquedaRef}
             placeholder="🔍 Buscar producto…"
             value={busqueda}
-            onChange={(e) => { setBusqueda(e.target.value); setSugerenciasAbiertas(true); }}
+            onChange={(e) => { setBusqueda(e.target.value); setSugerenciasAbiertas(true); setSolicitudEnviada(null); }}
             onFocus={() => setSugerenciasAbiertas(true)}
             onBlur={() => setTimeout(() => setSugerenciasAbiertas(false), 150)}
             onKeyDown={(e) => {
@@ -147,6 +173,26 @@ export function POSHome({ mesaNombre, onVentaCobrada }: { mesaNombre: string | n
               ))}
             </div>
           )}
+          {sinResultados && (
+            <div style={{ marginTop: 10, padding: "12px 14px", borderRadius: 12, border: "1px solid var(--h421-amber)", background: "var(--h421-amber-bg)", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <span style={{ flex: 1, minWidth: 220, fontSize: 14, color: "var(--h421-amber-texto)" }}>
+                «{busqueda.trim()}» no está en el catálogo, así que no se puede vender todavía.
+              </span>
+              <button
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={solicitarAlta}
+                style={{ padding: "10px 16px", borderRadius: 10, background: "var(--h421-navy)", color: "#fff", fontWeight: 700 }}
+              >
+                Solicitar alta al administrador
+              </button>
+            </div>
+          )}
+          {solicitudEnviada && (
+            <div style={{ marginTop: 10, padding: "10px 14px", borderRadius: 12, background: "var(--h421-green-bg)", color: "var(--h421-green)", fontSize: 14, fontWeight: 600 }}>
+              ✓ Solicitud enviada para «{solicitudEnviada}». Se podrá vender cuando el administrador lo registre en el catálogo.
+            </div>
+          )}
+          {errorSolicitud && <div style={{ marginTop: 10, color: "var(--h421-red-texto)", fontSize: 14 }}>{errorSolicitud}</div>}
         </div>
 
         {/* Cuadrícula de productos, agrupada por subcategoría cuando aplica. El grupo sin

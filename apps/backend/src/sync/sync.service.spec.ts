@@ -17,6 +17,7 @@ const DUENOS: Record<string, Record<string, any>> = {
   mesa: { "mesa-suc-2": { sucursalId: "suc-2" } },
   turno: { "turno-suc-2": { sucursalId: "suc-2" } },
   caja: {},
+  solicitudProducto: { "solicitud-suc-2": { sucursalId: "suc-2" } },
   insumo: { "insumo-ajeno": { empresaId: "emp-2" } },
   producto: { "producto-ajeno": { empresaId: "emp-2" } },
   usuario: { "user-1": { empresaId: "emp-1" }, "user-ajeno": { empresaId: "emp-2" } },
@@ -38,6 +39,7 @@ function crearServicio() {
     insumo: tabla("insumo"),
     producto: tabla("producto"),
     usuario: tabla("usuario"),
+    solicitudProducto: tabla("solicitudProducto"),
     usuarioSucursal: {
       findFirst: jest.fn(({ where }: any) =>
         Promise.resolve(where.usuarioId === "user-1" && where.sucursalId === "suc-1" ? { id: "acceso-1" } : null),
@@ -67,10 +69,11 @@ function crearServicio() {
   const inventario = { registrarMovimiento: jest.fn() };
   const caja = { abrirTurno: jest.fn(), cerrarTurno: jest.fn(), registrarMovimiento: jest.fn() };
   const catalogo = { fijarPrecioSucursal: jest.fn(), fijarDisponibilidad: jest.fn() };
+  const solicitudes = { crear: jest.fn(() => Promise.resolve({})) };
 
-  const service = new SyncService(prisma as any, pedidos as any, mesas as any, inventario as any, caja as any, catalogo as any);
+  const service = new SyncService(prisma as any, pedidos as any, mesas as any, inventario as any, caja as any, catalogo as any, solicitudes as any);
   const push = (items: any[], sesion: any = SESION) => service.push(items, sesion);
-  return { service, push, prisma, pedidos, mesas, inventario, caja, catalogo, registros };
+  return { service, push, prisma, pedidos, mesas, inventario, caja, catalogo, solicitudes, registros };
 }
 
 function envolverPedido(idempotencyKey: string) {
@@ -284,5 +287,30 @@ describe("SyncService.push — USUARIO dado de alta en la terminal", () => {
     const { push } = conAltas();
     const resp = await push([alta({ id: "user-ajeno" })]);
     expect(resp.resultados[0].error).toBe("El usuario indicado pertenece a otra empresa");
+  });
+});
+
+describe("SyncService.push — SOLICITUD_PRODUCTO", () => {
+  const solicitud = (extra: any = {}) => ({
+    id: "solicitud-1", entidad: SyncEntidad.SOLICITUD_PRODUCTO, operacion: SyncOperacion.CREATE,
+    idempotencyKey: `k-${Math.random()}`, dispositivoId: "tablet-1", sucursalId: "suc-1", usuarioId: "user-1",
+    createdAtLocal: "2026-09-21T15:30:00.000Z", payload: { texto: "Chai latte de avena" }, ...extra,
+  });
+
+  it("registra la solicitud con empresa del token, sucursal, usuario, equipo y la hora de la terminal", async () => {
+    const { push, solicitudes } = crearServicio();
+    const resp = await push([solicitud()]);
+    expect(resp.resultados[0].estado).toBe(SyncStatus.SYNCED);
+    expect(solicitudes.crear).toHaveBeenCalledWith({
+      id: "solicitud-1", empresaId: "emp-1", sucursalId: "suc-1", usuarioId: "user-1",
+      dispositivoHuella: "tablet-1", texto: "Chai latte de avena", solicitadaEn: new Date("2026-09-21T15:30:00.000Z"),
+    });
+  });
+
+  it("no deja reutilizar el id de una solicitud de otra sucursal", async () => {
+    const { push, solicitudes } = crearServicio();
+    const resp = await push([solicitud({ id: "solicitud-suc-2" })]);
+    expect(resp.resultados[0].error).toBe("La solicitud pertenece a otra sucursal");
+    expect(solicitudes.crear).not.toHaveBeenCalled();
   });
 });

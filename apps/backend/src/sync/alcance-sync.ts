@@ -88,6 +88,8 @@ export class AlcanceSync {
         return (await this.deOtraEmpresa("insumo", p.insumoId)) ? "El insumo pertenece a otra empresa" : null;
       case SyncEntidad.PRODUCTO_SUCURSAL:
         return (await this.deOtraEmpresa("producto", p.productoId)) ? "El producto pertenece a otra empresa" : null;
+      case SyncEntidad.SOLICITUD_PRODUCTO:
+        return (await this.deOtraSucursal("solicitudProducto", item.id, suc)) ? "La solicitud pertenece a otra sucursal" : null;
       case SyncEntidad.USUARIO:
         return (await this.usuarioDeLaEmpresa(item.id)) ? null : "El usuario indicado pertenece a otra empresa";
       default:
@@ -96,7 +98,7 @@ export class AlcanceSync {
   }
 
   /** true solo si la fila EXISTE y es de otra sucursal. */
-  private async deOtraSucursal(modelo: "pedido" | "mesa" | "turno" | "caja", id: string | undefined, sucursalId: string): Promise<boolean> {
+  private async deOtraSucursal(modelo: "pedido" | "mesa" | "turno" | "caja" | "solicitudProducto", id: string | undefined, sucursalId: string): Promise<boolean> {
     if (!id) return false;
     const fila = await (this.prisma[modelo] as any).findUnique({ where: { id }, select: { sucursalId: true } });
     return !!fila && fila.sucursalId !== sucursalId;

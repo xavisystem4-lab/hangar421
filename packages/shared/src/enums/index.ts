@@ -213,4 +213,13 @@ export enum SyncEntidad {
    *  que tiene en la terminal, para que las ventas y turnos que ya lo nombran queden atribuidos
    *  a él y no al usuario-terminal genérico. Usado por apps/pos-terminal. */
   USUARIO = "USUARIO",
+  /** Solicitud de alta de un producto que no existe en el catálogo, hecha desde un punto de
+   *  venta (posiblemente sin conexión). Nunca crea el producto: lo registra un administrador. */
+  SOLICITUD_PRODUCTO = "SOLICITUD_PRODUCTO",
+}
+
+export enum EstadoSolicitudProducto {
+  PENDIENTE = "PENDIENTE",
+  ATENDIDA = "ATENDIDA",
+  DESCARTADA = "DESCARTADA",
 }

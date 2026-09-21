@@ -20,6 +20,7 @@ import { InventarioService } from "../inventario/inventario.service";
 import { CajaService } from "../caja/caja.service";
 import { CatalogoService } from "../catalogo/catalogo.service";
 import { AlcanceSync } from "./alcance-sync";
+import { SolicitudesProductoService } from "../solicitudes-producto/solicitudes-producto.service";
 
 @Injectable()
 export class SyncService {
@@ -32,6 +33,7 @@ export class SyncService {
     private inventario: InventarioService,
     private caja: CajaService,
     private catalogo: CatalogoService,
+    private solicitudesProducto: SolicitudesProductoService,
   ) {}
 
   /** Aplica un lote de operaciones offline. Idempotente: reenviar el mismo lote
@@ -291,6 +293,19 @@ export class SyncService {
           sucursalId: item.sucursalId,
           nombre: p.nombre,
           rol: p.rol,
+        });
+        break;
+
+      // Producto que no existe en el catálogo: se registra la solicitud, nunca el producto.
+      case SyncEntidad.SOLICITUD_PRODUCTO:
+        await this.solicitudesProducto.crear({
+          id: item.id,
+          empresaId,
+          sucursalId: item.sucursalId,
+          usuarioId: item.usuarioId ?? p.usuarioId,
+          dispositivoHuella: item.dispositivoId,
+          texto: p.texto,
+          solicitadaEn: item.createdAtLocal ? new Date(item.createdAtLocal) : undefined,
         });
         break;
 

@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useCarritoStore } from "../store/carritoStore";
+import { useAuthLocalStore } from "../store/authLocalStore";
+import { solicitarAltaProducto } from "../db/solicitudesProductoRepo";
+import { sincronizarPronto } from "../sync/syncEngine";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
 import { coincideBusqueda } from "../db/busqueda";
@@ -20,6 +23,7 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
   const [productos, setProductos] = useState<ProductoLocal[]>([]);
   const [categoriaActiva, setCategoriaActiva] = useState<string | null>(null);
   const [busqueda, setBusqueda] = useState("");
+  const usuario = useAuthLocalStore((s) => s.usuario);
   const [personalizando, setPersonalizando] = useState<{ producto: ProductoLocal; modificadores: ModificadorLocal[] } | null>(null);
 
   /** Un producto compuesto (café, combo) abre el modal; el resto entra directo al carrito, que
@@ -42,6 +46,31 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
       precioUnitario: producto.precioBase,
       modificadores: [],
     });
+  }
+
+  function pedirAlta() {
+    const texto = busqueda.trim();
+    Alert.alert(
+      "Solicitar alta de producto",
+      `Se avisará al administrador para que registre "${texto}". Mientras no esté en el catálogo no se puede vender.`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Enviar solicitud",
+          onPress: async () => {
+            try {
+              const db = await abrirBaseDeDatos();
+              await solicitarAltaProducto(db, { texto, usuarioId: usuario?.id });
+              sincronizarPronto();
+              setBusqueda("");
+              Alert.alert("Solicitud enviada", "El administrador la verá en el ERP. Si no hay conexión, sale en cuanto vuelva la red.");
+            } catch (e: any) {
+              Alert.alert("No se pudo registrar la solicitud", e?.message ?? "Inténtalo de nuevo");
+            }
+          },
+        },
+      ],
+    );
   }
 
   async function cargar() {
@@ -137,6 +166,19 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
                   ? `Sin resultados para "${busqueda.trim()}"`
                   : `${productosVisibles.length} resultado${productosVisibles.length === 1 ? "" : "s"} en todo el catálogo`}
               </Text>
+            )}
+            {/* Producto que no existe: la venta de ese producto se detiene aquí. No se crea ni se
+                vende "pendiente" — solo se pide al administrador que lo dé de alta. */}
+            {buscando && productosVisibles.length === 0 && (
+              <View style={estilos.tarjetaSolicitud}>
+                <Text style={estilos.textoSolicitud}>
+                  "{busqueda.trim()}" no está en el catálogo, así que no se puede vender todavía. Puedes pedir al
+                  administrador que lo dé de alta.
+                </Text>
+                <TouchableOpacity onPress={pedirAlta} style={estilos.botonSolicitud} accessibilityLabel="Solicitar alta del producto">
+                  <Text style={estilos.botonSolicitudTexto}>Solicitar alta al administrador</Text>
+                </TouchableOpacity>
+              </View>
             )}
             <View style={estilos.grillaProductos}>
               {productosVisibles.map((p) => {
@@ -260,6 +302,10 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     botonLimpiar: { width: 36, height: 36, borderRadius: 18, backgroundColor: colores.gray50, alignItems: "center", justifyContent: "center" },
     botonLimpiarTexto: { color: colores.textoSecundario, fontSize: 15, fontWeight: "700" },
     resumenBusqueda: { color: colores.textoSecundario, fontSize: 12, paddingHorizontal: 4, paddingBottom: 10 },
+    tarjetaSolicitud: { backgroundColor: colores.superficie, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: colores.borde, marginBottom: 12 },
+    textoSolicitud: { color: colores.texto, fontSize: 14, marginBottom: 10 },
+    botonSolicitud: { backgroundColor: colores.navy, borderRadius: 10, paddingVertical: 12, alignItems: "center" },
+    botonSolicitudTexto: { color: "#fff", fontWeight: "700" },
     grillaProductos: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
     tarjetaProducto: { width: "47%", backgroundColor: colores.superficie, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: colores.borde },
     nombreProducto: { fontSize: 14, fontWeight: "700", color: colores.texto },
