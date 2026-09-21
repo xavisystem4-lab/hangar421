@@ -63,7 +63,9 @@ export class AuthController {
       // empresaId del TOKEN, nunca del cuerpo: quien genera el código no elige para qué empresa.
       empresaId: user.empresaId,
       sucursalId: dto.sucursalId,
+      sucursalesIds: dto.sucursalesIds,
       creadoPorId: user.sub,
+      creadoPorRol: user.rol,
       rol: dto.rol,
     });
   }

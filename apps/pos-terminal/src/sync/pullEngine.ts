@@ -6,6 +6,7 @@ import { obtenerSucursalErp } from "../db/dispositivoLocal";
 import { obtenerConfig, guardarConfig } from "../db/configLocalRepo";
 import { upsertCatalogo, upsertMesas, repararProductosLocalesEnOutbox } from "../db/catalogoSyncRepo";
 import { upsertInventario } from "../db/inventarioRepo";
+import { asegurarSesionEnSucursalActiva } from "./terminalErp";
 
 const CLAVE_EMPRESA_ERP = "empresa_id_erp";
 const CLAVE_CURSOR_PULL = "cursor_pull";
@@ -26,6 +27,9 @@ export async function refrescarCatalogo(): Promise<void> {
   const db = await abrirBaseDeDatos();
   const [empresaId, sucursalId, tokens] = await Promise.all([obtenerConfig(db, CLAVE_EMPRESA_ERP), obtenerSucursalErp(db), obtenerTokensErp()]);
   if (!empresaId || !sucursalId || !tokens) return;
+  // Si se cambió de sucursal sin conexión, el token sigue en la anterior y el ERP rechazaría
+  // pedir los precios de la nueva (ver terminalErp).
+  await asegurarSesionEnSucursalActiva();
 
   const [categorias, productos] = await Promise.all([
     erpFetch<any[]>(`/catalogo/categorias?empresaId=${empresaId}`),
@@ -58,6 +62,7 @@ export async function refrescarInventario(): Promise<void> {
     obtenerTokensErp(),
   ]);
   if (!empresaId || !sucursalId || !tokens) return;
+  await asegurarSesionEnSucursalActiva();
 
   const [insumos, existencias] = await Promise.all([
     erpFetch<any[]>(`/inventario/insumos?empresaId=${empresaId}`),
@@ -81,6 +86,7 @@ export async function ejecutarPull(): Promise<void> {
   const db = await abrirBaseDeDatos();
   const [sucursalId, tokens, cursor] = await Promise.all([obtenerSucursalErp(db), obtenerTokensErp(), obtenerConfig(db, CLAVE_CURSOR_PULL)]);
   if (!sucursalId || !tokens) return;
+  await asegurarSesionEnSucursalActiva();
 
   const query = cursor ? `?sucursalId=${sucursalId}&since=${encodeURIComponent(cursor)}` : `?sucursalId=${sucursalId}`;
   const resp = await erpFetch<SyncPullResponse>(`/sync/pull${query}`);

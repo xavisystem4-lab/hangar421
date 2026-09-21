@@ -6,7 +6,8 @@ function baseFalsa(usuarios: { id: string; nombre: string; rol: string; hash?: s
   const db = {
     getAllAsync: async (sql: string, ...params: any[]) => {
       if (!sql.includes("usuarios_locales")) return [];
-      const rolesPedidos = params.slice(1);
+      // Los roles son los parámetros finales de la consulta; los primeros son la sucursal.
+      const rolesPedidos = params.filter((p) => ROLES_AUTORIZAN.includes(p) || ["CAJERO", "MESERO", "COCINA"].includes(p));
       return usuarios
         .filter((u) => u.hash && rolesPedidos.includes(u.rol))
         .map((u) => ({ id: u.id, nombre: u.nombre, rol: u.rol }));

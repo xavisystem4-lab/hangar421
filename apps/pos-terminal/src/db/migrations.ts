@@ -414,6 +414,51 @@ export const MIGRACIONES: Migracion[] = [
       `);
     },
   },
+  {
+    version: 8,
+    nombre: "terminal_multisucursal",
+    up: async (db) => {
+      // Terminal vinculada a la EMPRESA (código de varias sucursales): cada persona elige al
+      // entrar entre las sucursales que tiene asignadas en el ERP. Todo se guarda local para que
+      // el login, el cambio de sucursal y los precios funcionen sin conexión.
+      //
+      //  - sucursales_terminal: en qué sucursales puede operar esta terminal (vacía = terminal de
+      //    una sola sucursal, el esquema de siempre).
+      //  - usuarios_erp: personas asignadas a esas sucursales en el ERP, para ofrecerlas en el
+      //    login aunque nunca hayan entrado en esta tablet (su primera entrada es en línea).
+      //  - usuarios_sucursales: qué sucursales y con qué rol tiene cada persona.
+      //  - precios_sucursal: precio y disponibilidad de cada producto EN CADA sucursal. La tabla
+      //    `productos` guarda un solo precio (el de la sucursal activa); al cambiar de sucursal se
+      //    reescribe desde aquí, sin red.
+      await db.execAsync(`
+        CREATE TABLE sucursales_terminal (
+          id TEXT PRIMARY KEY,
+          nombre TEXT NOT NULL
+        );
+
+        CREATE TABLE usuarios_erp (
+          id TEXT PRIMARY KEY,
+          nombre TEXT NOT NULL,
+          tiene_pin INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE usuarios_sucursales (
+          usuario_id TEXT NOT NULL,
+          sucursal_id TEXT NOT NULL,
+          rol TEXT NOT NULL,
+          PRIMARY KEY (usuario_id, sucursal_id)
+        );
+
+        CREATE TABLE precios_sucursal (
+          producto_id TEXT NOT NULL,
+          sucursal_id TEXT NOT NULL,
+          precio REAL NOT NULL,
+          disponible INTEGER NOT NULL DEFAULT 1,
+          PRIMARY KEY (producto_id, sucursal_id)
+        );
+      `);
+    },
+  },
 ];
 
 /** Corre, en orden, toda migración con `version` mayor a la ya aplicada — cada una dentro de su

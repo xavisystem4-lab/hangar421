@@ -205,6 +205,21 @@ export class AuthService {
     return this.emitirSesion(usuarioId, empresaId, nombre, [{ sucursalId, nombre: sucursal.nombre, rol }], sucursalId, rol, dispositivoId);
   }
 
+  /** Sesión para una terminal vinculada con un código de EMPRESA: acceso a varias sucursales,
+   *  activa la primera. La persona que entra elige después la suya y la terminal cambia con
+   *  `switch-sucursal`, que revalida contra los `UsuarioSucursal` del usuario-terminal. */
+  async emitirSesionParaTerminalMultisucursal(
+    usuarioId: string,
+    empresaId: string,
+    nombre: string,
+    sucursales: { id: string; nombre: string }[],
+    rol: RolUsuario,
+    dispositivoId: string,
+  ): Promise<LoginResponse> {
+    const accesos = sucursales.map((s) => ({ sucursalId: s.id, nombre: s.nombre, rol }));
+    return this.emitirSesion(usuarioId, empresaId, nombre, accesos, sucursales[0].id, rol, dispositivoId);
+  }
+
   // -- privados --------------------------------------------------------------
 
   private resolverSucursalActiva(

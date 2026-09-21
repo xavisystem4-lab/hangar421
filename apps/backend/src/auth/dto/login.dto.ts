@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString, MinLength } from "class-validator";
+import { IsArray, IsEnum, IsOptional, IsString, MinLength } from "class-validator";
 import { RolUsuario } from "@hangar421/shared";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
@@ -26,7 +26,10 @@ export class SwitchSucursalDto {
 }
 
 export class CrearCodigoVinculacionDto {
-  @ApiProperty() @IsString() sucursalId!: string;
+  /** Código de UNA sucursal. Omitido = código de empresa (ver `sucursalesIds`). */
+  @ApiPropertyOptional() @IsOptional() @IsString() sucursalId?: string;
+  /** Código de empresa: sucursales a las que tendrá acceso la terminal. Vacío = todas. */
+  @ApiPropertyOptional({ type: [String] }) @IsOptional() @IsArray() @IsString({ each: true }) sucursalesIds?: string[];
   /** Rol con el que operará la terminal. Se omite normalmente: CAJERO es el default. */
   @ApiPropertyOptional({ enum: RolUsuario }) @IsOptional() @IsEnum(RolUsuario) rol?: RolUsuario;
 }

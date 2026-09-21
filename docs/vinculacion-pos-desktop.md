@@ -1,6 +1,7 @@
 # Vinculación del POS de Windows con el ERP en la nube — diseño
 
-> Estado: **diseño aprobado en lo general, pendiente de resolver §8 antes de implementar**.
+> Estado: **fases A–E de §9 implementadas**; queda la F (ventas del POS de Windows a la nube,
+> §1–§7). Las decisiones de §9 resuelven las preguntas 1 y 5 de §8.
 > Complementa `architecture.md`, `sync-flows.md` y `multisucursal-pos-terminal.md`.
 
 ## 1. Objetivo
@@ -162,7 +163,7 @@ Requisitos del negocio que amplían este diseño, con las decisiones ya tomadas:
 | B | ✅ **Hecho** — Filtros del Dashboard y pantalla de turnos y cortes |
 | C | ✅ **Hecho** — Aviso de turno abierto de un día anterior (POS Windows, APK y Dashboard) |
 | D | ✅ **Hecho** — Solicitudes de alta de productos no registrados |
-| E | APK vinculado a la empresa, sucursal elegida por sesión |
+| E | ✅ **Hecho** — APK vinculado a la empresa, sucursal elegida por sesión |
 | F | Ventas del POS Windows a la nube (fases 1–4 de §7) |
 
 **Fase A, cómo quedó:**
@@ -229,6 +230,36 @@ Requisitos del negocio que amplían este diseño, con las decisiones ya tomadas:
 - ERP: `GET /solicitudes-producto` y `/resumen` (supervisor y admins), `PATCH /:id` para atender o
   descartar (solo admins; un admin de sucursal solo las de su sucursal). Pantalla **Solicitudes**
   con contador de pendientes en el menú.
-- Límite hasta la fase F: una solicitud hecha en el POS de Windows en modo standalone se guarda
+- Límite hasta la fase F (ver abajo): una solicitud hecha en el POS de Windows en modo standalone se guarda
   en su backend local, no en la nube; el Dashboard en la nube no la ve hasta que exista el
   envío hub → nube.
+
+**Fase E, cómo quedó** (decisiones: la primera entrada de alguien que no se dio de alta en esa
+tablet es en línea; se puede cambiar de sucursal sin conexión):
+
+- **Código de empresa.** `CodigoVinculacion.sucursalId` pasa a ser opcional y gana
+  `sucursalesIds` (migración `20260921180000_codigo_vinculacion_empresa`). Sin `sucursalId` es un
+  código de empresa: `sucursalesIds` o, vacío, todas las sucursales activas. Solo
+  `ADMIN_CORPORATIVO` puede emitirlo. Los códigos por sucursal no cambian.
+- **Canje.** Crea (o reutiliza) un usuario-terminal por dispositivo, `terminal.disp.<huella>`, con
+  un `UsuarioSucursal` por cada sucursal del código; al relinkear, las que ya no están quedan
+  inactivas. La sesión lleva todas como accesos y la primera como activa. El conjunto es una foto
+  al canjear: una sucursal creada después requiere un código nuevo.
+- **Endpoints de la terminal** (`/auth/terminal/*`, acotados a las sucursales de la sesión):
+  `contexto` (sucursales + personas asignadas, sin material de PIN), `verificar-pin` (primera
+  entrada: valida contra el `pinHash` del ERP sin emitir sesión para la persona; 10/min) y
+  `precios` (precio y disponibilidad de cada producto en cada sucursal).
+- **APK** (migración local 8: `sucursales_terminal`, `usuarios_erp`, `usuarios_sucursales`,
+  `precios_sucursal`). Tras el PIN, quien tiene varias sucursales elige una; con una sola no se
+  pregunta. Cambiar de sucursal reescribe precio y disponibilidad desde `precios_sucursal` sin
+  red, y la sesión de la terminal con el ERP se mueve con `switch-sucursal` cuando hay red, antes
+  de pedir catálogo, inventario, mesas o el latido. Las ventas no dependen de eso: cada una viaja
+  con la sucursal en que se hizo y AlcanceSync la valida contra las sucursales de la terminal.
+- Desde la cabecera, "Trabajar en otra de mis sucursales" solo ofrece las asignadas y exige que no
+  haya una venta en curso (se cotizó con los precios de la sucursal anterior).
+- Autorizadores y "usuarios de la sucursal" incluyen a quien tiene esa sucursal asignada en el
+  ERP, con el rol que tiene ahí.
+- Solo una terminal enlazada con código de empresa guarda contexto multisucursal
+  (`alcance_terminal = EMPRESA`); las demás funcionan exactamente como antes.
+- Pendiente de la fase A que aquí importa: un usuario creado en una tablet no tiene PIN en el ERP,
+  así que para entrar en otra tablet un admin debe asignárselo desde el ERP.

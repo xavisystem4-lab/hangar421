@@ -1267,7 +1267,12 @@ model CodigoVinculacion {
   /// Legible por una persona, en mayúsculas, sin caracteres ambiguos (ver generarCodigo()).
   codigo        String     @unique
   empresaId     String
-  sucursalId    String
+  /// Código de UNA sucursal (el esquema original). Vacío = código de empresa: la terminal opera
+  /// en varias sucursales y cada persona elige la suya al entrar (ver `sucursalesIds`).
+  sucursalId    String?
+  /// Solo en un código de empresa: sucursales a las que tendrá acceso la terminal. Vacío =
+  /// todas las sucursales activas de la empresa al momento de canjearlo.
+  sucursalesIds String[]   @default([])
   creadoPorId   String
   /// Rol con el que operará la terminal. CAJERO por defecto — una terminal nunca necesita más.
   rol           RolUsuario @default(CAJERO)
@@ -1277,8 +1282,8 @@ model CodigoVinculacion {
   dispositivoId String?
   createdAt     DateTime   @default(now())
 
-  empresa   Empresa  @relation(fields: [empresaId], references: [id])
-  sucursal  Sucursal @relation(fields: [sucursalId], references: [id])
+  empresa   Empresa   @relation(fields: [empresaId], references: [id])
+  sucursal  Sucursal? @relation(fields: [sucursalId], references: [id])
   creadoPor Usuario  @relation("CodigoVinculacionCreadoPor", fields: [creadoPorId], references: [id])
 
   @@index([sucursalId])

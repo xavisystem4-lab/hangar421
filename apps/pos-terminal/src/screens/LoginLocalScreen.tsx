@@ -5,13 +5,14 @@ import { useAuthLocalStore } from "../store/authLocalStore";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
 import { crearUsuarioLocal } from "../db/usuariosLocalesRepo";
+import { SelectorSucursal } from "../components/SelectorSucursal";
 
 /** Login 100% offline — el PIN se valida contra pin_cache (ver authLocalStore), nunca contra la
  *  red. Si no hay ningún usuario local todavía (primera vez, o recién instalada), se ofrece un
  *  alta rápida — el equivalente Fase-1 del paso real de "adoptar dispositivo" en línea (Fase
  *  2b), documentado como tal en usuariosLocalesRepo.crearUsuarioLocal(). */
 export function LoginLocalScreen() {
-  const { usuariosDisponibles, cargando, error, cargarUsuarios, entrar } = useAuthLocalStore();
+  const { usuariosDisponibles, cargando, error, cargarUsuarios, entrar, eligiendoSucursal, elegirSucursal, salir } = useAuthLocalStore();
   const colores = usarColores();
   const estilos = crearEstilos(colores);
   const [seleccionado, setSeleccionado] = useState<string | null>(null);
@@ -56,6 +57,20 @@ export function LoginLocalScreen() {
     }
   }
 
+  // Terminal multisucursal: el PIN ya se validó y la persona tiene varias sucursales asignadas.
+  if (eligiendoSucursal) {
+    return (
+      <ScrollView style={estilos.contenedor} contentContainerStyle={{ padding: 20, justifyContent: "center", flexGrow: 1 }}>
+        <SelectorSucursal
+          titulo={`Hola, ${eligiendoSucursal.usuario.nombre}. ¿En qué sucursal vas a trabajar?`}
+          opciones={eligiendoSucursal.opciones}
+          onElegir={(s) => { elegirSucursal(s); setPin(""); }}
+          onCancelar={() => { salir(); setPin(""); }}
+        />
+      </ScrollView>
+    );
+  }
+
   if (cargando) {
     return (
       <View style={estilos.contenedor}>
@@ -80,6 +95,11 @@ export function LoginLocalScreen() {
               <TouchableOpacity key={u.id} onPress={() => setSeleccionado(u.id)} style={[estilos.usuario, seleccionado === u.id && estilos.usuarioActivo]}>
                 <Text style={[estilos.usuarioNombre, seleccionado === u.id && estilos.usuarioNombreActivo]}>{u.nombre}</Text>
                 <Text style={[estilos.usuarioRol, seleccionado === u.id && estilos.usuarioNombreActivo]}>{u.rol}</Text>
+                {/* Asignado en el ERP pero nunca entró en esta tablet: su primera entrada valida
+                    el PIN en línea (ver authLocalStore.entrar). */}
+                {u.requiereConexion && (
+                  <Text style={[estilos.usuarioRol, seleccionado === u.id && estilos.usuarioNombreActivo]}>1.ª vez · en línea</Text>
+                )}
               </TouchableOpacity>
             ))}
           </View>

@@ -4,6 +4,7 @@ import { pendientesParaDrenar, marcarSincronizado, marcarError, contarPendientes
 import { erpFetch, obtenerTokensErp } from "../api/erpHttp";
 import { useSyncStatusStore } from "../store/syncStatusStore";
 import { refrescarCatalogo, refrescarInventario, ejecutarPull } from "./pullEngine";
+import { asegurarSesionEnSucursalActiva, refrescarTerminalMultisucursal } from "./terminalErp";
 import { obtenerOCrearDispositivoId, obtenerSucursalErp } from "../db/dispositivoLocal";
 import { encolarUsuariosSinRegistrarEnErp, mapaUsuariosErp, marcarRegistradoEnErp } from "../db/usuariosLocalesRepo";
 
@@ -24,6 +25,8 @@ let intervaloCatalogo: ReturnType<typeof setInterval> | null = null;
 /** Refresco del catálogo, siempre best-effort: un fallo aquí no debe tocar el indicador de sync
  *  ni, mucho menos, la pantalla de venta (ver el comentario de cabecera de erpHttp.ts). */
 async function refrescarCatalogoEnSegundoPlano(): Promise<void> {
+  // Terminal multisucursal: sucursales, personas asignadas y precios de todas (no-op si no lo es).
+  await refrescarTerminalMultisucursal().catch(() => undefined);
   await refrescarCatalogo().catch(() => undefined);
   await refrescarInventario().catch(() => undefined);
   await ejecutarPull().catch(() => undefined);
@@ -115,6 +118,8 @@ export async function procesarCola(ignorarBackoff = false): Promise<void> {
     // terminal al día se vería "Sincronizado" para siempre aunque llevara horas sin red, y el
     // ERP la vería desconectada aunque estuviera funcionando. El latido resuelve las dos caras.
     try {
+      // El latido nombra la sucursal activa: si se cambió sin conexión, el token debe seguirla.
+      await asegurarSesionEnSucursalActiva().catch(() => undefined);
       const [dispositivoId, sucursalId] = await Promise.all([
         obtenerOCrearDispositivoId(db),
         obtenerSucursalErp(db),

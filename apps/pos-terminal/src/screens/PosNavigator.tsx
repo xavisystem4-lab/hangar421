@@ -12,6 +12,8 @@ import { turnoPendienteDeDiaAnterior, type TurnoPendiente } from "../db/turnosRe
 import { useBotonAtras } from "../hooks/useBotonAtras";
 import { ModalRenombrarSucursal } from "../components/ModalRenombrarSucursal";
 import { ModalAutorizacion } from "../components/ModalAutorizacion";
+import { SelectorSucursal } from "../components/SelectorSucursal";
+import { useCarritoStore } from "../store/carritoStore";
 import { PosVentaScreen } from "./PosVentaScreen";
 import { PosCobroScreen } from "./PosCobroScreen";
 import { PosCajaScreen } from "./PosCajaScreen";
@@ -43,7 +45,8 @@ const ETIQUETA_SYNC: Record<EstadoSync, string> = {
 };
 
 export function PosNavigator() {
-  const { usuario, salir } = useAuthLocalStore();
+  const { usuario, salir, misSucursales, elegirSucursal } = useAuthLocalStore();
+  const carritoConProductos = useCarritoStore((s) => s.items.length > 0);
   const sync = useSyncStatusStore();
   const colores = usarColores();
   const estilos = crearEstilos(colores);
@@ -57,6 +60,11 @@ export function PosNavigator() {
   const [reciboPendiente, setReciboPendiente] = useState<string | null>(null);
   const [sucursalActiva, setSucursalActiva] = useState<string | null>(null);
   const [renombrando, setRenombrando] = useState(false);
+  // Terminal multisucursal: elegir otra de las sucursales asignadas a quien tiene la sesión.
+  const [eligiendoSucursal, setEligiendoSucursal] = useState(false);
+  // Cambia con cada cambio de sucursal: remonta la venta (catálogo con los precios de la nueva)
+  // y vuelve a revisar el aviso de turno pendiente, que es por sucursal.
+  const [versionSucursal, setVersionSucursal] = useState(0);
   // Qué acción sensible está esperando el PIN de un gerente: cambiar de sucursal o renombrarla.
   // Ambas afectan a dónde acaban las ventas o a cómo se identifica la sucursal en el ERP.
   const [autorizando, setAutorizando] = useState<"cambiar" | "renombrar" | null>(null);
@@ -70,7 +78,7 @@ export function PosNavigator() {
       .then(obtenerNombreSucursal)
       .then(setSucursalActiva)
       .catch(() => undefined);
-  }, [mostrarConexion]);
+  }, [mostrarConexion, versionSucursal]);
 
   /**
    * Aviso de turno sin cerrar desde un día anterior (solo avisa, no bloquea). Se revisa al
@@ -90,7 +98,7 @@ export function PosNavigator() {
     revisar();
     const intervalo = setInterval(revisar, 10 * 60_000);
     return () => clearInterval(intervalo);
-  }, [pantalla, mostrarConexion]);
+  }, [pantalla, mostrarConexion, versionSucursal]);
 
   /**
    * Botón atrás de Android: un paso atrás de verdad, en vez de cerrar la app.
@@ -103,6 +111,7 @@ export function PosNavigator() {
   useBotonAtras(() => {
     if (autorizando) { setAutorizando(null); return true; }
     if (renombrando) { setRenombrando(false); return true; }
+    if (eligiendoSucursal) { setEligiendoSucursal(false); return true; }
     if (mostrarConexion) { setMostrarConexion(false); return true; }
     if (reciboPendiente) { setReciboPendiente(null); return true; }
 
@@ -114,7 +123,7 @@ export function PosNavigator() {
       { text: "Salir", style: "destructive", onPress: () => BackHandler.exitApp() },
     ]);
     return true;
-  }, [autorizando, renombrando, mostrarConexion, reciboPendiente, pantalla, pantallaAdmin]);
+  }, [autorizando, renombrando, eligiendoSucursal, mostrarConexion, reciboPendiente, pantalla, pantallaAdmin]);
 
   /** Tocar la sucursal ya no lleva directo a Conexión: desde aquí se puede tanto cambiar de
    *  sucursal como corregir su nombre, que son las dos cosas que se buscan en ese sitio. */
@@ -125,6 +134,9 @@ export function PosNavigator() {
       "¿Qué quieres hacer con esta sucursal?",
       [
         { text: "Cancelar", style: "cancel" },
+        // Solo si esta persona tiene varias sucursales en esta terminal. No pide PIN de gerente:
+        // únicamente ofrece las sucursales que el ERP ya le asignó.
+        ...(misSucursales.length > 1 ? [{ text: "Trabajar en otra de mis sucursales", onPress: () => setEligiendoSucursal(true) }] : []),
         { text: "Cambiar nombre", onPress: () => setAutorizando("renombrar") },
         { text: "Cambiar de sucursal", onPress: () => setAutorizando("cambiar") },
       ],
@@ -193,6 +205,32 @@ export function PosNavigator() {
     const db = await abrirBaseDeDatos();
     const pendientes = await listarTicketsPendientes(db);
     if (pendientes.some((p) => p.id === ventaId)) setReciboPendiente(ventaId);
+  }
+
+  async function cambiarAMiSucursal(sucursal: { id: string; nombre: string }) {
+    // Los productos del carrito se cotizaron con los precios de la sucursal actual.
+    if (carritoConProductos) {
+      Alert.alert("Hay una venta en curso", "Cobra o vacía la venta actual antes de cambiar de sucursal.");
+      return;
+    }
+    await elegirSucursal(sucursal);
+    setEligiendoSucursal(false);
+    setPantalla("venta");
+    setVersionSucursal((v) => v + 1);
+  }
+
+  if (eligiendoSucursal) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colores.fondo, justifyContent: "center", padding: 20 }}>
+        <SelectorSucursal
+          titulo="¿En qué sucursal vas a trabajar?"
+          opciones={misSucursales}
+          actual={misSucursales.find((s) => s.nombre === sucursalActiva)?.id}
+          onElegir={cambiarAMiSucursal}
+          onCancelar={() => setEligiendoSucursal(false)}
+        />
+      </View>
+    );
   }
 
   if (mostrarConexion) {
@@ -264,7 +302,7 @@ export function PosNavigator() {
       )}
 
       <View style={{ flex: 1 }}>
-        {pantalla === "venta" && <PosVentaScreen onCobrar={() => setPantalla("cobro")} />}
+        {pantalla === "venta" && <PosVentaScreen key={versionSucursal} onCobrar={() => setPantalla("cobro")} />}
         {pantalla === "cobro" && <PosCobroScreen onCerrar={() => setPantalla("venta")} onCobrado={cobroConfirmado} />}
         {pantalla === "caja" && <PosCajaScreen />}
         {pantalla === "consultar" && <PosConsultarVentasScreen onCerrar={() => setPantalla("venta")} />}

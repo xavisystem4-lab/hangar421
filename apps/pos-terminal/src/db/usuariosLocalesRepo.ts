@@ -83,6 +83,14 @@ export async function encolarUsuariosSinRegistrarEnErp(db: SQLiteDatabase): Prom
   return faltantes.length;
 }
 
+/** Un usuario local por id, sin acotar a la sucursal activa: al entrar en una terminal
+ *  multisucursal la sucursal todavía no está elegida. */
+export async function obtenerUsuarioLocal(db: SQLiteDatabase, id: string): Promise<UsuarioLocal | null> {
+  const f = await db.getFirstAsync<any>("SELECT * FROM usuarios_locales WHERE id = ? AND activo = 1", id);
+  if (!f) return null;
+  return { id: f.id, nombre: f.nombre, rol: f.rol, erpUsuarioId: f.erp_usuario_id, activo: !!f.activo, ultimaVerificacionOnline: f.ultima_verificacion_online };
+}
+
 /** Lo llama el motor de sincronización cuando el ERP confirma el alta (SyncEntidad.USUARIO). */
 export async function marcarRegistradoEnErp(db: SQLiteDatabase, usuarioLocalId: string, erpUsuarioId: string): Promise<void> {
   await db.runAsync("UPDATE usuarios_locales SET erp_usuario_id = ? WHERE id = ?", erpUsuarioId, usuarioLocalId);
@@ -93,9 +101,13 @@ export async function marcarRegistradoEnErp(db: SQLiteDatabase, usuarioLocalId: 
  *  dispositivo. Es también la lista que alimenta la pantalla de login local. */
 export async function listarUsuariosLocales(db: SQLiteDatabase): Promise<UsuarioLocal[]> {
   const sucursalId = await obtenerOCrearSucursalIdLocal(db);
+  // Terminal multisucursal: también cuenta quien tiene ESTA sucursal asignada en el ERP aunque
+  // su alta en la tablet haya sido en otra (ver multisucursalRepo).
   const filas = await db.getAllAsync<any>(
-    "SELECT * FROM usuarios_locales WHERE sucursal_id = ? AND activo = 1 ORDER BY nombre",
-    sucursalId,
+    `SELECT * FROM usuarios_locales
+      WHERE activo = 1 AND (sucursal_id = ? OR id IN (SELECT usuario_id FROM usuarios_sucursales WHERE sucursal_id = ?))
+      ORDER BY nombre`,
+    sucursalId, sucursalId,
   );
   return filas.map((f) => ({
     id: f.id,

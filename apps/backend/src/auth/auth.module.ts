@@ -5,11 +5,13 @@ import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { JwtStrategy } from "./jwt.strategy";
 import { VinculacionService } from "./vinculacion.service";
+import { TerminalController } from "./terminal.controller";
+import { TerminalService } from "./terminal.service";
 
 @Module({
   imports: [PassportModule, JwtModule.register({})],
-  controllers: [AuthController],
-  providers: [AuthService, VinculacionService, JwtStrategy],
+  controllers: [AuthController, TerminalController],
+  providers: [AuthService, VinculacionService, TerminalService, JwtStrategy],
   exports: [AuthService, VinculacionService],
 })
 export class AuthModule {}

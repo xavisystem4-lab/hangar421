@@ -6,6 +6,8 @@ import { decodificarJwt } from "../auth/jwt";
 import { abrirBaseDeDatos } from "../db/database";
 import { guardarSucursalErp, guardarEmpresaErp, obtenerOCrearDispositivoId } from "../db/dispositivoLocal";
 import { refrescarCatalogo, ejecutarPull } from "../sync/pullEngine";
+import { refrescarTerminalMultisucursal } from "../sync/terminalErp";
+import { guardarAlcanceTerminal } from "../db/multisucursalRepo";
 import { obtenerDatosFiscales } from "../db/configFiscalRepo";
 import { contarPendientes } from "../db/outboxRepo";
 import { usarColores } from "../store/temaStore";
@@ -59,11 +61,16 @@ export function ConexionErpScreen({ onConectado, onCerrar }: { onConectado: () =
     obtenerErpBaseUrl().then(setServidorErp);
   }, []);
 
-  async function finalizarConexion(sucursalId: string, empresaId: string, nombre?: string) {
+  /** `alcance`: EMPRESA solo con un código de varias sucursales (la terminal queda
+   *  multisucursal y cada persona elige su sucursal al entrar); todo lo demás —código de una
+   *  sucursal o correo de administrador— deja la terminal en una sola sucursal, como siempre. */
+  async function finalizarConexion(sucursalId: string, empresaId: string, nombre?: string, alcance: "SUCURSAL" | "EMPRESA" = "SUCURSAL") {
     const db = await abrirBaseDeDatos();
     // Repunta a esta sucursal lo que se haya registrado antes de enlazar (ver dispositivoLocal).
     await guardarSucursalErp(db, sucursalId, nombre);
     await guardarEmpresaErp(db, empresaId);
+    await guardarAlcanceTerminal(db, alcance);
+    await refrescarTerminalMultisucursal().catch(() => undefined);
     await refrescarCatalogo().catch(() => undefined); // best-effort, no bloquea la conexión
     await ejecutarPull().catch(() => undefined);
     onConectado();
@@ -132,7 +139,7 @@ export function ConexionErpScreen({ onConectado, onCerrar }: { onConectado: () =
     try {
       const dispositivoId = await obtenerOCrearDispositivoId(db);
       const datosFiscales = await obtenerDatosFiscales(db);
-      const resp = await erpFetch<{ sucursalId: string; sucursal: string; empresaId: string; accessToken: string; refreshToken: string }>(
+      const resp = await erpFetch<{ sucursalId: string; sucursal: string; empresaId: string; accessToken: string; refreshToken: string; alcance?: "SUCURSAL" | "EMPRESA" }>(
         "/auth/vincular-dispositivo",
         {
           method: "POST",
@@ -144,7 +151,7 @@ export function ConexionErpScreen({ onConectado, onCerrar }: { onConectado: () =
         },
       );
       await guardarTokensErp(resp.accessToken, resp.refreshToken);
-      await finalizarConexion(resp.sucursalId, resp.empresaId, resp.sucursal);
+      await finalizarConexion(resp.sucursalId, resp.empresaId, resp.sucursal, resp.alcance ?? "SUCURSAL");
     } catch (e: any) {
       setError(describirError(e, "No se pudo enlazar la terminal"));
     } finally {

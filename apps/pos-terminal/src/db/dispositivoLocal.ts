@@ -70,6 +70,16 @@ export async function guardarSucursalErp(db: SQLiteDatabase, sucursalId: string,
   });
 }
 
+/** Cambio de sucursal en una terminal multisucursal: solo mueve el marcador (y el nombre de la
+ *  cabecera). A diferencia de guardarSucursalErp NO repunta ninguna fila: lo registrado en la
+ *  sucursal anterior es de esa sucursal y así debe quedar en el historial. */
+export async function cambiarSucursalActiva(db: SQLiteDatabase, sucursalId: string, nombre: string): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    await guardarConfig(db, CLAVE_SUCURSAL_ERP, sucursalId);
+    await guardarConfig(db, CLAVE_SUCURSAL_NOMBRE, nombre);
+  });
+}
+
 export async function obtenerSucursalErp(db: SQLiteDatabase): Promise<string | null> {
   return obtenerConfig(db, CLAVE_SUCURSAL_ERP);
 }

@@ -34,12 +34,16 @@ export interface ResultadoAutorizacion {
  */
 export async function listarAutorizadores(db: SQLiteDatabase): Promise<Autorizador[]> {
   const sucursalId = await obtenerOCrearSucursalIdLocal(db);
+  // En una terminal multisucursal también autoriza quien tiene ESTA sucursal asignada en el ERP,
+  // con el rol que tiene aquí (puede ser supervisor en una sucursal y cajero en otra).
   const filas = await db.getAllAsync<any>(
-    `SELECT u.id, u.nombre, u.rol
+    `SELECT u.id, u.nombre, COALESCE(us.rol, u.rol) AS rol
      FROM usuarios_locales u JOIN pin_cache p ON p.usuario_local_id = u.id
-     WHERE u.sucursal_id = ? AND u.activo = 1 AND u.rol IN (${ROLES_AUTORIZAN.map(() => "?").join(",")})
+     LEFT JOIN usuarios_sucursales us ON us.usuario_id = u.id AND us.sucursal_id = ?
+     WHERE u.activo = 1 AND (u.sucursal_id = ? OR us.usuario_id IS NOT NULL)
+       AND COALESCE(us.rol, u.rol) IN (${ROLES_AUTORIZAN.map(() => "?").join(",")})
      ORDER BY u.nombre`,
-    sucursalId, ...ROLES_AUTORIZAN,
+    sucursalId, sucursalId, ...ROLES_AUTORIZAN,
   );
   return filas.map((f) => ({ id: f.id, nombre: f.nombre, rol: f.rol }));
 }

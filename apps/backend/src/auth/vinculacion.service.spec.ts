@@ -199,3 +199,76 @@ describe("VinculacionService.vincular", () => {
     await expect(servicio.vincular({ codigo, dispositivoId: "disp-1" })).resolves.toBeDefined();
   });
 });
+
+describe("VinculacionService — código de EMPRESA (varias sucursales)", () => {
+  const SUCURSALES = [
+    { id: "suc-bj", nombre: "Benito Juárez" },
+    { id: "suc-mec", nombre: "Mecánicos" },
+  ];
+
+  function crearPrismaEmpresa() {
+    const { prisma, estado } = crearPrisma();
+    prisma.sucursal.findMany = jest.fn(async ({ where }: any) =>
+      SUCURSALES.filter((s) => !where.id?.in || where.id.in.includes(s.id)),
+    );
+    prisma.usuarioSucursal.updateMany = jest.fn(async () => ({ count: 0 }));
+    return { prisma, estado };
+  }
+  const authMulti: any = {
+    ...auth,
+    emitirSesionParaTerminalMultisucursal: jest.fn(async () => ({ accessToken: "acc-multi", refreshToken: "ref-multi" })),
+  };
+
+  it("solo un ADMIN_CORPORATIVO puede emitirlo", async () => {
+    const { prisma } = crearPrismaEmpresa();
+    const servicio = new VinculacionService(prisma, authMulti);
+    await expect(
+      servicio.crear({ empresaId: "emp-1", creadoPorId: "admin-1", creadoPorRol: RolUsuario.ADMIN_SUCURSAL }),
+    ).rejects.toThrow(/administrador corporativo/);
+  });
+
+  it("rechaza una lista con sucursales que no son de la empresa", async () => {
+    const { prisma } = crearPrismaEmpresa();
+    const servicio = new VinculacionService(prisma, authMulti);
+    await expect(
+      servicio.crear({ empresaId: "emp-1", sucursalesIds: ["suc-mec", "suc-ajena"], creadoPorId: "admin-1", creadoPorRol: RolUsuario.ADMIN_CORPORATIVO }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("guarda el código sin sucursal y con la lista elegida", async () => {
+    const { prisma, estado } = crearPrismaEmpresa();
+    const servicio = new VinculacionService(prisma, authMulti);
+    const r = await servicio.crear({ empresaId: "emp-1", sucursalesIds: ["suc-mec"], creadoPorId: "admin-1", creadoPorRol: RolUsuario.ADMIN_CORPORATIVO });
+    expect(estado.codigo.sucursalId).toBeNull();
+    expect(estado.codigo.sucursalesIds).toEqual(["suc-mec"]);
+    expect(r.sucursal).toBe("Mecánicos");
+  });
+
+  it("al canjearlo, la terminal queda con acceso a todas sus sucursales y un usuario-terminal propio", async () => {
+    const { prisma, estado } = crearPrismaEmpresa();
+    const servicio = new VinculacionService(prisma, authMulti);
+    const { codigo } = await servicio.crear({ empresaId: "emp-1", creadoPorId: "admin-1", creadoPorRol: RolUsuario.ADMIN_CORPORATIVO });
+    estado.codigo = { ...estado.codigo, id: "cod-1", usadoAt: null, sucursal: null };
+
+    const r = await servicio.vincular({ codigo, dispositivoId: "tablet-7" });
+
+    expect(r.alcance).toBe("EMPRESA");
+    expect(r.sucursales.map((s: any) => s.id)).toEqual(["suc-bj", "suc-mec"]);
+    expect(estado.usuarioCreado.username).toBe("terminal.disp.tablet-7");
+    expect(estado.usuarioCreado.pinHash).toBeUndefined();
+    const accesos = prisma.usuarioSucursal.upsert.mock.calls.map((c: any[]) => c[0].create.sucursalId);
+    expect(accesos).toEqual(["suc-bj", "suc-mec"]);
+    expect(authMulti.emitirSesionParaTerminalMultisucursal).toHaveBeenCalled();
+  });
+
+  it("relinkear con otro código desactiva las sucursales que ya no están", async () => {
+    const { prisma, estado } = crearPrismaEmpresa();
+    const servicio = new VinculacionService(prisma, authMulti);
+    const { codigo } = await servicio.crear({ empresaId: "emp-1", sucursalesIds: ["suc-mec"], creadoPorId: "admin-1", creadoPorRol: RolUsuario.ADMIN_CORPORATIVO });
+    estado.codigo = { ...estado.codigo, id: "cod-1", usadoAt: null, sucursal: null };
+    await servicio.vincular({ codigo, dispositivoId: "tablet-7" });
+    expect(prisma.usuarioSucursal.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ sucursalId: { notIn: ["suc-mec"] } }), data: { activo: false } }),
+    );
+  });
+});

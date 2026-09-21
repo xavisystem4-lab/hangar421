@@ -22,6 +22,10 @@ interface Dispositivo {
   ultimaConexion?: string | null;
 }
 
+/** Marca del código de empresa en el estado `codigo` (que por lo demás guarda el id de la
+ *  sucursal cuyo código se está mostrando). */
+const CODIGO_EMPRESA = "__empresa__";
+
 export default function SucursalesPage() {
   const { contexto } = useAuthCrm();
   const refrescarOpciones = useSucursalActiva((s) => s.refrescarOpciones);
@@ -39,9 +43,26 @@ export default function SucursalesPage() {
   // Código de vinculación de terminales (APK Punto de Venta): se genera aquí y se le dicta al
   // cajero, que lo teclea una vez en la app. Así la terminal queda enlazada sin que nadie
   // escriba una contraseña en el dispositivo.
-  const [codigo, setCodigo] = useState<{ sucursalId: string; codigo: string; expiraAt: string } | null>(null);
+  const [codigo, setCodigo] = useState<{ sucursalId: string; codigo: string; expiraAt: string; descripcion?: string } | null>(null);
   const [generando, setGenerando] = useState<string | null>(null);
   const [errorCodigo, setErrorCodigo] = useState<string | null>(null);
+  const [sucursalesTerminal, setSucursalesTerminal] = useState<string[]>([]);
+
+  async function generarCodigoEmpresa() {
+    setErrorCodigo(null);
+    setGenerando(CODIGO_EMPRESA);
+    try {
+      const r = await apiFetch<{ codigo: string; expiraAt: string; sucursal: string }>("/auth/codigos-vinculacion", {
+        method: "POST",
+        body: JSON.stringify({ sucursalesIds: sucursalesTerminal }),
+      });
+      setCodigo({ sucursalId: CODIGO_EMPRESA, codigo: r.codigo, expiraAt: r.expiraAt, descripcion: r.sucursal });
+    } catch (e: any) {
+      setErrorCodigo(e?.message ?? "No se pudo generar el código");
+    } finally {
+      setGenerando(null);
+    }
+  }
 
   async function generarCodigo(sucursalId: string) {
     setErrorCodigo(null);
@@ -230,6 +251,57 @@ export default function SucursalesPage() {
       </div>
 
       {errorCodigo && <p style={{ color: "var(--h421-red)", marginTop: 12 }}>{errorCodigo}</p>}
+
+      {/* Terminal de EMPRESA: una tablet que opera en varias sucursales. Cada persona elige la
+          suya al entrar con su PIN, entre las que tiene asignadas en Usuarios. Solo el admin
+          corporativo: da acceso a más de una sucursal (el backend lo exige igual). */}
+      {contexto?.rol === "ADMIN_CORPORATIVO" && (
+        <div className="card" style={{ marginTop: 20, maxWidth: 520 }}>
+          <h3 style={{ marginTop: 0 }}>Enlazar terminal para varias sucursales</h3>
+          <p style={{ fontSize: 13, color: "var(--h421-gray-400)", marginTop: -4 }}>
+            La tablet podrá operar en las sucursales que marques (si no marcas ninguna, en todas). Al entrar, cada
+            persona elige entre las sucursales que tiene asignadas; cada venta queda con la sucursal elegida.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, margin: "10px 0" }}>
+            {sucursales.filter((s) => s.activo).map((s) => (
+              <label key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}>
+                <input
+                  type="checkbox"
+                  checked={sucursalesTerminal.includes(s.id)}
+                  onChange={(e) =>
+                    setSucursalesTerminal((l) => (e.target.checked ? [...l, s.id] : l.filter((id) => id !== s.id)))
+                  }
+                />
+                {s.nombre}
+              </label>
+            ))}
+          </div>
+          <button
+            onClick={generarCodigoEmpresa}
+            disabled={generando === CODIGO_EMPRESA}
+            style={{ background: "var(--h421-navy)", color: "#fff", padding: "8px 14px", fontSize: 13 }}
+          >
+            {generando === CODIGO_EMPRESA
+              ? "Generando…"
+              : sucursalesTerminal.length === 0
+                ? "Generar código (todas las sucursales)"
+                : `Generar código (${sucursalesTerminal.length} sucursal${sucursalesTerminal.length === 1 ? "" : "es"})`}
+          </button>
+          {codigo?.sucursalId === CODIGO_EMPRESA && (
+            <div style={{ marginTop: 12, padding: 12, borderRadius: 10, background: "var(--h421-gray-50)", textAlign: "center" }}>
+              <div style={{ fontSize: 11, color: "var(--h421-gray-400)", textTransform: "uppercase", fontWeight: 700 }}>
+                Dictar en el Punto de Venta · {codigo.descripcion}
+              </div>
+              <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: 4, margin: "6px 0", fontFamily: "monospace" }}>
+                {codigo.codigo.slice(0, 4)}-{codigo.codigo.slice(4)}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--h421-gray-400)" }}>
+                Sirve una sola vez · caduca en {minutosRestantes(codigo.expiraAt)} min
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="card" style={{ marginTop: 20, maxWidth: 420 }}>
         <h3 style={{ marginTop: 0 }}>Nueva sucursal</h3>
