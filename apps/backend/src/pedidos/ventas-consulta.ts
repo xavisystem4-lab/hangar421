@@ -1,4 +1,4 @@
-import { EstadoPedido } from "@hangar421/shared";
+import { CanalOrigen, EstadoPedido } from "@hangar421/shared";
 
 /**
  * Lógica pura de la consulta de ventas del ERP (rangos de fecha y resumen).
@@ -16,6 +16,83 @@ export interface FiltroVentas {
   busqueda?: string;
   limite?: number;
   offset?: number;
+  /** Quien vendió O cobró: en un POS de mostrador suelen ser la misma persona, y en mesa el
+   *  mesero toma el pedido y otro lo cobra — ambos "hicieron" la venta. */
+  usuarioId?: string;
+  canalOrigen?: CanalOrigen;
+  /** `Dispositivo.id`, no la huella de instalación. */
+  dispositivoId?: string;
+  turnoId?: string;
+  /** Estado de cierre del turno de la venta. SIN_TURNO = ventas que no quedaron enlazadas a
+   *  ninguno (históricas, o de un admin que cobró sin turno abierto). */
+  estadoTurno?: "ABIERTO" | "CERRADO" | "SIN_TURNO";
+}
+
+/**
+ * Condiciones de trazabilidad (usuario, plataforma, dispositivo, turno y su estado de cierre)
+ * como una lista para un `AND`: el filtro de usuario es un `OR` (mesero o cajero) y la búsqueda
+ * de texto es otro, y dos `OR` en el mismo objeto se pisarían.
+ */
+export function condicionesDeTrazabilidad(f: FiltroVentas): Record<string, unknown>[] {
+  const condiciones: Record<string, unknown>[] = [];
+  if (f.usuarioId) condiciones.push({ OR: [{ meseroId: f.usuarioId }, { cajeroId: f.usuarioId }] });
+  if (f.canalOrigen) condiciones.push({ canalOrigen: f.canalOrigen });
+  if (f.dispositivoId) condiciones.push({ dispositivoId: f.dispositivoId });
+  if (f.turnoId) condiciones.push({ turnoId: f.turnoId });
+  if (f.estadoTurno === "SIN_TURNO") condiciones.push({ turnoId: null });
+  else if (f.estadoTurno) condiciones.push({ turno: { estado: f.estadoTurno } });
+  return condiciones;
+}
+
+export interface FilaDesglose {
+  estado: string;
+  total: number;
+  canalOrigen: string;
+  usuario: { id: string; nombre: string } | null;
+  dispositivo: { id: string; nombre: string; tipo: string } | null;
+}
+
+export interface GrupoDesglose {
+  clave: string;
+  nombre: string;
+  numTickets: number;
+  total: number;
+}
+
+export interface DesgloseVentas {
+  porCanal: GrupoDesglose[];
+  porUsuario: GrupoDesglose[];
+  porDispositivo: GrupoDesglose[];
+}
+
+/**
+ * Desglose de las ventas COBRADAS del rango por plataforma, usuario y dispositivo — el reporte
+ * que distingue, dentro de una misma sucursal, lo vendido en el POS de Windows de lo vendido en
+ * una tablet. Sobre todo el rango, igual que el resumen, no sobre la página.
+ *
+ * El usuario de la venta es quien la cobró y, si no hay cajero, quien la tomó. Lo que no tiene
+ * usuario o dispositivo se agrupa aparte en vez de perderse: justamente es lo que hay que ver.
+ */
+export function armarDesglose(filas: FilaDesglose[]): DesgloseVentas {
+  const cerradas = filas.filter((f) => ESTADOS_VENTA_CERRADA.includes(f.estado as EstadoPedido));
+  const agrupar = (clave: (f: FilaDesglose) => { clave: string; nombre: string }): GrupoDesglose[] => {
+    const grupos = new Map<string, GrupoDesglose>();
+    for (const f of cerradas) {
+      const { clave: k, nombre } = clave(f);
+      const g = grupos.get(k) ?? { clave: k, nombre, numTickets: 0, total: 0 };
+      g.numTickets += 1;
+      g.total = redondear(g.total + f.total);
+      grupos.set(k, g);
+    }
+    return [...grupos.values()].sort((a, b) => b.total - a.total);
+  };
+  return {
+    porCanal: agrupar((f) => ({ clave: f.canalOrigen, nombre: f.canalOrigen })),
+    porUsuario: agrupar((f) => (f.usuario ? { clave: f.usuario.id, nombre: f.usuario.nombre } : { clave: "SIN_USUARIO", nombre: "Sin usuario" })),
+    porDispositivo: agrupar((f) =>
+      f.dispositivo ? { clave: f.dispositivo.id, nombre: f.dispositivo.nombre } : { clave: "SIN_DISPOSITIVO", nombre: "Sin dispositivo" },
+    ),
+  };
 }
 
 /** Estados que cuentan como venta real cobrada. Todo lo demás son tickets en curso o anulados:

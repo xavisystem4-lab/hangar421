@@ -57,7 +57,7 @@ export default function ReportesPage() {
     const rangoHasta = new Date(`${hasta}T23:59:59`).toISOString();
     try {
       const [prod, met] = await Promise.all([
-        apiFetch<VentaPorProducto[]>(`/reportes/ventas-por-producto?empresaId=${contexto.usuario.empresaId}&desde=${rangoDesde}&hasta=${rangoHasta}`),
+        apiFetch<VentaPorProducto[]>(`/reportes/ventas-por-producto?empresaId=${contexto.usuario.empresaId}&sucursalId=${sucursalId}&desde=${rangoDesde}&hasta=${rangoHasta}`),
         apiFetch<VentaPorMetodo[]>(`/reportes/ventas-por-metodo-pago?sucursalId=${sucursalId}&desde=${rangoDesde}&hasta=${rangoHasta}`),
       ]);
       setPorProducto(prod);

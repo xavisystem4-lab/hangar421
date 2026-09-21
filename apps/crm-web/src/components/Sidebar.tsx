@@ -14,6 +14,7 @@ const ITEMS: { href: string; label: string; icon: string; roles?: RolUsuario[] }
   // Ventas no lleva `roles`: consultar los tickets de la sucursal propia es lo mínimo que hace
   // cualquier rol con acceso al ERP, y el backend ya acota por empresa y sucursal del token.
   { href: "/ventas", label: "Ventas", icon: "🧾" },
+  { href: "/turnos", label: "Turnos y cortes", icon: "🔐", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL", "SUPERVISOR"] as RolUsuario[] },
   { href: "/reportes", label: "Reportes", icon: "📈", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL", "SUPERVISOR"] as RolUsuario[] },
   { href: "/sucursales", label: "Sucursales", icon: "🏬", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL"] as RolUsuario[] },
   { href: "/mesas", label: "Mesas", icon: "🪑", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL"] as RolUsuario[] },

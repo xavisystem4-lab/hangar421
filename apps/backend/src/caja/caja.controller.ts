@@ -1,6 +1,7 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
-import { RolUsuario, TipoMovimientoCaja } from "@hangar421/shared";
+import { EstadoTurno, RolUsuario, TipoMovimientoCaja } from "@hangar421/shared";
+import { sucursalDeLaConsulta } from "../common/sucursal-consulta.util";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../common/guards/roles.guard";
 import { Roles } from "../common/decorators/roles.decorator";
@@ -18,6 +19,27 @@ export class CajaController {
   @Audit("TURNO", "ABRIR")
   abrir(@Body() body: { sucursalId: string; cajaId: string; usuarioId: string; montoInicial: number }) {
     return this.caja.abrirTurno(body);
+  }
+
+  /** Turnos y cortes del ERP, con los turnos abiertos desde un día anterior aparte (`pendientes`).
+   *  Mismo acotamiento por sucursal que la consulta de ventas (ver sucursalDeLaConsulta). */
+  @Get("turnos")
+  @Roles(RolUsuario.SUPERVISOR, RolUsuario.ADMIN_SUCURSAL, RolUsuario.ADMIN_CORPORATIVO)
+  listarTurnos(
+    @Req() req: any,
+    @Query("sucursalId") sucursalId?: string,
+    @Query("desde") desde?: string,
+    @Query("hasta") hasta?: string,
+    @Query("estado") estado?: string,
+    @Query("usuarioId") usuarioId?: string,
+  ) {
+    return this.caja.listarTurnos(req.user.empresaId, {
+      sucursalId: sucursalDeLaConsulta(req.user, sucursalId),
+      desde,
+      hasta,
+      estado: estado === EstadoTurno.ABIERTO || estado === EstadoTurno.CERRADO ? estado : undefined,
+      usuarioId: usuarioId || undefined,
+    });
   }
 
   @Get("cajas/:cajaId/turno-activo")

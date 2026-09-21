@@ -13,7 +13,15 @@ import {
 } from "@hangar421/shared";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
-import { armarResumen, hoyEnZona, limiteDelDia, normalizarPaginacion, type FiltroVentas } from "./ventas-consulta";
+import {
+  armarDesglose,
+  armarResumen,
+  condicionesDeTrazabilidad,
+  hoyEnZona,
+  limiteDelDia,
+  normalizarPaginacion,
+  type FiltroVentas,
+} from "./ventas-consulta";
 import { RealtimeGateway } from "../realtime/realtime.gateway";
 import { AuthService } from "../auth/auth.service";
 import { resolverDispositivoId } from "../common/dispositivo.util";
@@ -79,7 +87,10 @@ export class PedidosService {
       ...(filtro.sucursalId ? { sucursalId: filtro.sucursalId } : {}),
       ...(filtro.estado ? { estado: filtro.estado } : {}),
       createdAt: { gte: limiteDelDia(desde, zona, "inicio"), lte: limiteDelDia(hasta, zona, "fin") },
-      ...(filtro.busqueda?.trim() ? this.filtroBusqueda(filtro.busqueda.trim()) : {}),
+      AND: [
+        ...(filtro.busqueda?.trim() ? [this.filtroBusqueda(filtro.busqueda.trim())] : []),
+        ...(condicionesDeTrazabilidad(filtro) as Prisma.PedidoWhereInput[]),
+      ],
     };
 
     const { take, skip } = normalizarPaginacion(filtro.limite, filtro.offset);
@@ -97,18 +108,39 @@ export class PedidosService {
           mesero: { select: { id: true, nombre: true } },
           cajero: { select: { id: true, nombre: true } },
           sucursal: { select: { id: true, nombre: true } },
+          dispositivo: { select: { id: true, nombre: true, tipo: true } },
+          turno: { select: { id: true, estado: true, fechaApertura: true, fechaCierre: true } },
         },
         orderBy: { createdAt: "desc" },
         take,
         skip,
       }),
       this.prisma.pedido.count({ where }),
-      this.prisma.pedido.findMany({ where, select: { estado: true, total: true } }),
+      this.prisma.pedido.findMany({
+        where,
+        select: {
+          estado: true,
+          total: true,
+          canalOrigen: true,
+          mesero: { select: { id: true, nombre: true } },
+          cajero: { select: { id: true, nombre: true } },
+          dispositivo: { select: { id: true, nombre: true, tipo: true } },
+        },
+      }),
     ]);
 
     return {
       rango: { desde, hasta, zona },
       resumen: armarResumen(paraResumen.map((p) => ({ estado: p.estado, total: Number(p.total) }))),
+      desglose: armarDesglose(
+        paraResumen.map((p) => ({
+          estado: p.estado,
+          total: Number(p.total),
+          canalOrigen: p.canalOrigen,
+          usuario: p.cajero ?? p.mesero,
+          dispositivo: p.dispositivo,
+        })),
+      ),
       paginacion: { total: totalFilas, limite: take, offset: skip },
       items: items.map((p) => ({
         id: p.id,
@@ -126,6 +158,8 @@ export class PedidosService {
         // guarda la venta sin atribución antes que perderla.
         mesero: p.mesero,
         cajero: p.cajero,
+        dispositivo: p.dispositivo,
+        turno: p.turno,
         numItems: p.items.length,
         items: p.items.map((i) => ({
           id: i.id,
@@ -138,6 +172,39 @@ export class PedidosService {
         })),
         pagos: p.pagos.map((pa) => ({ metodo: pa.metodo, monto: Number(pa.monto) })),
       })),
+    };
+  }
+
+  /**
+   * Valores posibles de los filtros de trazabilidad del módulo de Ventas: los usuarios y
+   * dispositivos que de verdad aparecen en ventas de la empresa (o de la sucursal), no el
+   * padrón completo. Así el selector incluye también a los usuarios dados de alta en una tablet
+   * y a las terminales que ya no están activas pero tienen historial, y no ofrece opciones que
+   * darían siempre cero resultados.
+   */
+  async opcionesFiltroVentas(empresaId: string, sucursalId?: string) {
+    const where: Prisma.PedidoWhereInput = { empresaId, ...(sucursalId ? { sucursalId } : {}) };
+    const [meseros, cajeros, dispositivos] = await Promise.all([
+      this.prisma.pedido.findMany({ where: { ...where, meseroId: { not: null } }, distinct: ["meseroId"], select: { mesero: { select: { id: true, nombre: true } } } }),
+      this.prisma.pedido.findMany({ where: { ...where, cajeroId: { not: null } }, distinct: ["cajeroId"], select: { cajero: { select: { id: true, nombre: true } } } }),
+      this.prisma.pedido.findMany({
+        where: { ...where, dispositivoId: { not: null } },
+        distinct: ["dispositivoId"],
+        select: { dispositivo: { select: { id: true, nombre: true, tipo: true, sucursal: { select: { nombre: true } } } } },
+      }),
+    ]);
+
+    const usuarios = new Map<string, { id: string; nombre: string }>();
+    for (const u of [...meseros.map((m) => m.mesero), ...cajeros.map((c) => c.cajero)]) {
+      if (u) usuarios.set(u.id, u);
+    }
+    return {
+      usuarios: [...usuarios.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, "es")),
+      dispositivos: dispositivos
+        .map((d) => d.dispositivo)
+        .filter((d): d is NonNullable<typeof d> => !!d)
+        .map((d) => ({ id: d.id, nombre: d.nombre, tipo: d.tipo, sucursal: d.sucursal.nombre }))
+        .sort((a, b) => a.nombre.localeCompare(b.nombre, "es")),
     };
   }
 

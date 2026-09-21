@@ -1,5 +1,5 @@
-import { EstadoPedido } from "@hangar421/shared";
-import { armarResumen, hoyEnZona, limiteDelDia, normalizarPaginacion } from "./ventas-consulta";
+import { CanalOrigen, EstadoPedido } from "@hangar421/shared";
+import { armarDesglose, armarResumen, condicionesDeTrazabilidad, hoyEnZona, limiteDelDia, normalizarPaginacion } from "./ventas-consulta";
 
 const MX = "America/Mexico_City";
 
@@ -105,5 +105,62 @@ describe("armarResumen", () => {
       { estado: EstadoPedido.COBRADO, total: 0.2 },
     ]);
     expect(resumen.totalVendido).toBe(0.3);
+  });
+});
+
+describe("condicionesDeTrazabilidad", () => {
+  it("sin filtros no agrega condiciones", () => {
+    expect(condicionesDeTrazabilidad({})).toEqual([]);
+  });
+
+  it("el usuario coincide como mesero O como cajero", () => {
+    expect(condicionesDeTrazabilidad({ usuarioId: "u-1" })).toEqual([{ OR: [{ meseroId: "u-1" }, { cajeroId: "u-1" }] }]);
+  });
+
+  it("combina plataforma, dispositivo y turno como condiciones separadas", () => {
+    expect(condicionesDeTrazabilidad({ canalOrigen: CanalOrigen.POS_WINDOWS, dispositivoId: "d-1", turnoId: "t-1" })).toEqual([
+      { canalOrigen: CanalOrigen.POS_WINDOWS },
+      { dispositivoId: "d-1" },
+      { turnoId: "t-1" },
+    ]);
+  });
+
+  it("estado de cierre: por el estado del turno, o ventas sin turno", () => {
+    expect(condicionesDeTrazabilidad({ estadoTurno: "ABIERTO" })).toEqual([{ turno: { estado: "ABIERTO" } }]);
+    expect(condicionesDeTrazabilidad({ estadoTurno: "SIN_TURNO" })).toEqual([{ turnoId: null }]);
+  });
+});
+
+describe("armarDesglose", () => {
+  const ana = { id: "u-ana", nombre: "Ana" };
+  const pc = { id: "d-pc", nombre: "Caja PC", tipo: "POS_WINDOWS" };
+  const tablet = { id: "d-tab", nombre: "Tablet 1", tipo: "POS_TERMINAL" };
+
+  it("distingue, en una misma sucursal, lo vendido en Windows de lo vendido en la tablet", () => {
+    const d = armarDesglose([
+      { estado: "COBRADO", total: 100, canalOrigen: "POS_WINDOWS", usuario: ana, dispositivo: pc },
+      { estado: "COBRADO", total: 50, canalOrigen: "APP_POS_MOVIL", usuario: ana, dispositivo: tablet },
+      { estado: "COBRADO", total: 30, canalOrigen: "APP_POS_MOVIL", usuario: ana, dispositivo: tablet },
+    ]);
+    expect(d.porCanal).toEqual([
+      { clave: "POS_WINDOWS", nombre: "POS_WINDOWS", numTickets: 1, total: 100 },
+      { clave: "APP_POS_MOVIL", nombre: "APP_POS_MOVIL", numTickets: 2, total: 80 },
+    ]);
+    expect(d.porDispositivo.map((g) => g.nombre)).toEqual(["Caja PC", "Tablet 1"]);
+    expect(d.porUsuario).toEqual([{ clave: "u-ana", nombre: "Ana", numTickets: 3, total: 180 }]);
+  });
+
+  it("solo suman las cobradas", () => {
+    const d = armarDesglose([
+      { estado: "COBRADO", total: 100, canalOrigen: "POS_WINDOWS", usuario: ana, dispositivo: pc },
+      { estado: "CANCELADO", total: 999, canalOrigen: "POS_WINDOWS", usuario: ana, dispositivo: pc },
+    ]);
+    expect(d.porCanal[0].total).toBe(100);
+  });
+
+  it("lo que no tiene usuario o dispositivo se agrupa aparte en vez de perderse", () => {
+    const d = armarDesglose([{ estado: "COBRADO", total: 40, canalOrigen: "APP_MESERO", usuario: null, dispositivo: null }]);
+    expect(d.porUsuario[0]).toMatchObject({ clave: "SIN_USUARIO", total: 40 });
+    expect(d.porDispositivo[0]).toMatchObject({ clave: "SIN_DISPOSITIVO", total: 40 });
   });
 });

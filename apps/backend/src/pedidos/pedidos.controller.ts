@@ -1,11 +1,12 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
-import { EstadoPedido, EstadoPedidoItem, RolUsuario } from "@hangar421/shared";
+import { CanalOrigen, EstadoPedido, EstadoPedidoItem, RolUsuario } from "@hangar421/shared";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../common/guards/roles.guard";
 import { Roles } from "../common/decorators/roles.decorator";
 import { Audit } from "../common/interceptors/audit.interceptor";
 import { PedidosService } from "./pedidos.service";
+import { sucursalDeLaConsulta } from "../common/sucursal-consulta.util";
 import {
   AgregarItemsDto,
   AplicarDescuentoDto,
@@ -13,6 +14,10 @@ import {
   CobrarPedidoDto,
   CrearPedidoDto,
 } from "./dto/pedido.dto";
+
+function valorDe<T extends Record<string, string>>(enumeracion: T, valor?: string): T[keyof T] | undefined {
+  return valor && (Object.values(enumeracion) as string[]).includes(valor) ? (valor as T[keyof T]) : undefined;
+}
 
 @ApiTags("pedidos")
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -41,7 +46,13 @@ export class PedidosController {
    * `empresaId` sale del token, nunca del query: es lo que impide pedir las ventas de otra
    * empresa. `sucursalId` sí viene por query —es la sucursal elegida en el ERP— y
    * SucursalAccessGuard lo compara contra la sesión, así que un usuario de una sucursal no puede
-   * consultar la otra. Omitirlo da el consolidado, y solo ADMIN_CORPORATIVO pasa el guard sin él.
+   * consultar la otra. Omitirlo da el consolidado, pero solo a ADMIN_CORPORATIVO: el guard deja
+   * pasar una petición SIN sucursal (no tiene nada que comparar), así que a cualquier otro rol se
+   * le acota aquí a su sucursal activa (ver `sucursalDeLaConsulta`).
+   *
+   * Los filtros de trazabilidad (usuario, plataforma, dispositivo, turno, estado de cierre) son
+   * todos opcionales y se combinan entre sí; un valor que no es de la enumeración se ignora en
+   * vez de reventar la consulta con un 500 de Prisma.
    */
   @Get("ventas")
   consultarVentas(
@@ -53,16 +64,33 @@ export class PedidosController {
     @Query("busqueda") busqueda?: string,
     @Query("limite") limite?: string,
     @Query("offset") offset?: string,
+    @Query("usuarioId") usuarioId?: string,
+    @Query("canalOrigen") canalOrigen?: string,
+    @Query("dispositivoId") dispositivoId?: string,
+    @Query("turnoId") turnoId?: string,
+    @Query("estadoTurno") estadoTurno?: string,
   ) {
     return this.pedidos.consultarVentas(req.user.empresaId, {
-      sucursalId,
+      sucursalId: sucursalDeLaConsulta(req.user, sucursalId),
       desde,
       hasta,
-      estado,
+      estado: valorDe(EstadoPedido, estado),
       busqueda,
       limite: limite ? Number(limite) : undefined,
       offset: offset ? Number(offset) : undefined,
+      usuarioId: usuarioId || undefined,
+      canalOrigen: valorDe(CanalOrigen, canalOrigen),
+      dispositivoId: dispositivoId || undefined,
+      turnoId: turnoId || undefined,
+      estadoTurno: (["ABIERTO", "CERRADO", "SIN_TURNO"] as const).find((e) => e === estadoTurno),
     });
+  }
+
+  /** Usuarios y dispositivos que aparecen en ventas, para los selectores de filtro del ERP. Mismo
+   *  acotamiento por sucursal que `ventas`. Va antes de `:id` por la misma razón. */
+  @Get("ventas/opciones")
+  opcionesFiltroVentas(@Req() req: any, @Query("sucursalId") sucursalId?: string) {
+    return this.pedidos.opcionesFiltroVentas(req.user.empresaId, sucursalDeLaConsulta(req.user, sucursalId));
   }
 
   @Get(":id")

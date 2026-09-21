@@ -21,8 +21,13 @@ export class ReportesController {
   }
 
   @Get("ventas-por-producto")
-  ventasPorProducto(@Query("empresaId") empresaId: string, @Query("desde") desde: string, @Query("hasta") hasta: string) {
-    return this.reportes.ventasPorProducto(empresaId, new Date(desde), new Date(hasta));
+  ventasPorProducto(
+    @Query("empresaId") empresaId: string,
+    @Query("desde") desde: string,
+    @Query("hasta") hasta: string,
+    @Query("sucursalId") sucursalId?: string,
+  ) {
+    return this.reportes.ventasPorProducto(empresaId, new Date(desde), new Date(hasta), sucursalId);
   }
 
   @Get("ventas-por-metodo-pago")

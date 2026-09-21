@@ -29,6 +29,8 @@ interface Venta {
   sucursal: { id: string; nombre: string } | null;
   mesero: { id: string; nombre: string } | null;
   cajero: { id: string; nombre: string } | null;
+  dispositivo: { id: string; nombre: string; tipo: string } | null;
+  turno: { id: string; estado: string; fechaApertura: string; fechaCierre: string | null } | null;
   numItems: number;
   items: LineaVenta[];
   pagos: { metodo: string; monto: number }[];
@@ -42,8 +44,53 @@ interface RespuestaVentas {
     ticketPromedio: number;
     porEstado: { estado: string; cantidad: number; total: number }[];
   };
+  desglose: {
+    porCanal: GrupoDesglose[];
+    porUsuario: GrupoDesglose[];
+    porDispositivo: GrupoDesglose[];
+  };
   paginacion: { total: number; limite: number; offset: number };
   items: Venta[];
+}
+
+interface GrupoDesglose {
+  clave: string;
+  nombre: string;
+  numTickets: number;
+  total: number;
+}
+
+interface OpcionesFiltro {
+  usuarios: { id: string; nombre: string }[];
+  dispositivos: { id: string; nombre: string; tipo: string; sucursal: string }[];
+}
+
+/** Filtros de trazabilidad: quién, desde qué plataforma y equipo, y en qué turno. */
+interface FiltroOrigen {
+  usuarioId: string;
+  canalOrigen: string;
+  dispositivoId: string;
+  turnoId: string;
+  estadoTurno: string;
+}
+
+const SIN_FILTRO_ORIGEN: FiltroOrigen = { usuarioId: "", canalOrigen: "", dispositivoId: "", turnoId: "", estadoTurno: "" };
+
+/** Filtros que llegan en la URL — la pantalla de Turnos enlaza aquí con `?turnoId=…&desde=…`
+ *  para ver las ventas de un turno. Se lee una sola vez al montar. */
+function filtrosDeLaUrl(): Partial<FiltroOrigen> & { desde?: string; hasta?: string } {
+  if (typeof window === "undefined") return {};
+  const q = new URLSearchParams(window.location.search);
+  const leer = (k: string) => q.get(k) ?? undefined;
+  return {
+    usuarioId: leer("usuarioId"),
+    canalOrigen: leer("canalOrigen"),
+    dispositivoId: leer("dispositivoId"),
+    turnoId: leer("turnoId"),
+    estadoTurno: leer("estadoTurno"),
+    desde: leer("desde"),
+    hasta: leer("hasta"),
+  };
 }
 
 interface ProblemaSync {
@@ -94,8 +141,14 @@ export default function VentasPage() {
   const { contexto } = useAuthCrm();
   const { seleccion } = useSucursalActiva();
 
-  const [desde, setDesde] = useState(hoyLocal());
-  const [hasta, setHasta] = useState(hoyLocal());
+  const [deUrl] = useState(filtrosDeLaUrl);
+  const [desde, setDesde] = useState(deUrl.desde ?? hoyLocal());
+  const [hasta, setHasta] = useState(deUrl.hasta ?? deUrl.desde ?? hoyLocal());
+  const [origen, setOrigen] = useState<FiltroOrigen>(() => ({
+    ...SIN_FILTRO_ORIGEN,
+    ...Object.fromEntries(Object.entries(deUrl).filter(([k, v]) => v && k in SIN_FILTRO_ORIGEN)),
+  }));
+  const [opciones, setOpciones] = useState<OpcionesFiltro>({ usuarios: [], dispositivos: [] });
   const [estado, setEstado] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [busquedaAplicada, setBusquedaAplicada] = useState("");
@@ -117,6 +170,7 @@ export default function VentasPage() {
       if (seleccion?.sucursalId) params.set("sucursalId", seleccion.sucursalId);
       if (estado) params.set("estado", estado);
       if (busquedaAplicada.trim()) params.set("busqueda", busquedaAplicada.trim());
+      for (const [clave, valor] of Object.entries(origen)) if (valor) params.set(clave, valor);
       setDatos(await apiFetch<RespuestaVentas>(`/pedidos/ventas?${params}`));
       setActualizadoEn(new Date());
 
@@ -133,11 +187,26 @@ export default function VentasPage() {
     } finally {
       setCargando(false);
     }
-  }, [contexto, seleccion?.sucursalId, desde, hasta, estado, busquedaAplicada, pagina]);
+  }, [contexto, seleccion?.sucursalId, desde, hasta, estado, busquedaAplicada, pagina, origen]);
 
   useEffect(() => {
     cargar();
   }, [cargar]);
+
+  // Opciones de los selectores: solo cambian con la sucursal. Si fallan, los filtros quedan
+  // vacíos pero la tabla sigue funcionando.
+  useEffect(() => {
+    if (!contexto) return;
+    const params = new URLSearchParams();
+    if (seleccion?.sucursalId) params.set("sucursalId", seleccion.sucursalId);
+    apiFetch<OpcionesFiltro>(`/pedidos/ventas/opciones?${params}`)
+      .then(setOpciones)
+      .catch(() => setOpciones({ usuarios: [], dispositivos: [] }));
+  }, [contexto, seleccion?.sucursalId]);
+
+  function filtrarOrigen(cambio: Partial<FiltroOrigen>) {
+    cambiarFiltro(() => setOrigen((o) => ({ ...o, ...cambio })));
+  }
 
   // Una venta que entra por sincronización debe aparecer sin recargar: es justo lo que se está
   // mirando cuando se abre esta pantalla después de cobrar en la terminal.
@@ -215,6 +284,58 @@ export default function VentasPage() {
         <button onClick={cargar} disabled={cargando} style={{ padding: "10px 18px", background: "var(--h421-navy)", color: "#fff" }}>
           {cargando ? "Cargando…" : "Actualizar"}
         </button>
+
+        {/* Origen de la operación. El usuario es el criterio principal: el mismo tipo de equipo
+            se usa en varias sucursales, así que la plataforma sola no dice quién vendió. */}
+        <div style={{ flexBasis: "100%", height: 0 }} />
+        <label style={campo}>
+          <span style={etiqueta}>Usuario</span>
+          <select value={origen.usuarioId} onChange={(e) => filtrarOrigen({ usuarioId: e.target.value })} style={entrada}>
+            <option value="">Todos</option>
+            {opciones.usuarios.map((u) => (
+              <option key={u.id} value={u.id}>{u.nombre}</option>
+            ))}
+          </select>
+        </label>
+        <label style={campo}>
+          <span style={etiqueta}>Plataforma</span>
+          <select value={origen.canalOrigen} onChange={(e) => filtrarOrigen({ canalOrigen: e.target.value })} style={entrada}>
+            <option value="">Todas</option>
+            {Object.entries(ETIQUETA_CANAL).map(([valor, texto]) => (
+              <option key={valor} value={valor}>{texto}</option>
+            ))}
+          </select>
+        </label>
+        <label style={campo}>
+          <span style={etiqueta}>Dispositivo</span>
+          <select value={origen.dispositivoId} onChange={(e) => filtrarOrigen({ dispositivoId: e.target.value })} style={entrada}>
+            <option value="">Todos</option>
+            {opciones.dispositivos.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.nombre}{!seleccion?.sucursalId ? ` · ${d.sucursal}` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label style={campo}>
+          <span style={etiqueta}>Estado del turno</span>
+          <select value={origen.estadoTurno} onChange={(e) => filtrarOrigen({ estadoTurno: e.target.value })} style={entrada}>
+            <option value="">Todos</option>
+            <option value="ABIERTO">Turno abierto</option>
+            <option value="CERRADO">Turno cerrado</option>
+            <option value="SIN_TURNO">Sin turno</option>
+          </select>
+        </label>
+        {origen.turnoId && (
+          <button onClick={() => filtrarOrigen({ turnoId: "" })} style={{ padding: "9px 12px", background: "var(--h421-gray-50)", border: "1px solid var(--h421-gray-200)" }}>
+            Solo un turno ✕
+          </button>
+        )}
+        {Object.values(origen).some(Boolean) && (
+          <button onClick={() => cambiarFiltro(() => setOrigen(SIN_FILTRO_ORIGEN))} style={{ padding: "9px 12px", background: "transparent", textDecoration: "underline" }}>
+            Quitar filtros de origen
+          </button>
+        )}
       </div>
 
       {error && <p style={{ color: "var(--h421-red)" }}>{error}</p>}
@@ -224,6 +345,32 @@ export default function VentasPage() {
         <StatTile etiqueta="Tickets cobrados" valor={String(datos?.resumen.numTickets ?? 0)} acento="var(--h421-blue)" />
         <StatTile etiqueta="Ticket promedio" valor={`$${(datos?.resumen.ticketPromedio ?? 0).toFixed(2)}`} acento="var(--h421-amber)" />
       </div>
+
+      {/* Reporte por origen de las ventas cobradas del rango (no solo de la página). Tocar una
+          fila filtra por ella: así se pasa del total de "Tablet 1" a sus tickets. */}
+      {datos && datos.resumen.numTickets > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, marginTop: 16 }}>
+          <TablaDesglose
+            titulo="Por plataforma"
+            grupos={datos.desglose.porCanal}
+            nombre={(g) => ETIQUETA_CANAL[g.clave as CanalOrigen] ?? g.nombre}
+            activo={origen.canalOrigen}
+            onElegir={(clave) => filtrarOrigen({ canalOrigen: clave })}
+          />
+          <TablaDesglose
+            titulo="Por usuario"
+            grupos={datos.desglose.porUsuario}
+            activo={origen.usuarioId}
+            onElegir={(clave) => (clave === "SIN_USUARIO" ? undefined : filtrarOrigen({ usuarioId: clave }))}
+          />
+          <TablaDesglose
+            titulo="Por dispositivo"
+            grupos={datos.desglose.porDispositivo}
+            activo={origen.dispositivoId}
+            onElegir={(clave) => (clave === "SIN_DISPOSITIVO" ? undefined : filtrarOrigen({ dispositivoId: clave }))}
+          />
+        </div>
+      )}
 
       {/* Un ticket que llegó pero cuyo pago no se sincronizó se queda sin cobrar y no suma a
           ningún total. Antes desaparecía en silencio; aquí se avisa para poder repararlo. */}
@@ -285,6 +432,8 @@ export default function VentasPage() {
                 <th style={celdaEncabezado}>Origen</th>
                 {!seleccion?.sucursalId && <th style={celdaEncabezado}>Sucursal</th>}
                 <th style={celdaEncabezado}>Atendió</th>
+                <th style={celdaEncabezado}>Dispositivo</th>
+                <th style={celdaEncabezado}>Turno</th>
                 <th style={celdaEncabezado}>Pago</th>
                 <th style={{ ...celdaEncabezado, textAlign: "right" }}>Total</th>
               </tr>
@@ -312,12 +461,23 @@ export default function VentasPage() {
                     <td style={celda}>{ETIQUETA_CANAL[v.canalOrigen as CanalOrigen] ?? v.canalOrigen}</td>
                     {!seleccion?.sucursalId && <td style={celda}>{v.sucursal?.nombre ?? "—"}</td>}
                     <td style={celda}>{v.cajero?.nombre ?? v.mesero?.nombre ?? "—"}</td>
+                    <td style={celda}>{v.dispositivo?.nombre ?? "—"}</td>
+                    <td style={celda}>
+                      {v.turno ? (
+                        <span style={{ color: v.turno.estado === "ABIERTO" ? "var(--h421-amber)" : "var(--h421-gray-400)" }}>
+                          {v.turno.estado === "ABIERTO" ? "Abierto" : "Cerrado"} ·{" "}
+                          {new Date(v.turno.fechaApertura).toLocaleDateString("es-MX", { timeZone: datos.rango.zona, day: "2-digit", month: "2-digit" })}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                     <td style={celda}>{v.pagos.map((p) => p.metodo).join(", ") || "—"}</td>
                     <td style={{ ...celda, textAlign: "right", fontWeight: 700 }}>${v.total.toFixed(2)}</td>
                   </tr>
                   {abierta === v.id && (
                     <tr key={`${v.id}-detalle`}>
-                      <td colSpan={seleccion?.sucursalId ? 7 : 8} style={{ padding: "10px 12px 18px", background: "var(--h421-gray-50)" }}>
+                      <td colSpan={seleccion?.sucursalId ? 9 : 10} style={{ padding: "10px 12px 18px", background: "var(--h421-gray-50)" }}>
                         <strong style={{ fontSize: 13 }}>Ticket {v.folio}</strong>
                         <ul style={{ margin: "8px 0", paddingLeft: 18 }}>
                           {v.items.map((l) => (
@@ -335,10 +495,22 @@ export default function VentasPage() {
                             Pagos: {v.pagos.map((p) => `${p.metodo} $${p.monto.toFixed(2)}`).join(" · ")}
                           </div>
                         )}
+                        <div style={{ fontSize: 13, marginTop: 6, display: "flex", gap: 20, flexWrap: "wrap", color: "var(--h421-gray-400)" }}>
+                          {v.mesero && <span>Tomó: {v.mesero.nombre}</span>}
+                          {v.cajero && <span>Cobró: {v.cajero.nombre}</span>}
+                          <span>Plataforma: {ETIQUETA_CANAL[v.canalOrigen as CanalOrigen] ?? v.canalOrigen}</span>
+                          {v.dispositivo && <span>Dispositivo: {v.dispositivo.nombre}</span>}
+                          {v.sucursal && <span>Sucursal: {v.sucursal.nombre}</span>}
+                          {v.turno && (
+                            <a href={`/ventas?turnoId=${v.turno.id}`} onClick={(e) => { e.preventDefault(); filtrarOrigen({ turnoId: v.turno!.id }); }}>
+                              Ver ventas de este turno
+                            </a>
+                          )}
+                        </div>
                         {!v.cajero && !v.mesero && (
                           <p style={{ fontSize: 12, color: "var(--h421-gray-400)", margin: "8px 0 0" }}>
-                            Sin cajero asignado: la terminal lo dio de alta sin conexión y todavía no está
-                            registrado en el ERP. La venta sí se guardó completa.
+                            Sin usuario asignado: es una venta anterior a que las terminales registraran a sus
+                            usuarios en el ERP. La venta sí se guardó completa.
                           </p>
                         )}
                       </td>
@@ -362,6 +534,41 @@ export default function VentasPage() {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+function TablaDesglose({
+  titulo,
+  grupos,
+  nombre = (g) => g.nombre,
+  activo,
+  onElegir,
+}: {
+  titulo: string;
+  grupos: GrupoDesglose[];
+  nombre?: (g: GrupoDesglose) => string;
+  activo: string;
+  onElegir: (clave: string) => void;
+}) {
+  return (
+    <div className="card" style={{ margin: 0 }}>
+      <strong style={{ fontSize: 14 }}>{titulo}</strong>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, marginTop: 8 }}>
+        <tbody>
+          {grupos.map((g) => (
+            <tr
+              key={g.clave}
+              onClick={() => onElegir(g.clave)}
+              style={{ cursor: "pointer", borderTop: "1px solid var(--h421-gray-200)", fontWeight: activo === g.clave ? 700 : 400 }}
+            >
+              <td style={{ padding: "6px 4px" }}>{nombre(g)}</td>
+              <td style={{ padding: "6px 4px", textAlign: "right", color: "var(--h421-gray-400)" }}>{g.numTickets}</td>
+              <td style={{ padding: "6px 4px", textAlign: "right" }}>${g.total.toFixed(2)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

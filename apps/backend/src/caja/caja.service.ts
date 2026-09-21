@@ -1,6 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { EstadoTurno, MetodoPago, TipoMovimientoCaja } from "@hangar421/shared";
+import { EstadoPedido, EstadoTurno, MetodoPago, TipoMovimientoCaja } from "@hangar421/shared";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { limiteDelDia } from "../pedidos/ventas-consulta";
+import { esTurnoDeDiaAnterior } from "./turnos-consulta";
 import { resolverUsuarioDeTerminal } from "../common/usuario-terminal.util";
 
 @Injectable()
@@ -185,6 +188,120 @@ export class CajaService {
         desgloseEfectivo: desgloseEfectivo as any,
       },
     });
+  }
+
+  /**
+   * Turnos y cortes para el ERP: abiertos y cerrados, con responsable, caja, montos del corte y
+   * lo vendido en cada uno.
+   *
+   * `pendientes` va aparte y NO depende de los filtros: son los turnos abiertos desde un día
+   * anterior en las sucursales consultadas, que el ERP tiene que mostrar como alerta aunque el
+   * listado esté filtrado a otra cosa (ver esTurnoDeDiaAnterior).
+   *
+   * Lo vendido sale de las ventas enlazadas por `turnoId`; para un turno anterior a esa columna
+   * (sin ninguna enlazada) se usa el mismo criterio heredado que el corte, para que la cifra
+   * coincida con la que se firmó al cerrarlo.
+   */
+  async listarTurnos(
+    empresaId: string,
+    filtro: { sucursalId?: string; desde?: string; hasta?: string; estado?: EstadoTurno; usuarioId?: string },
+  ) {
+    const alcance: Prisma.TurnoWhereInput = { sucursal: { empresaId }, ...(filtro.sucursalId ? { sucursalId: filtro.sucursalId } : {}) };
+    const zona = await this.zonaHoraria(empresaId, filtro.sucursalId);
+
+    const where: Prisma.TurnoWhereInput = {
+      ...alcance,
+      ...(filtro.estado ? { estado: filtro.estado } : {}),
+      ...(filtro.usuarioId ? { usuarioId: filtro.usuarioId } : {}),
+      ...(filtro.desde || filtro.hasta
+        ? {
+            fechaApertura: {
+              ...(filtro.desde ? { gte: limiteDelDia(filtro.desde, zona, "inicio") } : {}),
+              ...(filtro.hasta ? { lte: limiteDelDia(filtro.hasta, zona, "fin") } : {}),
+            },
+          }
+        : {}),
+    };
+
+    const incluir = {
+      sucursal: { select: { id: true, nombre: true, timezone: true } },
+      caja: { select: { id: true, nombre: true } },
+      usuario: { select: { id: true, nombre: true } },
+    } as const;
+
+    const [turnos, abiertos] = await Promise.all([
+      this.prisma.turno.findMany({ where, include: incluir, orderBy: { fechaApertura: "desc" }, take: 200 }),
+      this.prisma.turno.findMany({ where: { ...alcance, estado: EstadoTurno.ABIERTO }, include: incluir, orderBy: { fechaApertura: "asc" } }),
+    ]);
+
+    const ventas = await this.ventasPorTurno(turnos);
+    const aFila = (t: (typeof turnos)[number]) => ({
+      id: t.id,
+      estado: t.estado,
+      fechaApertura: t.fechaApertura,
+      fechaCierre: t.fechaCierre,
+      sucursal: { id: t.sucursal.id, nombre: t.sucursal.nombre },
+      caja: t.caja,
+      usuario: t.usuario,
+      montoInicial: Number(t.montoInicial),
+      montoFinalDeclarado: t.montoFinalDeclarado == null ? null : Number(t.montoFinalDeclarado),
+      montoFinalSistema: t.montoFinalSistema == null ? null : Number(t.montoFinalSistema),
+      diferencia: t.diferencia == null ? null : Number(t.diferencia),
+      pendienteDiaAnterior: esTurnoDeDiaAnterior(t, t.sucursal.timezone),
+      ventas: ventas.get(t.id) ?? { numTickets: 0, total: 0 },
+    });
+
+    return {
+      items: turnos.map(aFila),
+      pendientes: abiertos
+        .filter((t) => esTurnoDeDiaAnterior(t, t.sucursal.timezone))
+        .map((t) => ({ ...aFila(t), ventas: undefined })),
+    };
+  }
+
+  private async ventasPorTurno(turnos: { id: string; sucursalId: string; usuarioId: string; fechaApertura: Date; fechaCierre: Date | null }[]) {
+    const resultado = new Map<string, { numTickets: number; total: number }>();
+    if (turnos.length === 0) return resultado;
+
+    const enlazadas = await this.prisma.pedido.groupBy({
+      by: ["turnoId"],
+      where: { turnoId: { in: turnos.map((t) => t.id) }, estado: EstadoPedido.COBRADO },
+      _count: true,
+      _sum: { total: true },
+    });
+    for (const g of enlazadas) {
+      if (g.turnoId) resultado.set(g.turnoId, { numTickets: g._count, total: round2(Number(g._sum.total ?? 0)) });
+    }
+
+    // Turnos heredados (ninguna venta enlazada, en ningún estado): criterio del corte antiguo.
+    const conAlgunaEnlazada = new Set(
+      (await this.prisma.pedido.groupBy({ by: ["turnoId"], where: { turnoId: { in: turnos.map((t) => t.id) } } })).map((g) => g.turnoId),
+    );
+    await Promise.all(
+      turnos
+        .filter((t) => !conAlgunaEnlazada.has(t.id))
+        .map(async (t) => {
+          const agg = await this.prisma.pedido.aggregate({
+            where: {
+              sucursalId: t.sucursalId,
+              cajeroId: t.usuarioId,
+              estado: EstadoPedido.COBRADO,
+              createdAt: { gte: t.fechaApertura, ...(t.fechaCierre ? { lte: t.fechaCierre } : {}) },
+            },
+            _count: true,
+            _sum: { total: true },
+          });
+          resultado.set(t.id, { numTickets: agg._count, total: round2(Number(agg._sum.total ?? 0)) });
+        }),
+    );
+    return resultado;
+  }
+
+  private async zonaHoraria(empresaId: string, sucursalId?: string): Promise<string> {
+    const sucursal = sucursalId
+      ? await this.prisma.sucursal.findUnique({ where: { id: sucursalId }, select: { timezone: true } })
+      : await this.prisma.sucursal.findFirst({ where: { empresaId, activo: true }, select: { timezone: true } });
+    return sucursal?.timezone ?? "America/Mexico_City";
   }
 
   async resumenTurno(turnoId: string) {

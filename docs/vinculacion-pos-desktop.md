@@ -159,7 +159,7 @@ Requisitos del negocio que amplían este diseño, con las decisiones ya tomadas:
 | Fase | Qué |
 |---|---|
 | A | ✅ **Hecho** — Seguridad de `/sync/push` (empresa/sucursal del token) + usuario real en cada venta (alta de usuarios del APK en el ERP) + `turnoId` en las ventas del POS Windows |
-| B | Filtros del Dashboard y pantalla de turnos y cortes |
+| B | ✅ **Hecho** — Filtros del Dashboard y pantalla de turnos y cortes |
 | C | Aviso de turno abierto de un día anterior (POS Windows, APK y Dashboard) |
 | D | Solicitudes de alta de productos no registrados |
 | E | APK vinculado a la empresa, sucursal elegida por sesión |
@@ -183,3 +183,22 @@ Requisitos del negocio que amplían este diseño, con las decisiones ya tomadas:
   meseros ya quedan con `turnoId`.
 - Límite conocido: ventas de usuarios viejos que ya estaban en la cola **antes** de su alta salen
   primero y quedan sin atribución; las nuevas no.
+
+**Fase B, cómo quedó:**
+
+- `GET /pedidos/ventas` acepta `usuarioId` (mesero o cajero), `canalOrigen`, `dispositivoId`,
+  `turnoId` y `estadoTurno` (`ABIERTO` | `CERRADO` | `SIN_TURNO`), y devuelve por venta su
+  dispositivo y su turno, más un `desglose` de lo cobrado en el rango por plataforma, usuario y
+  dispositivo (`armarDesglose`). `GET /pedidos/ventas/opciones` da los usuarios y dispositivos que
+  aparecen en ventas, para los selectores.
+- `GET /caja/turnos` lista turnos con responsable, caja, lo vendido y el resultado del corte, y
+  aparte `pendientes`: los abiertos desde un día anterior (en la zona de la sucursal), sin
+  importar los filtros — base del aviso de la fase C.
+- Sin `sucursalId`, ventas y turnos solo dan el consolidado a `ADMIN_CORPORATIVO`; cualquier otro
+  rol queda en su sucursal activa (`sucursalDeLaConsulta`). Antes el guard dejaba pasar la
+  consulta sin sucursal y cualquier rol veía todas.
+- Reportes: el de productos acepta `sucursalId`, y el de métodos de pago ya no suma pedidos
+  cancelados.
+- Migración `20260921120000_indices_trazabilidad`: índices para los filtros nuevos.
+- crm-web: filtros de origen y columnas de dispositivo y turno en Ventas (tocar una fila del
+  desglose filtra por ella), y pantalla nueva **Turnos y cortes** con la alerta de pendientes.

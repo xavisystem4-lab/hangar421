@@ -101,19 +101,25 @@ export class ReportesService {
     return sucursal?.timezone ?? "America/Mexico_City";
   }
 
-  async ventasPorProducto(empresaId: string, desde: Date, hasta: Date) {
+  /** `sucursalId` opcional: sin él es el consolidado de la empresa (antes no había forma de
+   *  pedirlo por sucursal, así que el reporte de una sucursal mostraba lo de todas). */
+  async ventasPorProducto(empresaId: string, desde: Date, hasta: Date, sucursalId?: string) {
     return this.prisma.pedidoItem.groupBy({
       by: ["productoId"],
-      where: { pedido: { empresaId, estado: EstadoPedido.COBRADO, createdAt: { gte: desde, lte: hasta } } },
+      where: {
+        pedido: { empresaId, ...(sucursalId ? { sucursalId } : {}), estado: EstadoPedido.COBRADO, createdAt: { gte: desde, lte: hasta } },
+      },
       _sum: { cantidad: true },
       _count: true,
     });
   }
 
+  /** Solo pedidos COBRADOS: antes sumaba también los pagos de pedidos cancelados, y el total por
+   *  método de pago no cuadraba con el total vendido. */
   async ventasPorMetodoPago(sucursalId: string, desde: Date, hasta: Date) {
     return this.prisma.pago.groupBy({
       by: ["metodo"],
-      where: { pedido: { sucursalId, createdAt: { gte: desde, lte: hasta } } },
+      where: { pedido: { sucursalId, estado: EstadoPedido.COBRADO, createdAt: { gte: desde, lte: hasta } } },
       _sum: { monto: true },
       _count: true,
     });

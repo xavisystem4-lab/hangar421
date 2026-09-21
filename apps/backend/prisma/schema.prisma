@@ -630,6 +630,7 @@ model Turno {
 
   @@index([sucursalId])
   @@index([cajaId])
+  @@index([sucursalId, estado])
   @@map("turnos")
 }
 
@@ -705,6 +706,10 @@ model Pedido {
   @@index([sucursalId, estado])
   @@index([mesaId])
   @@index([turnoId])
+  @@index([empresaId, createdAt])
+  @@index([cajeroId])
+  @@index([meseroId])
+  @@index([dispositivoId])
   @@map("pedidos")
 }
 
