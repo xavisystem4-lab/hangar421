@@ -15,6 +15,7 @@ import { Administracion } from "./screens/Administracion";
 import { PantallaArranque } from "./screens/PantallaArranque";
 import { BarraSuperior, type Pantalla } from "./components/BarraSuperior";
 import { BarraActualizacion } from "./components/BarraActualizacion";
+import { AvisoTurnoPendiente } from "./components/AvisoTurnoPendiente";
 import "./theme.css";
 
 export default function App() {
@@ -132,6 +133,7 @@ export default function App() {
             setPantalla(p);
           }}
         />
+        <AvisoTurnoPendiente sucursalId={auth.sucursalId!} pantalla={pantalla} onIrACaja={() => setPantalla("caja")} />
         <div style={{ flex: 1, overflow: "hidden" }}>
           {pantalla === "mesas" && (
             <Mesas

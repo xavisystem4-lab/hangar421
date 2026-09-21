@@ -223,40 +223,31 @@ export class CajaService {
         : {}),
     };
 
-    const incluir = {
-      sucursal: { select: { id: true, nombre: true, timezone: true } },
-      caja: { select: { id: true, nombre: true } },
-      usuario: { select: { id: true, nombre: true } },
-    } as const;
-
-    const [turnos, abiertos] = await Promise.all([
-      this.prisma.turno.findMany({ where, include: incluir, orderBy: { fechaApertura: "desc" }, take: 200 }),
-      this.prisma.turno.findMany({ where: { ...alcance, estado: EstadoTurno.ABIERTO }, include: incluir, orderBy: { fechaApertura: "asc" } }),
+    const [turnos, pendientes] = await Promise.all([
+      this.prisma.turno.findMany({ where, include: INCLUIR_TURNO, orderBy: { fechaApertura: "desc" }, take: 200 }),
+      this.turnosPendientes(empresaId, filtro.sucursalId),
     ]);
 
     const ventas = await this.ventasPorTurno(turnos);
-    const aFila = (t: (typeof turnos)[number]) => ({
-      id: t.id,
-      estado: t.estado,
-      fechaApertura: t.fechaApertura,
-      fechaCierre: t.fechaCierre,
-      sucursal: { id: t.sucursal.id, nombre: t.sucursal.nombre },
-      caja: t.caja,
-      usuario: t.usuario,
-      montoInicial: Number(t.montoInicial),
-      montoFinalDeclarado: t.montoFinalDeclarado == null ? null : Number(t.montoFinalDeclarado),
-      montoFinalSistema: t.montoFinalSistema == null ? null : Number(t.montoFinalSistema),
-      diferencia: t.diferencia == null ? null : Number(t.diferencia),
-      pendienteDiaAnterior: esTurnoDeDiaAnterior(t, t.sucursal.timezone),
-      ventas: ventas.get(t.id) ?? { numTickets: 0, total: 0 },
-    });
-
     return {
-      items: turnos.map(aFila),
-      pendientes: abiertos
-        .filter((t) => esTurnoDeDiaAnterior(t, t.sucursal.timezone))
-        .map((t) => ({ ...aFila(t), ventas: undefined })),
+      items: turnos.map((t) => ({ ...filaTurno(t), ventas: ventas.get(t.id) ?? { numTickets: 0, total: 0 } })),
+      pendientes,
     };
+  }
+
+  /**
+   * Turnos que siguen abiertos desde un día anterior (en la zona de su sucursal). Es el aviso de
+   * "no se cerró el turno de ayer": lo muestran el ERP y el POS al iniciar operaciones. Cualquier
+   * rol puede consultarlo para su sucursal — el cajero que abre la tienda es justo quien debe
+   * enterarse.
+   */
+  async turnosPendientes(empresaId: string, sucursalId?: string) {
+    const abiertos = await this.prisma.turno.findMany({
+      where: { sucursal: { empresaId }, ...(sucursalId ? { sucursalId } : {}), estado: EstadoTurno.ABIERTO },
+      include: INCLUIR_TURNO,
+      orderBy: { fechaApertura: "asc" },
+    });
+    return abiertos.filter((t) => esTurnoDeDiaAnterior(t, t.sucursal.timezone)).map(filaTurno);
   }
 
   private async ventasPorTurno(turnos: { id: string; sucursalId: string; usuarioId: string; fechaApertura: Date; fechaCierre: Date | null }[]) {
@@ -326,6 +317,31 @@ export class CajaService {
       montoEsperado: round2(esperado.montoEsperado),
     };
   }
+}
+
+const INCLUIR_TURNO = {
+  sucursal: { select: { id: true, nombre: true, timezone: true } },
+  caja: { select: { id: true, nombre: true } },
+  usuario: { select: { id: true, nombre: true } },
+} as const;
+
+type TurnoConRelaciones = Prisma.TurnoGetPayload<{ include: typeof INCLUIR_TURNO }>;
+
+function filaTurno(t: TurnoConRelaciones) {
+  return {
+    id: t.id,
+    estado: t.estado,
+    fechaApertura: t.fechaApertura,
+    fechaCierre: t.fechaCierre,
+    sucursal: { id: t.sucursal.id, nombre: t.sucursal.nombre },
+    caja: t.caja,
+    usuario: t.usuario,
+    montoInicial: Number(t.montoInicial),
+    montoFinalDeclarado: t.montoFinalDeclarado == null ? null : Number(t.montoFinalDeclarado),
+    montoFinalSistema: t.montoFinalSistema == null ? null : Number(t.montoFinalSistema),
+    diferencia: t.diferencia == null ? null : Number(t.diferencia),
+    pendienteDiaAnterior: esTurnoDeDiaAnterior(t, t.sucursal.timezone),
+  };
 }
 
 function round2(n: number): number {

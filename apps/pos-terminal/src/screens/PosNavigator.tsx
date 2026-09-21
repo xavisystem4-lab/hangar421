@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Alert, BackHandler, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { RolUsuario } from "@hangar421/shared";
+import { RolUsuario, diasDeTurnoAbierto } from "@hangar421/shared";
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { useSyncStatusStore, type EstadoSync } from "../store/syncStatusStore";
 import { usarColores } from "../store/temaStore";
@@ -8,6 +8,7 @@ import { procesarCola } from "../sync/syncEngine";
 import { abrirBaseDeDatos } from "../db/database";
 import { listarTicketsPendientes } from "../db/ticketsRepo";
 import { obtenerNombreSucursal } from "../db/dispositivoLocal";
+import { turnoPendienteDeDiaAnterior, type TurnoPendiente } from "../db/turnosRepo";
 import { useBotonAtras } from "../hooks/useBotonAtras";
 import { ModalRenombrarSucursal } from "../components/ModalRenombrarSucursal";
 import { ModalAutorizacion } from "../components/ModalAutorizacion";
@@ -70,6 +71,26 @@ export function PosNavigator() {
       .then(setSucursalActiva)
       .catch(() => undefined);
   }, [mostrarConexion]);
+
+  /**
+   * Aviso de turno sin cerrar desde un día anterior (solo avisa, no bloquea). Se revisa al
+   * entrar, al cambiar de pestaña —así desaparece al volver de Caja tras cerrarlo— y cada 10
+   * minutos, porque el cambio de día ocurre con la app abierta. Sale de la base local: funciona
+   * sin conexión. "Entendido" lo oculta para ESE turno hasta el próximo inicio de sesión.
+   */
+  const [turnoPendiente, setTurnoPendiente] = useState<TurnoPendiente | null>(null);
+  const [avisoOcultoDe, setAvisoOcultoDe] = useState<string | null>(null);
+  useEffect(() => {
+    if (mostrarConexion) return;
+    const revisar = () =>
+      abrirBaseDeDatos()
+        .then((db) => turnoPendienteDeDiaAnterior(db))
+        .then(setTurnoPendiente)
+        .catch(() => undefined);
+    revisar();
+    const intervalo = setInterval(revisar, 10 * 60_000);
+    return () => clearInterval(intervalo);
+  }, [pantalla, mostrarConexion]);
 
   /**
    * Botón atrás de Android: un paso atrás de verdad, en vez de cerrar la app.
@@ -208,6 +229,33 @@ export function PosNavigator() {
         </View>
       </View>
 
+      {turnoPendiente && avisoOcultoDe !== turnoPendiente.turno.id && (
+        <View style={estilos.avisoTurno} accessibilityRole="alert">
+          <Text style={estilos.avisoTurnoTitulo}>
+            ⚠ Turno sin cerrar{" "}
+            {diasDeTurnoAbierto(turnoPendiente.turno.abiertoAt) <= 1
+              ? "desde ayer"
+              : `desde hace ${diasDeTurnoAbierto(turnoPendiente.turno.abiertoAt)} días`}
+          </Text>
+          <Text style={estilos.avisoTurnoTexto}>
+            {turnoPendiente.sucursal} · abierto el{" "}
+            {new Date(turnoPendiente.turno.abiertoAt).toLocaleString("es-MX", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+            {" · "}responsable: {turnoPendiente.responsable} · turno {turnoPendiente.turno.id.slice(-6)}
+          </Text>
+          <Text style={estilos.avisoTurnoTexto}>Las ventas nuevas se suman a ese mismo corte hasta que se cierre.</Text>
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+            {pantalla !== "caja" && (
+              <TouchableOpacity onPress={() => setPantalla("caja")} style={estilos.avisoTurnoBoton}>
+                <Text style={{ color: "#fff", fontWeight: "700" }}>Ir a Caja para cerrarlo</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity onPress={() => setAvisoOcultoDe(turnoPendiente.turno.id)} style={estilos.avisoTurnoBotonSecundario}>
+              <Text style={{ color: colores.red, fontWeight: "700" }}>Entendido</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       {ultimoFolio && (
         <View style={estilos.avisoFolio}>
           <Text style={estilos.avisoFolioTexto}>✓ Venta #{ultimoFolio.folio} confirmada — ${ultimoFolio.total.toFixed(2)}</Text>
@@ -309,6 +357,11 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     avisoFolio: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: colores.green, padding: 10, paddingHorizontal: 16 },
     avisoFolioTexto: { color: "#fff", fontWeight: "700", fontSize: 13 },
     avisoFolioCerrar: { color: "#fff", fontSize: 16 },
+    avisoTurno: { backgroundColor: colores.red + "18", borderBottomWidth: 2, borderBottomColor: colores.red, padding: 12, paddingHorizontal: 16 },
+    avisoTurnoTitulo: { color: colores.red, fontWeight: "800", fontSize: 15 },
+    avisoTurnoTexto: { color: colores.texto, fontSize: 13, marginTop: 2 },
+    avisoTurnoBoton: { backgroundColor: colores.red, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
+    avisoTurnoBotonSecundario: { borderWidth: 1, borderColor: colores.red, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
     subTabs: { flexGrow: 0, paddingVertical: 12, backgroundColor: colores.superficie, borderBottomWidth: 1, borderBottomColor: colores.borde },
     subTab: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, backgroundColor: colores.gray50 },
     subTabActivo: { backgroundColor: colores.navy },

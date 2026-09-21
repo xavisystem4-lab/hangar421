@@ -42,6 +42,13 @@ export class CajaController {
     });
   }
 
+  /** Turnos abiertos desde un día anterior, para el aviso del POS al iniciar operaciones. Sin
+   *  @Roles: el cajero que abre la tienda es quien tiene que verlo; el alcance es su sucursal. */
+  @Get("turnos/pendientes")
+  turnosPendientes(@Req() req: any, @Query("sucursalId") sucursalId?: string) {
+    return this.caja.turnosPendientes(req.user.empresaId, sucursalDeLaConsulta(req.user, sucursalId));
+  }
+
   @Get("cajas/:cajaId/turno-activo")
   turnoActivo(@Param("cajaId") cajaId: string) {
     return this.caja.turnoActivo(cajaId);

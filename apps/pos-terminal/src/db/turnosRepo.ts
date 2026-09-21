@@ -1,8 +1,8 @@
 import type { SQLiteDatabase } from "expo-sqlite";
-import { uuid7, round2, SyncEntidad, SyncOperacion } from "@hangar421/shared";
+import { uuid7, round2, SyncEntidad, SyncOperacion, turnoDeDiaAnterior } from "@hangar421/shared";
 import type { DesgloseEfectivo } from "../caja/denominaciones";
 import { encolarSync } from "./outboxRepo";
-import { obtenerOCrearDispositivoId, obtenerOCrearSucursalIdLocal } from "./dispositivoLocal";
+import { obtenerNombreSucursal, obtenerOCrearDispositivoId, obtenerOCrearSucursalIdLocal } from "./dispositivoLocal";
 
 export interface TurnoLocal {
   id: string;
@@ -33,6 +33,25 @@ export async function turnoAbierto(db: SQLiteDatabase): Promise<TurnoLocal | nul
   );
   if (!f) return null;
   return { id: f.id, usuarioId: f.usuario_id, montoInicial: f.monto_inicial, montoFinalDeclarado: f.monto_final_declarado, estado: f.estado, abiertoAt: f.abierto_at, cerradoAt: f.cerrado_at };
+}
+
+export interface TurnoPendiente {
+  turno: TurnoLocal;
+  responsable: string;
+  sucursal: string;
+}
+
+/** El turno abierto de la sucursal activa SI viene de un día anterior (turnoDeDiaAnterior), con
+ *  el nombre del responsable y de la sucursal para el aviso. Todo de la base local: el aviso
+ *  tiene que salir aunque la tablet no tenga conexión, que es justo cuando nadie más se entera. */
+export async function turnoPendienteDeDiaAnterior(db: SQLiteDatabase, ahora: Date = new Date()): Promise<TurnoPendiente | null> {
+  const turno = await turnoAbierto(db);
+  if (!turno || !turnoDeDiaAnterior({ estado: turno.estado, fechaApertura: turno.abiertoAt }, ahora)) return null;
+  const [usuario, sucursal] = await Promise.all([
+    db.getFirstAsync<{ nombre: string }>("SELECT nombre FROM usuarios_locales WHERE id = ?", turno.usuarioId),
+    obtenerNombreSucursal(db),
+  ]);
+  return { turno, responsable: usuario?.nombre ?? "Usuario desconocido", sucursal: sucursal ?? "Sucursal sin nombre" };
 }
 
 /** Abrir caja — una sola transacción: fila de turno + su evento de sync, todo o nada. */
