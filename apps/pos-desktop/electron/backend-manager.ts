@@ -28,6 +28,8 @@ interface Secretos {
   jwtRefreshSecret: string;
   pagosCifradoKey: string;
   plataformasCifradoKey: string;
+  /** Cifra la sesión con el ERP en la nube (enlace-nube: el POS sube sus ventas). */
+  nubeCifradoKey: string;
 }
 
 export interface BackendEmbebido {
@@ -154,6 +156,7 @@ export async function iniciarBackendEmbebido(logIn: (msg: string) => void, puert
     JWT_REFRESH_SECRET: secretos.jwtRefreshSecret,
     PAGOS_CIFRADO_KEY: secretos.pagosCifradoKey,
     PLATAFORMAS_CIFRADO_KEY: secretos.plataformasCifradoKey,
+    NUBE_CIFRADO_KEY: secretos.nubeCifradoKey,
     PLATAFORMAS_PUBLIC_BASE_URL: `http://127.0.0.1:${backendPort}/api/v1`,
     JWT_ACCESS_EXPIRES_IN: "15m",
     JWT_REFRESH_EXPIRES_IN: "30d",
@@ -515,6 +518,10 @@ function obtenerOCrearSecretos(rutaArchivo: string): Secretos {
       secretos.plataformasCifradoKey = crypto.randomBytes(48).toString("hex");
       cambio = true;
     }
+    if (!secretos.nubeCifradoKey) {
+      secretos.nubeCifradoKey = crypto.randomBytes(48).toString("hex");
+      cambio = true;
+    }
     if (cambio) fs.writeFileSync(rutaArchivo, JSON.stringify(secretos, null, 2), { mode: 0o600 });
     return secretos;
   }
@@ -524,6 +531,7 @@ function obtenerOCrearSecretos(rutaArchivo: string): Secretos {
     jwtRefreshSecret: crypto.randomBytes(48).toString("hex"),
     pagosCifradoKey: crypto.randomBytes(48).toString("hex"),
     plataformasCifradoKey: crypto.randomBytes(48).toString("hex"),
+    nubeCifradoKey: crypto.randomBytes(48).toString("hex"),
   };
   fs.writeFileSync(rutaArchivo, JSON.stringify(secretos, null, 2), { mode: 0o600 });
   return secretos;

@@ -216,6 +216,8 @@ export enum SyncEntidad {
   /** Solicitud de alta de un producto que no existe en el catálogo, hecha desde un punto de
    *  venta (posiblemente sin conexión). Nunca crea el producto: lo registra un administrador. */
   SOLICITUD_PRODUCTO = "SOLICITUD_PRODUCTO",
+  /** Venta cerrada de un POS de Windows standalone, subida a la nube (ver VentaHub). */
+  VENTA_HUB = "VENTA_HUB",
 }
 
 export enum EstadoSolicitudProducto {

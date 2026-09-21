@@ -77,3 +77,39 @@ export const WS_EVENTS = {
 } as const;
 
 export type WsEventName = (typeof WS_EVENTS)[keyof typeof WS_EVENTS];
+
+/**
+ * Venta cerrada (cobrada o cancelada) de un POS de Windows en modo standalone, tal como la sube
+ * al ERP en la nube (SyncEntidad.VENTA_HUB). Es un snapshot completo con los ids YA traducidos a
+ * los de la nube (ver enlace-nube en el backend): el ERP la importa respetando los totales, la
+ * fecha y el folio originales, sin recalcular precios ni volver a descontar inventario — lo que
+ * se cobró en el mostrador es lo que vale.
+ */
+export interface VentaHub {
+  folioLocal: string;
+  estado: "COBRADO" | "CANCELADO";
+  /** Hora real de la venta en el POS (ISO). */
+  creadaEn: string;
+  tipo: string;
+  canalOrigen: string;
+  numComensales?: number | null;
+  notasGenerales?: string | null;
+  subtotal: number;
+  impuesto: number;
+  descuentoTotal: number;
+  total: number;
+  meseroId?: string | null;
+  cajeroId?: string | null;
+  /** Equipo donde nació la venta (el POS o la tablet de un mesero), si se conoce. */
+  dispositivoOrigen?: { identificador: string; nombre: string; tipo: string } | null;
+  items: {
+    id: string;
+    productoId: string;
+    cantidad: number;
+    precioUnitario: number;
+    notas?: string | null;
+    modificadores: { id: string; opcionModificadorId: string; precioExtra: number }[];
+  }[];
+  pagos: { id: string; metodo: string; monto: number; referencia?: string | null; usuarioId?: string | null }[];
+  descuentos: { id: string; tipo: string; valor: number; montoAplicado: number; motivo: string; autorizadoPorId?: string | null }[];
+}

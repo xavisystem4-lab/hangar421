@@ -1,5 +1,5 @@
-import { IsArray, IsEnum, IsOptional, IsString, MinLength } from "class-validator";
-import { RolUsuario } from "@hangar421/shared";
+import { IsArray, IsEnum, IsIn, IsOptional, IsString, MinLength } from "class-validator";
+import { RolUsuario, TipoDispositivo } from "@hangar421/shared";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
 export class LoginCredencialesDto {
@@ -39,4 +39,10 @@ export class VincularDispositivoDto {
   /** Huella de instalación del APK (ver dispositivoLocal.obtenerOCrearDispositivoId). */
   @ApiProperty() @IsString() dispositivoId!: string;
   @ApiPropertyOptional() @IsOptional() @IsString() nombreDispositivo?: string;
+  /** Tipo con que se registra el equipo: POS_TERMINAL (APK, por defecto) o POS_WINDOWS (la PC
+   *  que sube sus ventas a la nube, ver enlace-nube). */
+  @ApiPropertyOptional({ enum: [TipoDispositivo.POS_TERMINAL, TipoDispositivo.POS_WINDOWS] })
+  @IsOptional()
+  @IsIn([TipoDispositivo.POS_TERMINAL, TipoDispositivo.POS_WINDOWS])
+  tipo?: TipoDispositivo;
 }

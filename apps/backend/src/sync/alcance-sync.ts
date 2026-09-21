@@ -88,6 +88,8 @@ export class AlcanceSync {
         return (await this.deOtraEmpresa("insumo", p.insumoId)) ? "El insumo pertenece a otra empresa" : null;
       case SyncEntidad.PRODUCTO_SUCURSAL:
         return (await this.deOtraEmpresa("producto", p.productoId)) ? "El producto pertenece a otra empresa" : null;
+      case SyncEntidad.VENTA_HUB:
+        return (await this.deOtraSucursal("pedido", item.id, suc)) ? "La venta pertenece a otra sucursal" : null;
       case SyncEntidad.SOLICITUD_PRODUCTO:
         return (await this.deOtraSucursal("solicitudProducto", item.id, suc)) ? "La solicitud pertenece a otra sucursal" : null;
       case SyncEntidad.USUARIO:

@@ -71,9 +71,11 @@ function crearServicio() {
   const catalogo = { fijarPrecioSucursal: jest.fn(), fijarDisponibilidad: jest.fn() };
   const solicitudes = { crear: jest.fn(() => Promise.resolve({})) };
 
-  const service = new SyncService(prisma as any, pedidos as any, mesas as any, inventario as any, caja as any, catalogo as any, solicitudes as any);
+  const importacionHub = { importarVenta: jest.fn(() => Promise.resolve({})) };
+
+  const service = new SyncService(prisma as any, pedidos as any, mesas as any, inventario as any, caja as any, catalogo as any, solicitudes as any, importacionHub as any);
   const push = (items: any[], sesion: any = SESION) => service.push(items, sesion);
-  return { service, push, prisma, pedidos, mesas, inventario, caja, catalogo, solicitudes, registros };
+  return { service, push, prisma, pedidos, mesas, inventario, caja, catalogo, solicitudes, importacionHub, registros };
 }
 
 function envolverPedido(idempotencyKey: string) {

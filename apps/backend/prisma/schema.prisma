@@ -1325,3 +1325,69 @@ model SolicitudProducto {
   @@index([sucursalId])
   @@map("solicitudes_producto")
 }
+
+// ---------------------------------------------------------------------------
+// Enlace del POS de Windows (backend embebido, modo standalone) con el ERP en la nube
+// (docs/vinculacion-pos-desktop.md). Solo se usan en el POS; en la nube quedan vacías.
+// ---------------------------------------------------------------------------
+
+/// Enlace de este POS con el ERP en la nube. Una sola fila ("principal").
+model EnlaceNube {
+  id                 String    @id @default("principal")
+  urlErp             String
+  empresaIdNube      String
+  sucursalIdNube     String
+  sucursalNombreNube String
+  /// Sucursal LOCAL cuyas ventas se suben (el seed local crea varias).
+  sucursalIdLocal    String
+  /// Huella con la que este POS se registró como dispositivo en la nube.
+  dispositivoId      String
+  /// Refresh token de la sesión en la nube, cifrado con NUBE_CIFRADO_KEY. El access token vive
+  /// solo en memoria.
+  refreshCifrado     String
+  /// Se suben las ventas desde esta fecha (la elige el admin al vincular).
+  sincronizarDesde   DateTime
+  activo             Boolean   @default(true)
+  ultimoEnvio        DateTime?
+  ultimoError        String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@map("enlace_nube")
+}
+
+/// Equivalencia de ids locales con los de la nube (el catálogo y los usuarios locales tienen ids
+/// propios). `idNube` vacío = sin equivalente: las ventas que lo usan esperan a que el admin lo
+/// relacione. Nunca se crea un producto en la nube por esto.
+model MapeoIdNube {
+  /// PRODUCTO | OPCION_MODIFICADOR | USUARIO
+  entidad     String
+  idLocal     String
+  idNube      String?
+  nombreLocal String
+  /// AUTOMATICO (mismo nombre) | MANUAL (lo eligió el admin) | ALTA (usuario dado de alta en la nube con su id)
+  origen      String
+  updatedAt   DateTime @updatedAt
+
+  @@id([entidad, idLocal])
+  @@map("mapeo_ids_nube")
+}
+
+/// Estado del envío a la nube de cada registro local. `version` es el `updatedAt` local que se
+/// envió: si el registro cambia después (una cancelación), se vuelve a enviar.
+model EnvioNube {
+  entidad        String
+  entidadId      String
+  version        DateTime
+  /// ENVIADO | ERROR | ESPERA_MAPEO
+  estado         String
+  intentos       Int       @default(0)
+  ultimoError    String?
+  proximoIntento DateTime?
+  enviadoAt      DateTime?
+  updatedAt      DateTime  @updatedAt
+
+  @@id([entidad, entidadId])
+  @@index([estado])
+  @@map("envios_nube")
+}

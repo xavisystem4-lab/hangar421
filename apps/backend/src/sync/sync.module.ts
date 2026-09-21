@@ -7,10 +7,11 @@ import { CatalogoModule } from "../catalogo/catalogo.module";
 import { SolicitudesProductoModule } from "../solicitudes-producto/solicitudes-producto.module";
 import { SyncController } from "./sync.controller";
 import { SyncService } from "./sync.service";
+import { ImportacionHubService } from "./importacion-hub.service";
 
 @Module({
   imports: [PedidosModule, MesasModule, InventarioModule, CajaModule, CatalogoModule, SolicitudesProductoModule],
   controllers: [SyncController],
-  providers: [SyncService],
+  providers: [SyncService, ImportacionHubService],
 })
 export class SyncModule {}

@@ -1,7 +1,7 @@
 # Vinculación del POS de Windows con el ERP en la nube — diseño
 
-> Estado: **fases A–E de §9 implementadas**; queda la F (ventas del POS de Windows a la nube,
-> §1–§7). Las decisiones de §9 resuelven las preguntas 1 y 5 de §8.
+> Estado: **fases A–E y F1 de §9 implementadas**; quedan F2–F4 (cortes, inventario y catálogo del
+> POS de Windows ↔ nube). Las decisiones de §9 resuelven las preguntas 1, 3 y 5 de §8.
 > Complementa `architecture.md`, `sync-flows.md` y `multisucursal-pos-terminal.md`.
 
 ## 1. Objetivo
@@ -263,3 +263,32 @@ tablet es en línea; se puede cambiar de sucursal sin conexión):
   (`alcance_terminal = EMPRESA`); las demás funcionan exactamente como antes.
 - Pendiente de la fase A que aquí importa: un usuario creado en una tablet no tiene PIN en el ERP,
   así que para entrar en otra tablet un admin debe asignárselo desde el ERP.
+
+**Fase F1, cómo quedó** (decisiones: se sube desde una fecha que elige el admin; una venta con un
+producto sin equivalente espera y el admin lo relaciona en el POS):
+
+- **Nube.** `SyncEntidad.VENTA_HUB` + `ImportacionHubService`: guarda la venta tal como se cobró
+  (totales, fecha y folio originales, folio `PC<4 de la huella>-<folio local>`), sin re-precio ni
+  inventario por receta ni comanda. Valida que productos y opciones sean de la empresa; una opción
+  ajena se omite (su importe ya está en el total). Idempotente por id: una versión posterior
+  (cancelada) actualiza estado y totales y agrega pagos nuevos. `VincularDispositivoDto.tipo`
+  permite registrar la PC como `POS_WINDOWS`.
+- **POS** (`enlace-nube/`, solo con `AUTO_BOOTSTRAP=true`; en la nube responde 403). Migración
+  `20260921210000_enlace_nube`: `enlace_nube`, `mapeo_ids_nube`, `envios_nube`. Vincula con un
+  código de UNA sucursal (rechaza uno de empresa); guarda el refresh token cifrado con
+  `NUBE_CIFRADO_KEY` (la genera `backend-manager.ts` en `secrets.json`) y renueva la sesión solo.
+- **Emparejamiento** por nombre de lo más específico a lo más general (subcategoría + categoría +
+  nombre → categoría + nombre → nombre), solo con candidato único. Lo ambiguo o inexistente queda
+  "por relacionar". Usuarios: por nombre; el que no empareja se da de alta en la nube con su mismo
+  id antes de su primera venta.
+- **Ciclo** cada minuto (y "Enviar ahora"): ventas COBRADAS/CANCELADAS de la sucursal local desde
+  la fecha elegida, nunca enviadas o cambiadas desde el último envío; lotes de 25; reintento con
+  espera creciente; las que esperan producto se revisan cada 5 min y se liberan al relacionar.
+- **UI** (Administración → Conexión, solo en standalone): vincular (URL, sucursal local, fecha,
+  código), estado (enviadas, por enviar, esperando producto, con error, último envío/problema),
+  "Enviar ahora", "Desvincular" y "Productos por relacionar" con el catálogo de la nube.
+- Probado de punta a punta con dos backends (POS embebido con su propio seed ↔ nube): las ventas
+  llegan con totales, fecha, cajera y dispositivo del POS; reenviar no duplica.
+
+**Pendiente de F:** F2 cortes de caja (turnos con su id), F3 inventario, F4 catálogo nube → POS.
+Hasta F2, las ventas del POS llegan sin turno en la nube (filtro "Sin turno" del Dashboard).

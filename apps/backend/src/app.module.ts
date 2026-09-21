@@ -26,6 +26,7 @@ import { SyncModule } from "./sync/sync.module";
 import { PagosModule } from "./pagos/pagos.module";
 import { PlataformasModule } from "./plataformas/plataformas.module";
 import { SolicitudesProductoModule } from "./solicitudes-producto/solicitudes-producto.module";
+import { EnlaceNubeModule } from "./enlace-nube/enlace-nube.module";
 
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { EmpresaScopeGuard } from "./common/guards/empresa-scope.guard";
@@ -61,6 +62,7 @@ import { AuditInterceptor } from "./common/interceptors/audit.interceptor";
     PagosModule,
     PlataformasModule,
     SolicitudesProductoModule,
+    EnlaceNubeModule,
   ],
   providers: [
     // Orden: JWT primero (deja la sesión en request.user), luego el alcance de empresa, luego

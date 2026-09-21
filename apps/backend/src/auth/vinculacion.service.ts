@@ -114,6 +114,7 @@ export class VinculacionService {
     codigo: string;
     dispositivoId: string;
     nombreDispositivo?: string;
+    tipo?: TipoDispositivo;
   }): Promise<{
     sucursalId: string;
     sucursal: string;
@@ -159,7 +160,7 @@ export class VinculacionService {
         create: {
           sucursalId: registro.sucursalId,
           nombre: params.nombreDispositivo?.trim() || "Punto de Venta",
-          tipo: TipoDispositivo.POS_TERMINAL as any,
+          tipo: (params.tipo ?? TipoDispositivo.POS_TERMINAL) as any,
           identificador: params.dispositivoId,
           ultimaConexion: new Date(),
         },
@@ -201,7 +202,7 @@ export class VinculacionService {
    */
   private async vincularAEmpresa(
     registro: { empresaId: string; sucursalesIds: string[]; rol: string },
-    params: { dispositivoId: string; nombreDispositivo?: string },
+    params: { dispositivoId: string; nombreDispositivo?: string; tipo?: TipoDispositivo },
   ) {
     const sucursales = await this.prisma.sucursal.findMany({
       where: {
@@ -240,7 +241,7 @@ export class VinculacionService {
         create: {
           sucursalId: sucursales[0].id,
           nombre: params.nombreDispositivo?.trim() || "Punto de Venta",
-          tipo: TipoDispositivo.POS_TERMINAL as any,
+          tipo: (params.tipo ?? TipoDispositivo.POS_TERMINAL) as any,
           identificador: params.dispositivoId,
           ultimaConexion: new Date(),
         },

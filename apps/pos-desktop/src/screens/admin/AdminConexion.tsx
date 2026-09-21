@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../api/http";
 import { useAuthStore } from "../../store/authStore";
+import { PanelEnlaceNube } from "./PanelEnlaceNube";
 
 interface InfoConexion {
   ip: string | null;
@@ -174,6 +175,9 @@ export function AdminConexion() {
 
   return (
     <div style={{ maxWidth: 560 }}>
+      {/* Solo en modo standalone: en modo Nube el POS ya escribe directo en el ERP. */}
+      {nube?.modoActual === "standalone" && <PanelEnlaceNube />}
+
       <div style={{ marginBottom: 28, paddingBottom: 24, borderBottom: "1px solid var(--h421-gray-200)" }}>
         <h2 style={{ margin: "0 0 6px", fontSize: 18 }}>Backend en la nube</h2>
         <p style={{ color: "var(--h421-gray-400)", fontSize: 14, marginTop: 0, marginBottom: 14, lineHeight: 1.5 }}>

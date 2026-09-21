@@ -21,6 +21,7 @@ import { CajaService } from "../caja/caja.service";
 import { CatalogoService } from "../catalogo/catalogo.service";
 import { AlcanceSync } from "./alcance-sync";
 import { SolicitudesProductoService } from "../solicitudes-producto/solicitudes-producto.service";
+import { ImportacionHubService } from "./importacion-hub.service";
 
 @Injectable()
 export class SyncService {
@@ -34,6 +35,7 @@ export class SyncService {
     private caja: CajaService,
     private catalogo: CatalogoService,
     private solicitudesProducto: SolicitudesProductoService,
+    private importacionHub: ImportacionHubService,
   ) {}
 
   /** Aplica un lote de operaciones offline. Idempotente: reenviar el mismo lote
@@ -307,6 +309,11 @@ export class SyncService {
           texto: p.texto,
           solicitadaEn: item.createdAtLocal ? new Date(item.createdAtLocal) : undefined,
         });
+        break;
+
+      // Venta cerrada de un POS de Windows standalone (ver ImportacionHubService).
+      case SyncEntidad.VENTA_HUB:
+        await this.importacionHub.importarVenta({ id: item.id, empresaId, sucursalId: item.sucursalId, huellaHub: item.dispositivoId, venta: p });
         break;
 
       case SyncEntidad.PRODUCTO_SUCURSAL:
