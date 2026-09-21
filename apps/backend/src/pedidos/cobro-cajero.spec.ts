@@ -12,8 +12,9 @@ import { EstadoPedido, MetodoPago } from "@hangar421/shared";
  * El caso que lo dispara es un cajero dado de alta en la terminal SIN conexión: su id es un
  * uuid7 generado en la tablet que el ERP nunca ha visto.
  */
-function crearServicio(usuariosExistentes: string[]) {
+function crearServicio(usuariosExistentes: string[], opciones: { turnoIdDelPedido?: string | null; turnosAbiertos?: any[] } = {}) {
   const pedido = {
+    turnoId: opciones.turnoIdDelPedido ?? null,
     id: "pedido-1",
     sucursalId: "suc-1",
     empresaId: "emp-1",
@@ -40,6 +41,21 @@ function crearServicio(usuariosExistentes: string[]) {
     usuario: {
       findUnique: jest.fn(({ where: { id } }: any) =>
         Promise.resolve(usuariosExistentes.includes(id) ? { id } : null),
+      ),
+    },
+    // Turnos que el ERP tiene del cajero: se filtra como lo haría la consulta real (sucursal,
+    // cajero y ventana apertura–cierre que contenga el momento del cobro).
+    turno: {
+      findFirst: jest.fn(({ where }: any) =>
+        Promise.resolve(
+          (opciones.turnosAbiertos ?? []).find(
+            (t) =>
+              t.sucursalId === where.sucursalId &&
+              t.usuarioId === where.usuarioId &&
+              t.fechaApertura <= where.fechaApertura.lte &&
+              (t.fechaCierre === null || t.fechaCierre >= where.fechaApertura.lte),
+          ) ?? null,
+        ),
       ),
     },
     $transaction: jest.fn((fn: any) => fn(tx)),
@@ -108,5 +124,42 @@ describe("PedidosService.cobrar — cajero desconocido", () => {
     await service.cobrar("pedido-1", { pagos: PAGOS, cajeroId: "cajero-real" } as any);
 
     expect(realtime.emitirAEmpresa).toHaveBeenCalledWith("emp-1", "pedido:actualizado", expect.anything());
+  });
+});
+
+describe("PedidosService.cobrar — enlace al turno", () => {
+  const turno = (id: string, apertura: string, cierre: string | null) => ({
+    id, sucursalId: "suc-1", usuarioId: "cajero-1", fechaApertura: new Date(apertura), fechaCierre: cierre ? new Date(cierre) : null,
+  });
+
+  it("un pedido sin turno se enlaza al turno del cajero abierto al momento del cobro", async () => {
+    const { service, actualizaciones } = crearServicio(["cajero-1"], {
+      turnosAbiertos: [turno("turno-ayer", "2026-09-20T08:00:00Z", "2026-09-20T20:00:00Z"), turno("turno-hoy", "2026-09-21T08:00:00Z", null)],
+    });
+    await service.cobrar("pedido-1", { pagos: PAGOS, cajeroId: "cajero-1" } as any, new Date("2026-09-21T10:00:00Z"));
+    expect(actualizaciones[0].turnoId).toBe("turno-hoy");
+  });
+
+  it("un cobro que llega tarde por la cola offline cae en el turno de SU hora, aunque ya esté cerrado", async () => {
+    const { service, actualizaciones } = crearServicio(["cajero-1"], {
+      turnosAbiertos: [turno("turno-ayer", "2026-09-20T08:00:00Z", "2026-09-20T20:00:00Z"), turno("turno-hoy", "2026-09-21T08:00:00Z", null)],
+    });
+    await service.cobrar("pedido-1", { pagos: PAGOS, cajeroId: "cajero-1" } as any, new Date("2026-09-20T19:00:00Z"));
+    expect(actualizaciones[0].turnoId).toBe("turno-ayer");
+  });
+
+  it("respeta el turno que ya trae el pedido (el APK lo manda al crear la venta)", async () => {
+    const { service, actualizaciones } = crearServicio(["cajero-1"], {
+      turnoIdDelPedido: "turno-del-apk",
+      turnosAbiertos: [turno("turno-hoy", "2026-09-21T08:00:00Z", null)],
+    });
+    await service.cobrar("pedido-1", { pagos: PAGOS, cajeroId: "cajero-1" } as any, new Date("2026-09-21T10:00:00Z"));
+    expect(actualizaciones[0].turnoId).toBe("turno-del-apk");
+  });
+
+  it("sin cajero conocido o sin turno que cuadre, lo deja vacío", async () => {
+    const { service, actualizaciones } = crearServicio([], { turnosAbiertos: [] });
+    await service.cobrar("pedido-1", { pagos: PAGOS, cajeroId: "desconocido" } as any);
+    expect(actualizaciones[0].turnoId).toBeNull();
   });
 });

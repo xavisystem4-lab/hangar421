@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import {
   EstadoMesa,
   EstadoPedido,
@@ -185,7 +185,12 @@ export class PedidosService {
    *  (reintento de sincronización offline no duplica). */
   async crear(dto: CrearPedidoDto) {
     const existente = await this.prisma.pedido.findUnique({ where: { id: dto.id } });
-    if (existente) return this.obtener(dto.id);
+    if (existente) {
+      // El reintento idempotente solo vale dentro de la misma sucursal: sin esto, nombrar el id
+      // de un pedido ajeno devolvía el pedido completo de otra sucursal.
+      if (existente.sucursalId !== dto.sucursalId) throw new ConflictException("Ya existe un pedido con ese id en otra sucursal");
+      return this.obtener(dto.id);
+    }
 
     const sucursal = await this.prisma.sucursal.findUniqueOrThrow({ where: { id: dto.sucursalId } });
     const folio = await this.generarFolio(dto.sucursalId);
@@ -378,8 +383,35 @@ export class PedidosService {
     return actualizado;
   }
 
-  /** Cobro: registra pagos, cierra el pedido y descuenta inventario según receta. */
-  async cobrar(pedidoId: string, dto: CobrarPedidoDto) {
+  /**
+   * Turno al que pertenece un cobro que no trae uno: el del cajero, en esa sucursal, que estaba
+   * abierto en el momento del cobro.
+   *
+   * El APK manda `turnoId` al crear la venta, pero el POS de Windows no lo sabe al crear el
+   * pedido (lo crea el mesero, lo cobra la caja), ni los pedidos de la app de meseros. Sin esto
+   * esas ventas quedaban sin turno: el corte las contaba por cajero + fecha, y el Dashboard no
+   * podía filtrar por turno. Se resuelve aquí para que valga igual para todos los clientes.
+   * Sin cajero o sin turno que cuadre, se deja vacío (el corte conserva su criterio de respaldo).
+   */
+  private async resolverTurnoDelCobro(sucursalId: string, cajeroId: string | null | undefined, momento: Date): Promise<string | null> {
+    if (!cajeroId) return null;
+    const turno = await this.prisma.turno.findFirst({
+      where: {
+        sucursalId,
+        usuarioId: cajeroId,
+        fechaApertura: { lte: momento },
+        OR: [{ fechaCierre: null }, { fechaCierre: { gte: momento } }],
+      },
+      orderBy: { fechaApertura: "desc" },
+      select: { id: true },
+    });
+    return turno?.id ?? null;
+  }
+
+  /** Cobro: registra pagos, cierra el pedido y descuenta inventario según receta.
+   *  `cobradoEn` es cuándo se cobró de verdad: ahora en un cobro en línea, o la hora local de la
+   *  terminal si llega tarde por la cola offline (sirve para enlazarlo al turno correcto). */
+  async cobrar(pedidoId: string, dto: CobrarPedidoDto, cobradoEn: Date = new Date()) {
     const pedido = await this.obtener(pedidoId);
 
     // Idempotente ante un doble toque de "Confirmar pago" (doble clic, reintento de red): si ya
@@ -411,6 +443,8 @@ export class PedidosService {
       );
     }
 
+    const turnoId = pedido.turnoId ?? (await this.resolverTurnoDelCobro(pedido.sucursalId, cajeroId, cobradoEn));
+
     try {
       await this.prisma.$transaction(async (tx) => {
         await tx.pago.createMany({
@@ -424,7 +458,7 @@ export class PedidosService {
         });
         await tx.pedido.update({
           where: { id: pedidoId },
-          data: { estado: EstadoPedido.COBRADO, cajeroId },
+          data: { estado: EstadoPedido.COBRADO, cajeroId, turnoId },
         });
         if (pedido.mesaId) {
           await tx.mesa.update({ where: { id: pedido.mesaId }, data: { estado: EstadoMesa.LIBRE } });

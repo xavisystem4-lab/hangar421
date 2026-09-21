@@ -67,3 +67,58 @@ export async function resolverUsuarioDeTerminal(
     throw e;
   }
 }
+
+/** Roles que una terminal puede dar de alta por sincronización. Los de administración se otorgan
+ *  solo desde el ERP: una terminal vinculada con código opera como cajero y no debe poder crear
+ *  administradores. Un "Admin" local del APK (el que autoriza con su PIN en la tablet) llega como
+ *  SUPERVISOR, que es lo que hace ahí. */
+const ROL_DESDE_TERMINAL: Record<string, string> = {
+  CAJERO: "CAJERO",
+  MESERO: "MESERO",
+  COCINA: "COCINA",
+  SUPERVISOR: "SUPERVISOR",
+  ADMIN_SUCURSAL: "SUPERVISOR",
+  ADMIN_CORPORATIVO: "SUPERVISOR",
+};
+
+/**
+ * Registra en el ERP un usuario dado de alta en una terminal, con el MISMO id que tiene allí.
+ *
+ * Antes solo se registraba si en el momento del alta había conexión Y la sesión era de
+ * administrador; una tablet vinculada con código opera como cajero, así que esos usuarios no
+ * llegaban nunca al ERP y sus ventas quedaban sin atribución. Conservar el id es lo que hace que
+ * las ventas y turnos que ya lo nombran (encolados antes o después) queden atribuidos a la persona.
+ *
+ * Sin contraseña ni PIN: el PIN en texto plano nunca sale de la terminal, así que esta identidad
+ * sirve para atribuir operaciones, no para iniciar sesión. Si hace falta que entre en otro lado,
+ * un admin le asigna PIN desde el ERP. Idempotente: si ya existe, solo asegura su acceso a la
+ * sucursal.
+ */
+export async function registrarUsuarioDesdeTerminal(
+  prisma: PrismaService,
+  datos: { id: string; empresaId: string; sucursalId: string; nombre: string; rol?: string },
+): Promise<void> {
+  const nombre = datos.nombre?.trim();
+  if (!nombre) throw new Error("El usuario no trae nombre");
+  const rol = ROL_DESDE_TERMINAL[datos.rol ?? "CAJERO"] ?? "CAJERO";
+
+  const existente = await prisma.usuario.findUnique({ where: { id: datos.id }, select: { id: true } });
+  if (!existente) {
+    await prisma.usuario.create({
+      data: {
+        id: datos.id,
+        empresaId: datos.empresaId,
+        nombre,
+        // Único y estable: se deriva del id, que ya es único. No lo elige la terminal.
+        username: `apk.${datos.id}`,
+        activo: true,
+      },
+    });
+  }
+  await prisma.usuarioSucursal.upsert({
+    where: { usuarioId_sucursalId: { usuarioId: datos.id, sucursalId: datos.sucursalId } },
+    // Un usuario que ya existía conserva el rol que le haya dado el ERP.
+    update: { activo: true },
+    create: { usuarioId: datos.id, sucursalId: datos.sucursalId, rol: rol as any, activo: true },
+  });
+}

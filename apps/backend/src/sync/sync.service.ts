@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import {
   CanalOrigen,
   EstadoPedidoItem,
+  JwtPayload,
   SyncChange,
   SyncEntidad,
   SyncEnvelope,
@@ -12,11 +13,13 @@ import {
 } from "@hangar421/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { resolverDispositivoId } from "../common/dispositivo.util";
+import { registrarUsuarioDesdeTerminal } from "../common/usuario-terminal.util";
 import { PedidosService } from "../pedidos/pedidos.service";
 import { MesasService } from "../mesas/mesas.service";
 import { InventarioService } from "../inventario/inventario.service";
 import { CajaService } from "../caja/caja.service";
 import { CatalogoService } from "../catalogo/catalogo.service";
+import { AlcanceSync } from "./alcance-sync";
 
 @Injectable()
 export class SyncService {
@@ -32,15 +35,28 @@ export class SyncService {
   ) {}
 
   /** Aplica un lote de operaciones offline. Idempotente: reenviar el mismo lote
-   *  (reintento de red) no duplica nada — se identifica por `idempotencyKey`. */
-  async push(items: SyncEnvelope[]): Promise<{ resultados: SyncItemResult[]; serverTime: string }> {
+   *  (reintento de red) no duplica nada — se identifica por `idempotencyKey`.
+   *
+   *  Cada item se valida contra la sesión (ver AlcanceSync) ANTES de tocar nada: uno fuera de
+   *  alcance se rechaza sin registrarse en `sync_queue_items` ni dar de alta el dispositivo en
+   *  una sucursal ajena, y no impide aplicar el resto del lote. */
+  async push(items: SyncEnvelope[], sesion: JwtPayload): Promise<{ resultados: SyncItemResult[]; serverTime: string }> {
     const resultados: SyncItemResult[] = [];
+    const alcance = new AlcanceSync(this.prisma, sesion);
+    let primeroAceptado: SyncEnvelope | undefined;
 
     for (const item of items) {
-      resultados.push(await this.aplicarItem(item));
+      const rechazo = await alcance.motivoDeRechazo(item);
+      if (rechazo) {
+        this.logger.warn(`Rechazado ${item.entidad}/${item.operacion} (${item.id}) de ${sesion.sub}: ${rechazo}`);
+        resultados.push({ id: item.id, idempotencyKey: item.idempotencyKey, estado: SyncStatus.ERROR, error: rechazo });
+        continue;
+      }
+      primeroAceptado ??= item;
+      resultados.push(await this.aplicarItem(item, alcance.empresaId));
     }
 
-    await this.marcarVisto(items[0]?.dispositivoId, items[0]?.sucursalId);
+    if (primeroAceptado) await this.marcarVisto(primeroAceptado.dispositivoId, primeroAceptado.sucursalId);
 
     return { resultados, serverTime: new Date().toISOString() };
   }
@@ -99,7 +115,7 @@ export class SyncService {
       .catch(() => undefined);
   }
 
-  private async aplicarItem(item: SyncEnvelope): Promise<SyncItemResult> {
+  private async aplicarItem(item: SyncEnvelope, empresaId: string): Promise<SyncItemResult> {
     const previo = await this.prisma.syncQueueItem.findUnique({ where: { idempotencyKey: item.idempotencyKey } });
     if (previo?.estado === SyncStatus.SYNCED) {
       return { id: item.id, idempotencyKey: item.idempotencyKey, estado: SyncStatus.SYNCED };
@@ -110,7 +126,7 @@ export class SyncService {
     const dispositivoId = (await resolverDispositivoId(this.prisma, item.dispositivoId, item.sucursalId)) ?? item.dispositivoId;
 
     try {
-      await this.enrutar(item);
+      await this.enrutar(item, empresaId);
       await this.prisma.syncQueueItem.upsert({
         where: { idempotencyKey: item.idempotencyKey },
         update: { estado: SyncStatus.SYNCED, syncedAt: new Date(), intentos: { increment: 1 } },
@@ -148,14 +164,15 @@ export class SyncService {
     }
   }
 
-  private async enrutar(item: SyncEnvelope) {
+  private async enrutar(item: SyncEnvelope, empresaId: string) {
     const p = item.payload as any;
     switch (item.entidad) {
       case SyncEntidad.PEDIDO:
         if (item.operacion === SyncOperacion.CREATE) {
           await this.pedidos.crear({
             id: item.id,
-            empresaId: p.empresaId,
+            // De la sesión, nunca del payload: el cliente no elige en qué empresa escribe.
+            empresaId,
             sucursalId: item.sucursalId,
             mesaId: p.mesaId,
             clienteId: p.clienteId,
@@ -196,7 +213,11 @@ export class SyncService {
         break;
 
       case SyncEntidad.PAGO:
-        await this.pedidos.cobrar(p.pedidoId, { pagos: p.pagos, cajeroId: p.cajeroId ?? item.usuarioId });
+        await this.pedidos.cobrar(
+          p.pedidoId,
+          { pagos: p.pagos, cajeroId: p.cajeroId ?? item.usuarioId },
+          item.createdAtLocal ? new Date(item.createdAtLocal) : undefined,
+        );
         break;
 
       case SyncEntidad.DESCUENTO:
@@ -261,6 +282,18 @@ export class SyncService {
       // Cambio de precio/disponibilidad por sucursal (no crea un Producto nuevo — eso sigue sin
       // ruta de sync, ver apps/pos-terminal/src/db/catalogoAdminRepo.ts). `p.precio` presente ⇒
       // vino de editar el precio; si no, es solo un toggle de disponibilidad.
+      // Usuario dado de alta en la terminal, con el mismo id (ver registrarUsuarioDesdeTerminal).
+      // La empresa sale de la sesión y la sucursal del sobre, ya validada por AlcanceSync.
+      case SyncEntidad.USUARIO:
+        await registrarUsuarioDesdeTerminal(this.prisma, {
+          id: item.id,
+          empresaId,
+          sucursalId: item.sucursalId,
+          nombre: p.nombre,
+          rol: p.rol,
+        });
+        break;
+
       case SyncEntidad.PRODUCTO_SUCURSAL:
         if (p.precio != null) {
           await this.catalogo.fijarPrecioSucursal(p.productoId, item.sucursalId, p.precio, p.disponible ?? true);

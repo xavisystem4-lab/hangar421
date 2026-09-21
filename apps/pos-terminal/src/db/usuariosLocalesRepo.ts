@@ -1,9 +1,8 @@
 import type { SQLiteDatabase } from "expo-sqlite";
-import { uuid7 } from "@hangar421/shared";
+import { uuid7, SyncEntidad, SyncOperacion } from "@hangar421/shared";
 import { generarSalt, derivarHashPin, algoritmoHashActual } from "../auth/offlineAuth";
-import { erpFetch, obtenerTokensErp } from "../api/erpHttp";
-import { obtenerSucursalErp, obtenerOCrearSucursalIdLocal } from "./dispositivoLocal";
-import { obtenerEmpresaErp } from "../sync/pullEngine";
+import { obtenerOCrearDispositivoId, obtenerOCrearSucursalIdLocal } from "./dispositivoLocal";
+import { encolarSync } from "./outboxRepo";
 
 export interface UsuarioLocal {
   id: string;
@@ -16,11 +15,14 @@ export interface UsuarioLocal {
 
 /** El alta local (nombre+PIN+rol) es el equivalente offline del paso real de "adoptar
  *  dispositivo" en línea contra POST /auth/login-pin — el resultado (usuarios_locales +
- *  pin_cache con hash salado) es el mismo esquema que dejaría esa adopción real. Si el
- *  dispositivo YA está conectado al ERP en este momento, además se intenta registrar como un
- *  Usuario real (ver registrarUsuarioEnErp) — best-effort, nunca bloquea el alta local si falla
- *  o no hay red: el PIN en texto plano solo existe en esta función mientras corre, nunca se
- *  guarda (ni aquí ni en ningún lado) para reintentarlo después. */
+ *  pin_cache con hash salado) es el mismo esquema que dejaría esa adopción real.
+ *
+ *  El registro en el ERP viaja por la cola de sincronización (SyncEntidad.USUARIO) con el MISMO
+ *  id, en la misma transacción que el alta: funciona sin conexión y con la sesión de cajero de
+ *  una tablet vinculada por código. Antes se intentaba en el momento con POST /usuarios, que
+ *  exige sesión de administrador y creaba el usuario con OTRO id — así que casi nunca llegaba y,
+ *  cuando llegaba, las ventas que nombraban el id local igual quedaban sin atribución. El PIN no
+ *  viaja: nunca sale de esta función en texto plano. */
 export async function crearUsuarioLocal(
   db: SQLiteDatabase,
   datos: { nombre: string; rol: string; pin: string },
@@ -30,74 +32,58 @@ export async function crearUsuarioLocal(
   const hashLocal = await derivarHashPin(datos.pin, salt);
   const ahora = new Date().toISOString();
   const sucursalId = await obtenerOCrearSucursalIdLocal(db);
-
-  let erpUsuarioId: string | null = null;
-  const conectado = await obtenerTokensErp();
-  if (conectado) {
-    erpUsuarioId = await registrarUsuarioEnErp(db, { nombre: datos.nombre, rol: datos.rol, pin: datos.pin }).catch(() => null);
-  }
+  const dispositivoId = await obtenerOCrearDispositivoId(db);
 
   await db.withTransactionAsync(async () => {
     await db.runAsync(
-      "INSERT INTO usuarios_locales (id, sucursal_id, nombre, rol, erp_usuario_id, activo, ultima_verificacion_online) VALUES (?, ?, ?, ?, ?, 1, ?)",
-      id, sucursalId, datos.nombre, datos.rol, erpUsuarioId, ahora,
+      "INSERT INTO usuarios_locales (id, sucursal_id, nombre, rol, erp_usuario_id, activo, ultima_verificacion_online) VALUES (?, ?, ?, ?, NULL, 1, ?)",
+      id, sucursalId, datos.nombre, datos.rol, ahora,
     );
     await db.runAsync(
       "INSERT INTO pin_cache (usuario_local_id, hash_local, salt, algoritmo, creado_at) VALUES (?, ?, ?, ?, ?)",
       id, hashLocal, salt, algoritmoHashActual, ahora,
     );
+    await encolarAltaEnErp(db, { id, nombre: datos.nombre, rol: datos.rol, sucursalId, dispositivoId });
   });
 
-  return { id, nombre: datos.nombre, rol: datos.rol, erpUsuarioId, activo: true, ultimaVerificacionOnline: ahora };
+  return { id, nombre: datos.nombre, rol: datos.rol, erpUsuarioId: null, activo: true, ultimaVerificacionOnline: ahora };
 }
 
-/** Da de alta un Usuario real en el ERP (POST /usuarios, ya existente — requiere que la sesión
- *  conectada tenga rol ADMIN_CORPORATIVO/ADMIN_SUCURSAL) para que el usuario del Punto de Venta
- *  también aparezca en el CRM/ERP. El `username` se genera del nombre + un sufijo corto para
- *  evitar choques (el campo es único server-side); el PIN se manda tal cual lo escribió el
- *  cajero en el alta, una sola vez, nunca se vuelve a guardar en ningún lado. Devuelve el id del
- *  Usuario creado, o null si falla (sin conexión, sin permiso, nombre de usuario chocado, etc.)
- *  — el usuario sigue funcionando 100% local aunque esto falle. */
-export async function registrarUsuarioEnErp(db: SQLiteDatabase, datos: { nombre: string; rol: string; pin: string }): Promise<string | null> {
-  const [empresaId, sucursalId] = await Promise.all([obtenerEmpresaErp(db), obtenerSucursalErp(db)]);
-  if (!empresaId || !sucursalId) return null;
-
-  const username = `${slugificar(datos.nombre)}.${uuid7().slice(0, 6)}`;
-  const creado = await erpFetch<{ id: string }>("/usuarios", {
-    method: "POST",
-    body: JSON.stringify({
-      empresaId,
-      nombre: datos.nombre,
-      username,
-      pin: datos.pin,
-      sucursales: [{ sucursalId, rol: datos.rol }],
-    }),
+async function encolarAltaEnErp(
+  db: SQLiteDatabase,
+  u: { id: string; nombre: string; rol: string; sucursalId: string; dispositivoId: string },
+): Promise<void> {
+  await encolarSync(db, {
+    entidad: SyncEntidad.USUARIO,
+    operacion: SyncOperacion.CREATE,
+    entidadId: u.id,
+    sucursalId: u.sucursalId,
+    dispositivoId: u.dispositivoId,
+    payload: { nombre: u.nombre, rol: u.rol },
   });
-  return creado.id;
 }
 
-function slugificar(nombre: string): string {
-  return nombre
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, ".")
-    .replace(/^\.+|\.+$/g, "") || "usuario";
-}
-
-/** Usuarios locales que todavía no se registraron en el ERP (creados mientras el dispositivo
- *  estaba desconectado) — no se pueden reintentar automáticamente porque el PIN en texto plano
- *  nunca se guarda; hace falta pedirlo de nuevo (ver PosAdminUsuariosScreen "Registrar en ERP"). */
-export async function listarUsuariosSinRegistrarEnErp(db: SQLiteDatabase): Promise<UsuarioLocal[]> {
-  const sucursalId = await obtenerOCrearSucursalIdLocal(db);
-  const filas = await db.getAllAsync<any>(
-    "SELECT * FROM usuarios_locales WHERE sucursal_id = ? AND activo = 1 AND erp_usuario_id IS NULL ORDER BY nombre",
-    sucursalId,
+/** Encola el alta en el ERP de los usuarios locales que nunca llegaron (creados antes de que el
+ *  alta viajara por la cola). Idempotente: se salta a quien ya tiene su alta en la cola, en
+ *  cualquier estado, así que puede correr en cada arranque del motor de sincronización. */
+export async function encolarUsuariosSinRegistrarEnErp(db: SQLiteDatabase): Promise<number> {
+  const faltantes = await db.getAllAsync<{ id: string; nombre: string; rol: string; sucursal_id: string }>(
+    `SELECT u.id, u.nombre, u.rol, u.sucursal_id FROM usuarios_locales u
+      WHERE u.erp_usuario_id IS NULL AND u.activo = 1 AND u.sucursal_id <> ''
+        AND NOT EXISTS (SELECT 1 FROM sync_outbox o WHERE o.entidad = ? AND o.entidad_id = u.id)`,
+    SyncEntidad.USUARIO,
   );
-  return filas.map((f) => ({ id: f.id, nombre: f.nombre, rol: f.rol, erpUsuarioId: f.erp_usuario_id, activo: !!f.activo, ultimaVerificacionOnline: f.ultima_verificacion_online }));
+  if (faltantes.length === 0) return 0;
+  const dispositivoId = await obtenerOCrearDispositivoId(db);
+  await db.withTransactionAsync(async () => {
+    for (const u of faltantes) {
+      await encolarAltaEnErp(db, { id: u.id, nombre: u.nombre, rol: u.rol, sucursalId: u.sucursal_id, dispositivoId });
+    }
+  });
+  return faltantes.length;
 }
 
+/** Lo llama el motor de sincronización cuando el ERP confirma el alta (SyncEntidad.USUARIO). */
 export async function marcarRegistradoEnErp(db: SQLiteDatabase, usuarioLocalId: string, erpUsuarioId: string): Promise<void> {
   await db.runAsync("UPDATE usuarios_locales SET erp_usuario_id = ? WHERE id = ?", erpUsuarioId, usuarioLocalId);
 }
@@ -151,9 +137,10 @@ export async function eliminarUsuarioLocal(db: SQLiteDatabase, usuarioLocalId: s
  * conexión ese id no existe server-side, y Prisma rechaza el pedido ENTERO por violación de
  * clave foránea — no solo el campo.
  *
- * Devuelve un mapa localId → erpId. Los que no tienen equivalente quedan fuera: quien llama debe
- * mandar `undefined` en vez del id local. Perder la atribución de quién vendió es mucho menos
- * grave que perder la venta.
+ * Devuelve un mapa localId → erpId. Desde que el alta viaja por la cola (SyncEntidad.USUARIO),
+ * un usuario nuevo existe en el ERP con su MISMO id, así que quien no aparece aquí se manda tal
+ * cual. El mapa solo importa para los usuarios viejos que se registraron por POST /usuarios con
+ * un id distinto.
  */
 export async function mapaUsuariosErp(db: SQLiteDatabase): Promise<Map<string, string>> {
   const filas = await db.getAllAsync<{ id: string; erp_usuario_id: string | null }>(

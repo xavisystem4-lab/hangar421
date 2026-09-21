@@ -3,22 +3,17 @@ import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View 
 import { RolUsuario } from "@hangar421/shared";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
-import { listarUsuariosLocales, registrarUsuarioEnErp, marcarRegistradoEnErp, eliminarUsuarioLocal, crearUsuarioLocal, type UsuarioLocal } from "../db/usuariosLocalesRepo";
-import { useSyncStatusStore } from "../store/syncStatusStore";
+import { listarUsuariosLocales, eliminarUsuarioLocal, crearUsuarioLocal, type UsuarioLocal } from "../db/usuariosLocalesRepo";
+import { sincronizarPronto } from "../sync/syncEngine";
 
 /** Usuarios locales de este dispositivo — quiénes pueden entrar con PIN aquí, y si ya quedaron
- *  registrados como Usuario real en el ERP (columna "erp_usuario_id"). El alta ya intenta
- *  registrar en el ERP sola si hay conexión (ver crearUsuarioLocal); "Registrar en ERP" aquí es
- *  para los que se dieron de alta estando offline — pide el PIN de nuevo porque nunca se guarda
- *  en texto plano (ver offlineAuth.ts), así que no hay forma de reenviarlo sin pedirlo otra vez. */
+ *  registrados como Usuario real en el ERP (columna "erp_usuario_id"). El registro es automático:
+ *  el alta viaja por la cola de sincronización con el mismo id (ver crearUsuarioLocal), así que
+ *  un usuario creado sin conexión llega al ERP en cuanto vuelve la red, sin volver a pedir el PIN. */
 export function PosAdminUsuariosScreen({ onCerrar }: { onCerrar: () => void }) {
   const colores = usarColores();
   const estilos = crearEstilos(colores);
-  const conectadoAlErp = useSyncStatusStore((s) => s.conectadoAlErp);
   const [usuarios, setUsuarios] = useState<UsuarioLocal[]>([]);
-  const [registrandoId, setRegistrandoId] = useState<string | null>(null);
-  const [pinRegistro, setPinRegistro] = useState("");
-  const [mensaje, setMensaje] = useState<string | null>(null);
 
   const [nombreNuevo, setNombreNuevo] = useState("");
   const [pinNuevo, setPinNuevo] = useState("");
@@ -32,25 +27,6 @@ export function PosAdminUsuariosScreen({ onCerrar }: { onCerrar: () => void }) {
   useEffect(() => {
     cargar();
   }, []);
-
-  async function confirmarRegistro(usuarioLocalId: string) {
-    if (!pinRegistro) return;
-    setMensaje(null);
-    try {
-      const db = await abrirBaseDeDatos();
-      const usuario = usuarios.find((u) => u.id === usuarioLocalId);
-      if (!usuario) return;
-      const erpUsuarioId = await registrarUsuarioEnErp(db, { nombre: usuario.nombre, rol: usuario.rol, pin: pinRegistro });
-      if (!erpUsuarioId) throw new Error("No se pudo registrar — revisa la conexión con el ERP");
-      await marcarRegistradoEnErp(db, usuarioLocalId, erpUsuarioId);
-      setMensaje(`${usuario.nombre} quedó registrado en el ERP.`);
-      setRegistrandoId(null);
-      setPinRegistro("");
-      cargar();
-    } catch (e: any) {
-      setMensaje(e.message ?? "No se pudo registrar en el ERP");
-    }
-  }
 
   function confirmarEliminar(u: UsuarioLocal) {
     Alert.alert("Quitar acceso local", `¿"${u.nombre}" deja de poder entrar en ESTE dispositivo? (no borra su cuenta del ERP si ya la tiene)`, [
@@ -71,6 +47,7 @@ export function PosAdminUsuariosScreen({ onCerrar }: { onCerrar: () => void }) {
     if (!nombreNuevo.trim() || pinNuevo.length < 4) return;
     const db = await abrirBaseDeDatos();
     await crearUsuarioLocal(db, { nombre: nombreNuevo.trim(), rol: rolNuevo, pin: pinNuevo });
+    sincronizarPronto();
     setNombreNuevo("");
     setPinNuevo("");
     setRolNuevo(RolUsuario.CAJERO);
@@ -84,44 +61,27 @@ export function PosAdminUsuariosScreen({ onCerrar }: { onCerrar: () => void }) {
         <TouchableOpacity onPress={onCerrar}><Text style={estilos.cerrar}>✕</Text></TouchableOpacity>
       </View>
 
-      {mensaje && <Text style={estilos.mensaje}>{mensaje}</Text>}
-
       {usuarios.map((u) => (
         <View key={u.id} style={estilos.tarjeta}>
           <View style={estilos.filaEncabezado}>
             <Text style={estilos.nombre}>{u.nombre}</Text>
             <Text style={[estilos.pildora, u.erpUsuarioId ? estilos.pildoraOk : estilos.pildoraPendiente]}>
-              {u.erpUsuarioId ? "✓ En el ERP" : "Solo local"}
+              {u.erpUsuarioId ? "✓ En el ERP" : "Pendiente de sincronizar"}
             </Text>
           </View>
           <Text style={estilos.rol}>{u.rol}</Text>
 
-          {registrandoId === u.id ? (
-            <View style={{ marginTop: 10 }}>
-              <TextInput placeholder="PIN de este usuario" placeholderTextColor={colores.textoSecundario} value={pinRegistro} onChangeText={setPinRegistro} secureTextEntry keyboardType="number-pad" style={estilos.input} />
-              <View style={{ flexDirection: "row", gap: 8 }}>
-                <TouchableOpacity onPress={() => confirmarRegistro(u.id)} style={[estilos.botonChico, { backgroundColor: colores.green }]}><Text style={{ color: "#fff", fontWeight: "700" }}>Confirmar</Text></TouchableOpacity>
-                <TouchableOpacity onPress={() => { setRegistrandoId(null); setPinRegistro(""); }} style={[estilos.botonChico, { backgroundColor: colores.gray200 }]}><Text style={{ color: colores.texto }}>Cancelar</Text></TouchableOpacity>
-              </View>
-            </View>
-          ) : (
-            <View style={{ flexDirection: "row", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-              {!u.erpUsuarioId && (
-                <TouchableOpacity onPress={() => setRegistrandoId(u.id)} disabled={!conectadoAlErp} style={[estilos.botonChico, { backgroundColor: conectadoAlErp ? colores.navy : colores.gray200 }]}>
-                  <Text style={{ color: conectadoAlErp ? "#fff" : colores.textoSecundario, fontSize: 12 }}>{conectadoAlErp ? "Registrar en ERP" : "Conecta al ERP para registrar"}</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity onPress={() => confirmarEliminar(u)} style={[estilos.botonChico, { backgroundColor: colores.red + "22" }]}>
-                <Text style={{ color: colores.red, fontSize: 12 }}>Quitar acceso local</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+            <TouchableOpacity onPress={() => confirmarEliminar(u)} style={[estilos.botonChico, { backgroundColor: colores.red + "22" }]}>
+              <Text style={{ color: colores.red, fontSize: 12 }}>Quitar acceso local</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       ))}
 
       <View style={estilos.tarjeta}>
         <Text style={estilos.subtitulo}>Nuevo usuario</Text>
-        <Text style={estilos.ayuda}>{conectadoAlErp ? "Se registra en el ERP automáticamente al crearlo." : "Se guarda solo en este dispositivo — regístralo en el ERP cuando haya conexión."}</Text>
+        <Text style={estilos.ayuda}>Se registra en el ERP automáticamente, también si ahora no hay conexión: sale en cuanto vuelva la red.</Text>
         <TextInput placeholder="Nombre" placeholderTextColor={colores.textoSecundario} value={nombreNuevo} onChangeText={setNombreNuevo} style={estilos.input} />
         <TextInput placeholder="PIN (mínimo 4 dígitos)" placeholderTextColor={colores.textoSecundario} value={pinNuevo} onChangeText={setPinNuevo} secureTextEntry keyboardType="number-pad" style={estilos.input} />
         <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
@@ -145,7 +105,6 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     encabezado: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 },
     titulo: { fontSize: 20, fontWeight: "800", color: colores.texto },
     cerrar: { color: colores.textoSecundario, fontSize: 20 },
-    mensaje: { color: colores.navyTexto, marginBottom: 10 },
     filaEncabezado: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
     nombre: { fontSize: 16, fontWeight: "800", color: colores.texto },
     rol: { fontSize: 12, color: colores.textoSecundario, marginTop: 2 },

@@ -11,8 +11,8 @@ export class SyncController {
   constructor(private sync: SyncService) {}
 
   @Post("push")
-  push(@Body() dto: SyncPushDto) {
-    return this.sync.push(dto.items as any);
+  push(@Req() req: any, @Body() dto: SyncPushDto) {
+    return this.sync.push(dto.items as any, req.user);
   }
 
   @Get("pull")

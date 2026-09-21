@@ -1,11 +1,11 @@
-import type { SyncEnvelope, SyncPushResponse } from "@hangar421/shared";
+import { SyncEntidad, type SyncEnvelope, type SyncPushResponse } from "@hangar421/shared";
 import { abrirBaseDeDatos } from "../db/database";
 import { pendientesParaDrenar, marcarSincronizado, marcarError, contarPendientes } from "../db/outboxRepo";
 import { erpFetch, obtenerTokensErp } from "../api/erpHttp";
 import { useSyncStatusStore } from "../store/syncStatusStore";
 import { refrescarCatalogo, refrescarInventario, ejecutarPull } from "./pullEngine";
 import { obtenerOCrearDispositivoId, obtenerSucursalErp } from "../db/dispositivoLocal";
-import { mapaUsuariosErp } from "../db/usuariosLocalesRepo";
+import { encolarUsuariosSinRegistrarEnErp, mapaUsuariosErp, marcarRegistradoEnErp } from "../db/usuariosLocalesRepo";
 
 // Más espaciado que los 8s de apps/waiter-mobile: ahí el destino es una Estación en la misma
 // red LAN; aquí es el ERP en la nube (Railway) — pollear cada 8s no aporta nada y sí gasta
@@ -72,9 +72,10 @@ export function detenerSync() {
   intervaloCatalogo = null;
 }
 
-/** Campos del payload que en el ERP son claves foráneas a Usuario. Si llevan un id local que
- *  no existe arriba, se quitan: la operación se guarda sin atribución en vez de rechazarse. */
-const CAMPOS_USUARIO = ["meseroId", "cajeroId", "usuarioId", "autorizadoPorId", "solicitadoPorId"] as const;
+/** Campos del payload que en el ERP son claves foráneas a Usuario. Se traducen con
+ *  `mapaUsuariosErp` para los usuarios viejos registrados con otro id; el resto viaja tal cual,
+ *  porque su alta (SyncEntidad.USUARIO) llega al ERP con el mismo id y antes que sus ventas. */
+const CAMPOS_USUARIO = ["meseroId", "cajeroId", "usuarioId", "autorizadoPorId", "solicitadoPorId", "nuevoUsuarioId"] as const;
 
 function traducirUsuariosDelPayload(
   payload: any,
@@ -104,6 +105,10 @@ export async function procesarCola(ignorarBackoff = false): Promise<void> {
     return;
   }
 
+  // Usuarios creados antes de que el alta viajara por la cola: se encolan una sola vez (la
+  // función se salta a quien ya tiene su alta encolada). No debe tumbar el drenado.
+  await encolarUsuariosSinRegistrarEnErp(db).catch(() => undefined);
+
   const items = await pendientesParaDrenar(db, ignorarBackoff);
   if (items.length === 0) {
     // Nada que mandar, pero sí hay que confirmar que el ERP sigue alcanzable: si no, una
@@ -132,6 +137,8 @@ export async function procesarCola(ignorarBackoff = false): Promise<void> {
   status.setEstado("PENDIENTE");
   status.setSincronizando(true);
   try {
+    const mapa = await mapaUsuariosErp(db);
+    const aErp = (id: string | null | undefined) => (id ? (mapa.get(id) ?? id) : undefined);
     const envelopes: SyncEnvelope[] = items.map((it) => ({
       id: it.entidadId,
       entidad: it.entidad as any,
@@ -139,9 +146,9 @@ export async function procesarCola(ignorarBackoff = false): Promise<void> {
       idempotencyKey: it.idempotencyKey,
       dispositivoId: it.dispositivoId,
       sucursalId: it.sucursalId,
-      usuarioId: it.usuarioId ?? undefined,
+      usuarioId: aErp(it.usuarioId),
       createdAtLocal: it.createdAt,
-      payload: it.payload,
+      payload: traducirUsuariosDelPayload(it.payload, aErp),
     }));
 
     const resp = await erpFetch<SyncPushResponse>("/sync/push", { method: "POST", body: JSON.stringify({ items: envelopes }) });
@@ -151,6 +158,7 @@ export async function procesarCola(ignorarBackoff = false): Promise<void> {
       if (!resultado) continue;
       if (resultado.estado === "SYNCED") {
         await marcarSincronizado(db, item.localId);
+        if (item.entidad === SyncEntidad.USUARIO) await marcarRegistradoEnErp(db, item.entidadId, item.entidadId);
       } else {
         await marcarError(db, item.localId, resultado.error ?? "Error desconocido", item.intentos);
       }

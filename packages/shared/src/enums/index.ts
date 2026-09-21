@@ -209,4 +209,8 @@ export enum SyncEntidad {
   MOVIMIENTO_INVENTARIO = "MOVIMIENTO_INVENTARIO",
   PRODUCTO_SUCURSAL = "PRODUCTO_SUCURSAL",
   INVENTARIO_SUCURSAL = "INVENTARIO_SUCURSAL",
+  /** Alta de un usuario hecha en una terminal (posiblemente sin conexión). Viaja con el MISMO id
+   *  que tiene en la terminal, para que las ventas y turnos que ya lo nombran queden atribuidos
+   *  a él y no al usuario-terminal genérico. Usado por apps/pos-terminal. */
+  USUARIO = "USUARIO",
 }
