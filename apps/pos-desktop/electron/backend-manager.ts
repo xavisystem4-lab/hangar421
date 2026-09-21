@@ -102,7 +102,7 @@ export async function iniciarBackendEmbebido(logIn: (msg: string) => void, puert
     log("Inicializando PostgreSQL (initdb)…");
     await conTimeout(pg.initialise(), 90_000, mensajeTimeoutPg);
   }
-  limpiarLockStaleSiCorresponde(pgDataDir, log);
+  await limpiarLockStaleSiCorresponde(pgDataDir, pgCtlPath, log);
   log("Arrancando PostgreSQL…");
   // embedded-postgres rechaza esta promesa sin ningún Error (`reject()` a secas) si el proceso
   // de Postgres se cierra antes de terminar de arrancar — normalizamos acá para no propagar un
@@ -118,6 +118,12 @@ export async function iniciarBackendEmbebido(logIn: (msg: string) => void, puert
     // "Administrador" integrada (que siempre corre elevada, a diferencia de una cuenta normal
     // del grupo Administradores). Sin este caso especial, el usuario tenía que mandar el log
     // completo para que alguien reconociera este mensaje exacto de postgres.exe.
+    if (lineasPostgresRecientes.some((l) => /lock file "postmaster\.pid" already exists/i.test(l))) {
+      throw new Error(
+        "La base de datos del POS sigue en uso por una sesión anterior y no se pudo liberar sola. " +
+          "Cierra el POS y reinicia la PC; al volver a abrirlo arranca normal. Tus datos no se pierden.",
+      );
+    }
     const corrioComoAdmin = lineasPostgresRecientes.some((l) => /administrative permissions|running as root/i.test(l));
     if (corrioComoAdmin) {
       throw new Error(
@@ -384,14 +390,26 @@ function verificarArchivosNecesarios(resourcesDir: string, nodeBin: string, log:
  *  arrancar" que este cambio busca evitar. Se borra el lock SOLO si el PID que contiene ya no
  *  corresponde a ningún proceso vivo — si sigue vivo, se deja intacto a propósito (evita correr
  *  dos Postgres embebidos a la vez contra la misma carpeta, lo que sí corrompería datos). */
-function limpiarLockStaleSiCorresponde(pgDataDir: string, log: (msg: string) => void) {
+async function limpiarLockStaleSiCorresponde(pgDataDir: string, pgCtlPath: string | null, log: (msg: string) => void) {
   const lockPath = path.join(pgDataDir, "postmaster.pid");
   if (!fs.existsSync(lockPath)) return;
   try {
     const pid = parseInt(fs.readFileSync(lockPath, "utf-8").split("\n")[0], 10);
     if (!Number.isFinite(pid)) return;
     if (procesoEnEjecucion(pid)) {
-      log(`[postgres] postmaster.pid apunta a un proceso todavía activo (pid ${pid}) — no se toca.`);
+      // Un Postgres VIVO sobre esta carpeta, con el POS arrancando. Como solo puede haber una
+      // copia del POS abierta (requestSingleInstanceLock en main.ts), ese Postgres no lo está
+      // usando nadie: es un huérfano de una sesión anterior que se cerró sin apagarlo (visto en
+      // producción: seguía corriendo y bloqueaba todo arranque nuevo con "lock file
+      // postmaster.pid already exists"). Se apaga limpio con pg_ctl —el mismo apagado ordenado de
+      // siempre, nunca un kill— y el arranque sigue.
+      if (!pgCtlPath) {
+        log(`[postgres] postmaster.pid apunta a un proceso todavía activo (pid ${pid}) y no hay pg_ctl para apagarlo — no se toca.`);
+        return;
+      }
+      log(`[postgres] Postgres huérfano de una sesión anterior (pid ${pid}) — se apaga limpio antes de arrancar.`);
+      const apagado = await detenerConPgCtl(pgCtlPath, pgDataDir, log);
+      log(apagado ? "[postgres] Postgres huérfano apagado." : "[postgres] no se pudo apagar el Postgres huérfano — se intenta arrancar igual.");
       return;
     }
     log(`[postgres] postmaster.pid quedó de un cierre abrupto anterior (pid ${pid} ya no existe) — se borra para permitir un arranque limpio.`);

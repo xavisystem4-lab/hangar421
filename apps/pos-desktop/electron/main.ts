@@ -150,7 +150,30 @@ function crearVentana() {
   ventanaPrincipal = win;
 }
 
+/**
+ * Una sola copia del POS por PC.
+ *
+ * Sin esto, un segundo doble clic en el acceso directo (el POS ya abierto pero minimizado o
+ * detrás de otra ventana) arrancaba otra copia completa que intentaba levantar un segundo
+ * PostgreSQL sobre la MISMA carpeta de datos. Postgres lo impide para no corromper la base, así
+ * que esa copia se quedaba en "PostgreSQL local se cerró inesperadamente al arrancar" —visto en
+ * producción— mientras la primera seguía funcionando detrás. Ahora la segunda copia se cierra sola
+ * y trae al frente la ventana que ya estaba abierta.
+ */
+const esInstanciaPrincipal = app.requestSingleInstanceLock();
+if (!esInstanciaPrincipal) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (!ventanaPrincipal) return;
+    if (ventanaPrincipal.isMinimized()) ventanaPrincipal.restore();
+    ventanaPrincipal.show();
+    ventanaPrincipal.focus();
+  });
+}
+
 app.whenReady().then(() => {
+  if (!esInstanciaPrincipal) return;
   // Sin la barra de menú genérica de Electron (File/Edit/View/Window/Help) — no aporta nada
   // en un POS táctil, y la navegación real vive en la barra superior propia de la app.
   Menu.setApplicationMenu(null);
