@@ -1,0 +1,7 @@
+{
+  "name": "hangar-usb-printer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Módulo nativo local (Expo Modules, Kotlin): impresora térmica ESC/POS por USB OTG para el POS APK.",
+  "main": "index.ts"
+}
