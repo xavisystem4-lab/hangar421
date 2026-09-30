@@ -2,6 +2,7 @@ import type { SQLiteDatabase } from "expo-sqlite";
 import type { TicketPayload } from "../printing/PrinterAdapter";
 import { obtenerDatosFiscales } from "./configFiscalRepo";
 import { obtenerOCrearSucursalIdLocal } from "./dispositivoLocal";
+import { ivaIncluido } from "../printing/formatoTicket";
 
 export async function marcarTicketPendiente(db: SQLiteDatabase, ventaId: string): Promise<void> {
   await db.runAsync("UPDATE ventas SET ticket_pendiente_impresion = 1 WHERE id = ?", ventaId);
@@ -40,6 +41,15 @@ export async function construirTicketPayload(db: SQLiteDatabase, ventaId: string
       )
     : [];
 
+  const pagos = await db.getAllAsync<any>("SELECT metodo, monto FROM pagos WHERE venta_id = ? ORDER BY created_at", ventaId);
+  const pagado = pagos.reduce((s, p) => s + p.monto, 0);
+
+  // Los precios ya incluyen impuestos (calculos.ts: `impuesto` siempre 0). Si algún día la venta
+  // trae impuestos desglosados se imprimen esos; si no, la parte de IVA contenida en el total,
+  // marcada como "incluido" — informativa, no cambia lo cobrado.
+  const impuestosVenta = Number(venta.impuestos) || 0;
+  const tasa = datosFiscales.tasaImpuesto;
+
   return {
     folio: venta.folio_local,
     fecha: venta.created_at,
@@ -59,5 +69,13 @@ export async function construirTicketPayload(db: SQLiteDatabase, ventaId: string
     pieTicket: datosFiscales.pieTicket,
     razonSocial: datosFiscales.razonSocial || undefined,
     rfc: datosFiscales.rfc || undefined,
+    nombreSucursal: datosFiscales.nombreSucursalLocal || undefined,
+    direccion: datosFiscales.direccion || undefined,
+    descuento: Number(venta.descuento_monto) || 0,
+    impuestos: impuestosVenta > 0 ? impuestosVenta : ivaIncluido(venta.total, tasa),
+    etiquetaImpuestos: impuestosVenta > 0 ? "IVA" : `IVA ${Math.round(tasa * 100)}% incluido`,
+    pagos: pagos.map((p) => ({ metodo: p.metodo, monto: p.monto })),
+    cambio: pagado > venta.total ? Math.round((pagado - venta.total) * 100) / 100 : 0,
+    anchoMM: datosFiscales.anchoImpresoraMM,
   };
 }

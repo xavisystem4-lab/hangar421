@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 import type { PrinterAdapter } from "./PrinterAdapter";
 import { decidirResultadoTicket } from "./decisionImpresion";
-import { mockPrinterAdapter } from "./mockPrinterAdapter";
+import { usbPrinterAdapter } from "./usbPrinterAdapter";
 import { construirTicketPayload, marcarTicketImpreso, marcarTicketPendiente } from "../db/ticketsRepo";
 
 /** Se llama DESPUÉS de que ventasRepo.confirmarVenta() ya resolvió — la venta está confirmada
@@ -9,7 +9,7 @@ import { construirTicketPayload, marcarTicketImpreso, marcarTicketPendiente } fr
  *  payload) se atrapa y el ticket queda PENDIENTE, reintentable después desde el historial —
  *  "no debe bloquear ventas" aplica también a que un error de impresión bloquee la SIGUIENTE
  *  venta. */
-export async function imprimirTicket(db: SQLiteDatabase, ventaId: string, adapter: PrinterAdapter = mockPrinterAdapter): Promise<void> {
+export async function imprimirTicket(db: SQLiteDatabase, ventaId: string, adapter: PrinterAdapter = usbPrinterAdapter): Promise<void> {
   try {
     const disponible = await adapter.isAvailable();
     if (!disponible) {

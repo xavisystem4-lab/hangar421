@@ -8,6 +8,11 @@ export interface TicketItem {
   modificadores?: string[];
 }
 
+export interface TicketPago {
+  metodo: string;
+  monto: number;
+}
+
 export interface TicketPayload {
   folio: number;
   fecha: string;
@@ -17,6 +22,20 @@ export interface TicketPayload {
   pieTicket: string;
   razonSocial?: string;
   rfc?: string;
+  /** Datos del encabezado y desglose para la impresora térmica (todos opcionales: lo que no
+   *  venga no se imprime). */
+  nombreSucursal?: string;
+  direccion?: string;
+  descuento?: number;
+  impuestos?: number;
+  etiquetaImpuestos?: string;
+  pagos?: TicketPago[];
+  cambio?: number;
+  /** Texto del QR del pie (p. ej. URL de autofacturación). Sin él no se imprime QR. */
+  qrTexto?: string;
+  qrLeyenda?: string;
+  /** Ancho del papel configurado en la terminal (Configuración inicial). */
+  anchoMM?: 58 | 80;
 }
 
 export interface PrintResult {
@@ -26,11 +45,12 @@ export interface PrintResult {
 
 /** Abstracción de impresora térmica — desacoplada por completo de la transacción de venta (ver
  *  db/ventasRepo.ts: la venta se confirma primero, SIEMPRE; esto se intenta después, como
- *  efecto secundario best-effort). Ninguna implementación real existe todavía (Fase 2f: agregar
- *  una librería ESC/POS Bluetooth — no verificable en este entorno sin tablet ni impresora
- *  física). `mockPrinterAdapter.ts` es la única implementación hoy: siempre reporta
- *  `isAvailable() === false`, así que el flujo de respaldo (imprimirTicket.ts →
- *  ReciboEnPantallaScreen) es lo único que corre en la práctica por ahora. */
+ *  efecto secundario best-effort). Implementaciones:
+ *  - `usbPrinterAdapter.ts` — impresora ESC/POS por USB OTG (módulo nativo
+ *    modules/hangar-usb-printer). Es la que usa imprimirTicket.ts por defecto.
+ *  - `mockPrinterAdapter.ts` — nunca disponible; para pruebas.
+ *  Si no hay impresora conectada o falla, el flujo de respaldo (imprimirTicket.ts →
+ *  ReciboEnPantallaScreen) muestra el recibo en pantalla. */
 export interface PrinterAdapter {
   isAvailable(): Promise<boolean>;
   printTicket(ticket: TicketPayload): Promise<PrintResult>;

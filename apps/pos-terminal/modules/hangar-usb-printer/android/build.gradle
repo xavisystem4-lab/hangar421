@@ -1,0 +1,22 @@
+apply plugin: 'com.android.library'
+
+group = 'com.hangar421'
+version = '0.1.0'
+
+// Mismo esqueleto que los módulos oficiales de Expo SDK 51 (p. ej. expo-crypto): el plugin de
+// expo-modules-core pone Kotlin, las versiones de SDK y la dependencia a expo-modules-core, que
+// a su vez expone kotlinx-coroutines y androidx.core (ContextCompat / IntentCompat) como `api`.
+def expoModulesCorePlugin = new File(project(":expo-modules-core").projectDir.absolutePath, "ExpoModulesCorePlugin.gradle")
+apply from: expoModulesCorePlugin
+applyKotlinExpoModulesCorePlugin()
+useCoreDependencies()
+useDefaultAndroidSdkVersions()
+useExpoPublishing()
+
+android {
+  namespace "expo.modules.hangarusbprinter"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+}

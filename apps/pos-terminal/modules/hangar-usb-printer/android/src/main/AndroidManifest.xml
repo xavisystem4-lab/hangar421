@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- required=false: la app sigue instalándose en equipos sin USB host; ahí simplemente no
+       encuentra impresora y cae al recibo en pantalla. Se fusiona solo en el manifest de la app. -->
+  <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+</manifest>
