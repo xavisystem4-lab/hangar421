@@ -8,8 +8,8 @@ import type { TicketPayload } from "../printing/PrinterAdapter";
 
 /** Respaldo cuando no hay impresora disponible (ver printing/imprimirTicket.ts) — el mismo
  *  contenido que iría al papel, mostrado en pantalla para que el cajero se lo enseñe al cliente
- *  o tome una captura. "Reintentar impresión" vuelve a intentar contra el adaptador real (Fase
- *  2f); mientras tanto siempre cae aquí mismo otra vez. */
+ *  o tome una captura. "Reintentar impresión" vuelve a intentar contra la
+ *  impresora USB (usbPrinterAdapter.ts) — p. ej. después de reconectar el cable o poner papel. */
 export function ReciboEnPantallaScreen({ ventaId, onCerrar }: { ventaId: string; onCerrar: () => void }) {
   const colores = usarColores();
   const estilos = crearEstilos(colores);
