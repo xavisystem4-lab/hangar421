@@ -56,6 +56,19 @@ export function calcularTotalesPedido(
   return { subtotal, descuentoTotal, impuesto: 0, total };
 }
 
+/**
+ * Cortesía: la casa no cobra los productos, solo los extras que el cajero decide cobrar
+ * (`totalACobrar`, que puede ser 0). Se registra como un descuento de tipo MONTO por la
+ * diferencia, así el subtotal conserva el valor real de lo regalado para los reportes.
+ *
+ * El backend la recalcula con SUS precios: si el catálogo del ERP difiere del de la tablet, lo
+ * que se respeta es lo que el cliente pagó (`totalACobrar`), y el descuento absorbe la diferencia.
+ */
+export function calcularCortesia(subtotal: number, totalACobrar: number): { montoCortesia: number; total: number } {
+  const total = round2(Math.min(Math.max(totalACobrar, 0), subtotal));
+  return { montoCortesia: round2(subtotal - total), total };
+}
+
 /** Pagos mixtos: la suma de los pagos debe cubrir el total (puede exceder — habrá cambio en efectivo). */
 export function validarPagoSuficiente(pagos: { monto: number }[], total: number): { suficiente: boolean; totalPagado: number; faltante: number } {
   const totalPagado = round2(pagos.reduce((acc, p) => acc + p.monto, 0));

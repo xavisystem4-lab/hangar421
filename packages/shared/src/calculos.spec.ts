@@ -1,5 +1,6 @@
 import { TipoDescuento, TipoMovimientoInventario } from "./enums";
 import {
+  calcularCortesia,
   calcularDiferenciaTraspaso,
   calcularImpuesto,
   calcularMontoDescuento,
@@ -185,5 +186,20 @@ describe("calcularNivelInventario", () => {
 
   it("el porcentaje nunca pasa de 100 aunque la existencia exceda la referencia", () => {
     expect(calcularNivelInventario(500, 12).porcentaje).toBe(100);
+  });
+});
+
+describe("calcularCortesia", () => {
+  it("regala todo cuando no se cobra ningún extra", () => {
+    expect(calcularCortesia(85, 0)).toEqual({ montoCortesia: 85, total: 0 });
+  });
+
+  it("cobra solo los extras elegidos", () => {
+    expect(calcularCortesia(105, 20)).toEqual({ montoCortesia: 85, total: 20 });
+  });
+
+  it("nunca cobra más que el subtotal ni montos negativos", () => {
+    expect(calcularCortesia(50, 80)).toEqual({ montoCortesia: 0, total: 50 });
+    expect(calcularCortesia(50, -5)).toEqual({ montoCortesia: 50, total: 0 });
   });
 });

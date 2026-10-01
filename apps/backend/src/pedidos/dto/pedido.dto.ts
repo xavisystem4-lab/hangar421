@@ -30,6 +30,14 @@ export class ItemPedidoDto {
   modificadores?: ModificadorSeleccionadoDto[];
 }
 
+/** Cortesía decidida en la terminal (con el PIN de un supervisor ya validado allí, igual que una
+ *  cancelación — ver PedidosService.cancelarDesdeTerminal). */
+export class CortesiaTerminalDto {
+  /** Lo que sí paga el cliente (los extras que el cajero decidió cobrar). 0 = todo regalado. */
+  @ApiProperty() @IsNumber() @Min(0) totalACobrar!: number;
+  @ApiPropertyOptional() @IsOptional() @IsString() motivo?: string;
+}
+
 export class CrearPedidoDto {
   /** id generado en el cliente (UUID v7) — permite offline-first e idempotencia. */
   @ApiProperty() @IsString() id!: string;
@@ -56,6 +64,14 @@ export class CrearPedidoDto {
   @ValidateNested({ each: true })
   @Type(() => ItemPedidoDto)
   items!: ItemPedidoDto[];
+
+  @ApiPropertyOptional({ type: CortesiaTerminalDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CortesiaTerminalDto)
+  cortesia?: CortesiaTerminalDto;
+  /** Supervisor que autorizó la cortesía en la terminal. */
+  @ApiPropertyOptional() @IsOptional() @IsString() cortesiaAutorizadaPorId?: string;
 }
 
 export class AgregarItemsDto {

@@ -9,6 +9,7 @@ import {
   WS_EVENTS,
   calcularMontoDescuento,
   calcularTotalesPedido,
+  calcularCortesia,
   validarPagoSuficiente,
 } from "@hangar421/shared";
 import { Prisma } from "@prisma/client";
@@ -266,7 +267,12 @@ export class PedidosService {
       dto.items.map((item) => this.resolverItem(item)),
     );
 
-    const { subtotal, impuesto, total } = calcularTotalesPedido(itemsResueltos, [], Number(sucursal.tasaImpuesto));
+    const base = calcularTotalesPedido(itemsResueltos, [], Number(sucursal.tasaImpuesto));
+    const { subtotal, impuesto } = base;
+    // Cortesía de la terminal: se registra como descuento MONTO por lo regalado (calcularCortesia).
+    const cortesia = dto.cortesia ? calcularCortesia(subtotal, Number(dto.cortesia.totalACobrar) || 0) : null;
+    const total = cortesia ? cortesia.total : base.total;
+    const cortesiaAutorizadaPorId = cortesia ? await this.resolverUsuarioExistente(dto.cortesiaAutorizadaPorId) : undefined;
 
     // El POS manda su propia huella de instalación como "dispositivoId" (ver electron/db.ts ->
     // obtenerDeviceId()), pero acá es una llave foránea real hacia Dispositivo.id — se resuelve/
@@ -315,6 +321,20 @@ export class PedidosService {
           subtotal,
           impuesto,
           total,
+          ...(cortesia && cortesia.montoCortesia > 0
+            ? {
+                descuentoTotal: cortesia.montoCortesia,
+                descuentos: {
+                  create: [{
+                    tipo: TipoDescuento.MONTO,
+                    valor: cortesia.montoCortesia,
+                    montoAplicado: cortesia.montoCortesia,
+                    motivo: dto.cortesia?.motivo?.trim() || "Cortesía",
+                    autorizadoPorId: cortesiaAutorizadaPorId ?? null,
+                  }],
+                },
+              }
+            : {}),
           estado: dto.enviarInmediato ? EstadoPedido.ENVIADO : EstadoPedido.ABIERTO,
           items: {
             create: itemsResueltos.map((it) => ({

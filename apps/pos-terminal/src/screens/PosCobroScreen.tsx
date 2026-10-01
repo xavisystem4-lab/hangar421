@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
 import { MetodoPago } from "@hangar421/shared";
 import { useCarritoStore } from "../store/carritoStore";
 import { useAuthLocalStore } from "../store/authLocalStore";
@@ -10,6 +10,9 @@ import { sincronizarPronto } from "../sync/syncEngine";
 import { turnoAbierto } from "../db/turnosRepo";
 import { listarMetodosPago, etiquetaMetodoPago } from "../db/metodosPagoRepo";
 import { imprimirTicket } from "../printing/imprimirTicket";
+import { ModalAutorizacion } from "../components/ModalAutorizacion";
+import type { Autorizador } from "../auth/autorizacion";
+import { extrasCobrables, motivoCortesia, totalesConCortesia } from "../caja/cortesia";
 
 const ICONO: Record<MetodoPago, string> = {
   [MetodoPago.EFECTIVO]: "💵",
@@ -34,7 +37,16 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
   const { usuario } = useAuthLocalStore();
   const colores = usarColores();
   const estilos = crearEstilos(colores);
-  const t = totales();
+  const totalesCarrito = totales();
+
+  // Cortesía: la casa regala los productos; el cajero decide qué extras sí se cobran. Requiere el
+  // PIN de un supervisor (mismo criterio que una cancelación). Con cortesía activa, todo lo de
+  // abajo (cambio, teclado, confirmar) trabaja sobre lo que de verdad paga el cliente.
+  const [cortesia, setCortesia] = useState<Autorizador | null>(null);
+  const [pidiendoPinCortesia, setPidiendoPinCortesia] = useState(false);
+  const [extrasCobrados, setExtrasCobrados] = useState<string[]>([]);
+  const extras = useMemo(() => extrasCobrables(items), [items]);
+  const t = cortesia ? totalesConCortesia(totalesCarrito, items, extrasCobrados) : totalesCarrito;
 
   const [metodos, setMetodos] = useState<{ valor: MetodoPago; etiqueta: string; icono: string }[]>([]);
   const [metodoActivo, setMetodoActivo] = useState<MetodoPago>(MetodoPago.EFECTIVO);
@@ -58,6 +70,26 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
   const restante = Math.max(0, t.total - montoCobrado);
   const cambio = Math.max(0, montoCobrado - t.total);
 
+  // En métodos distintos de efectivo el importe es el total exacto: si la cortesía cambia el total,
+  // el monto mostrado debe seguirlo.
+  useEffect(() => {
+    if (metodoActivo !== MetodoPago.EFECTIVO) setMontoInput(t.total.toFixed(2));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [t.total]);
+
+  function alternarCortesia() {
+    if (cortesia) {
+      setCortesia(null);
+      setExtrasCobrados([]);
+      return;
+    }
+    setPidiendoPinCortesia(true);
+  }
+
+  function alternarExtra(clave: string) {
+    setExtrasCobrados((actuales) => (actuales.includes(clave) ? actuales.filter((c) => c !== clave) : [...actuales, clave]));
+  }
+
   function elegirMetodo(metodo: MetodoPago) {
     setMetodoActivo(metodo);
     // En efectivo el cajero teclea con cuánto le pagan; en los demás métodos el importe es
@@ -78,13 +110,18 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
     setError(null);
     // Un solo pago con el método activo. Si el cajero no tecleó nada se cobra el total exacto:
     // es el caso mayoritario y ahorra teclear el importe que ya está en pantalla.
-    const pagosFinales = [{ metodo: metodoActivo, monto: montoCobrado }];
+    // Una cortesía completa (total $0) no lleva pago: no entró dinero por ningún método.
+    const pagosFinales = t.total > 0 ? [{ metodo: metodoActivo, monto: montoCobrado }] : [];
     setProcesando(true);
     try {
       const db = await abrirBaseDeDatos();
       const turno = await turnoAbierto(db);
       if (!turno) throw new Error("No hay un turno de caja abierto — abre caja antes de cobrar.");
-      const venta = await confirmarVenta(db, { items, pagos: pagosFinales, totales: t, turnoId: turno.id, usuarioId: usuario.id });
+      const venta = await confirmarVenta(
+        db,
+        { items, pagos: pagosFinales, totales: t, turnoId: turno.id, usuarioId: usuario.id },
+        cortesia ? { cortesia: { motivo: motivoCortesia(cortesia.nombre, items, extrasCobrados), autorizadoPorId: cortesia.id } } : {},
+      );
       limpiar();
       // Empuje inmediato al ERP. Antes la venta solo se encolaba y esperaba hasta 45 s al
       // siguiente tick del temporizador: era la causa principal de que una venta recién cobrada
@@ -118,18 +155,56 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
         ))}
 
         <View style={estilos.totalesBox}>
-          <View style={estilos.filaTotal}><Text style={estilos.totalGrande}>Total</Text><Text style={estilos.totalGrande}>${t.total.toFixed(2)}</Text></View>
+          {cortesia && (
+            <>
+              <View style={estilos.filaTotal}><Text style={{ color: colores.texto }}>Subtotal</Text><Text style={{ color: colores.texto }}>${t.subtotal.toFixed(2)}</Text></View>
+              <View style={estilos.filaTotal}><Text style={{ color: colores.amber, fontWeight: "700" }}>🎁 Cortesía</Text><Text style={{ color: colores.amber, fontWeight: "700" }}>-${t.descuentoTotal.toFixed(2)}</Text></View>
+            </>
+          )}
+          <View style={estilos.filaTotal}><Text style={estilos.totalGrande}>{cortesia ? "A cobrar" : "Total"}</Text><Text style={estilos.totalGrande}>${t.total.toFixed(2)}</Text></View>
         </View>
 
         <Text style={estilos.subtitulo}>Método de pago</Text>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-          {metodos.map((m) => (
+          {(!cortesia || t.total > 0) && metodos.map((m) => (
             <TouchableOpacity key={m.valor} onPress={() => elegirMetodo(m.valor)} style={[estilos.botonChip, metodoActivo === m.valor && estilos.botonChipActivo]}>
               <Text style={{ color: metodoActivo === m.valor ? "#fff" : colores.texto }}>{m.icono} {m.etiqueta}</Text>
             </TouchableOpacity>
           ))}
+          <TouchableOpacity onPress={alternarCortesia} style={[estilos.botonChip, cortesia && estilos.botonChipCortesia]}>
+            <Text style={{ color: cortesia ? colores.navy : colores.texto, fontWeight: cortesia ? "800" : "400" }}>🎁 Cortesía{cortesia ? " ✓" : ""}</Text>
+          </TouchableOpacity>
         </View>
 
+        {cortesia && (
+          <View style={estilos.cortesiaBox}>
+            <Text style={estilos.cortesiaTitulo}>🎁 Cortesía autorizada por {cortesia.nombre}</Text>
+            <Text style={estilos.cortesiaAyuda}>Los productos no se cobran. Toca "Cortesía" otra vez para quitarla.</Text>
+            {extras.length > 0 ? (
+              <>
+                <Text style={[estilos.cortesiaAyuda, { fontWeight: "700", color: colores.texto, marginTop: 10 }]}>¿Qué extras sí se cobran?</Text>
+                {extras.map((e) => {
+                  const cobrado = extrasCobrados.includes(e.clave);
+                  return (
+                    <TouchableOpacity key={e.clave} onPress={() => alternarExtra(e.clave)} style={estilos.filaExtra}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: colores.texto, fontWeight: "600" }}>{e.nombreExtra}</Text>
+                        <Text style={estilos.cortesiaAyuda}>{e.nombreProducto} · {e.cantidad}× ${e.precioExtra.toFixed(2)} = ${e.importe.toFixed(2)}</Text>
+                      </View>
+                      <Text style={{ color: cobrado ? colores.green : colores.textoSecundario, marginRight: 8, fontWeight: "700" }}>{cobrado ? "Se cobra" : "Cortesía"}</Text>
+                      <Switch value={cobrado} onValueChange={() => alternarExtra(e.clave)} />
+                    </TouchableOpacity>
+                  );
+                })}
+              </>
+            ) : (
+              <Text style={estilos.cortesiaAyuda}>Esta venta no lleva extras con costo: todo es cortesía.</Text>
+            )}
+          </View>
+        )}
+
+        {(!cortesia || t.total > 0) && (
+        <>
         <View style={estilos.totalesBox}>
           <Text style={[estilos.totalGrande, { color: restante > 0 ? colores.navyTexto : colores.green }]}>
             {restante > 0 ? `Falta cubrir: $${restante.toFixed(2)}` : `Cambio: $${cambio.toFixed(2)}`}
@@ -148,6 +223,9 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
           </View>
         </View>
 
+        </>
+        )}
+
         {error && <Text style={estilos.error}>{error}</Text>}
 
         <View style={{ flexDirection: "row", gap: 10, marginTop: 16, marginBottom: 30 }}>
@@ -163,11 +241,25 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
             style={[estilos.botonAccion, { flex: 2, backgroundColor: restante > 0 ? colores.gray200 : colores.green }]}
           >
             <Text style={{ color: restante > 0 ? colores.texto : "#fff", fontWeight: "700", fontSize: 16 }}>
-              {procesando ? "Procesando…" : "Confirmar pago"}
+              {procesando ? "Procesando…" : cortesia && t.total === 0 ? "Confirmar cortesía" : "Confirmar pago"}
             </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {pidiendoPinCortesia && usuario && (
+        <ModalAutorizacion
+          titulo="Autorizar cortesía"
+          descripcion={`Se regalarán los productos de esta venta ($${totalesCarrito.subtotal.toFixed(2)}). Hace falta el PIN de un supervisor o administrador.`}
+          solicitanteId={usuario.id}
+          onCancelar={() => setPidiendoPinCortesia(false)}
+          onAutorizado={(autorizador) => {
+            setCortesia(autorizador);
+            setExtrasCobrados([]);
+            setPidiendoPinCortesia(false);
+          }}
+        />
+      )}
     </View>
   );
 }
@@ -184,6 +276,11 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     subtitulo: { fontWeight: "700", color: colores.texto, marginTop: 18, marginBottom: 8 },
     botonChip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, backgroundColor: colores.gray50, borderWidth: 1, borderColor: colores.borde },
     botonChipActivo: { backgroundColor: colores.navy, borderColor: colores.navy },
+    botonChipCortesia: { backgroundColor: colores.amber, borderColor: colores.amber },
+    cortesiaBox: { marginTop: 14, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: colores.amber, backgroundColor: colores.superficie },
+    cortesiaTitulo: { fontWeight: "800", color: colores.texto, fontSize: 15 },
+    cortesiaAyuda: { fontSize: 12, color: colores.textoSecundario, marginTop: 4, lineHeight: 17 },
+    filaExtra: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colores.borde },
     tecladoContenedor: { marginTop: 20, backgroundColor: colores.gray50, borderRadius: 12, padding: 16 },
     etiquetaMonto: { fontSize: 12, textAlign: "center", color: colores.textoSecundario, marginBottom: 2 },
     montoIngresado: { fontSize: 30, fontWeight: "800", textAlign: "center", color: colores.texto, marginBottom: 12 },

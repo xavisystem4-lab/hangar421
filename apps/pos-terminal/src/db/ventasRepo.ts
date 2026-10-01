@@ -20,6 +20,9 @@ export interface OpcionesVenta {
   canalOrigen?: CanalOrigen;
   tipo?: TipoPedido;
   notas?: string;
+  /** Cortesía autorizada con PIN de supervisor (ver caja/cortesia.ts). Los totales que recibe
+   *  confirmarVenta ya vienen con lo regalado como descuento; aquí se deja el registro. */
+  cortesia?: { motivo: string; autorizadoPorId: string };
 }
 
 export interface VentaConfirmada {
@@ -102,6 +105,13 @@ export async function confirmarVenta(
       });
     }
 
+    if (opciones.cortesia && datos.totales.descuentoTotal > 0) {
+      await db.runAsync(
+        "INSERT INTO descuentos (id, venta_id, tipo, valor, motivo, autorizado_por_id, created_at) VALUES (?, ?, 'MONTO', ?, ?, ?, ?)",
+        uuid7(), ventaId, round2(datos.totales.descuentoTotal), opciones.cortesia.motivo, opciones.cortesia.autorizadoPorId, ahora,
+      );
+    }
+
     const pagosPayload: PagoVenta[] = [];
     for (const pago of datos.pagos) {
       await db.runAsync(
@@ -130,6 +140,9 @@ export async function confirmarVenta(
         meseroId: datos.usuarioId,
         canalOrigen,
         notasGenerales: opciones.notas,
+        // El ERP recalcula con sus precios; lo que se respeta es lo que pagó el cliente.
+        cortesia: opciones.cortesia ? { totalACobrar: datos.totales.total, motivo: opciones.cortesia.motivo } : undefined,
+        cortesiaAutorizadaPorId: opciones.cortesia?.autorizadoPorId,
         idempotencyKey: idempotencyKeyVenta,
         // El turno viaja con la venta: es lo que permite al ERP saber qué ventas pertenecen a
         // cada corte sin deducirlo por el cajero (ver CajaService.filtroVentasDelTurno).

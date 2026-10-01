@@ -27,6 +27,8 @@ export interface TicketPayload {
   nombreSucursal?: string;
   direccion?: string;
   descuento?: number;
+  /** "Cortesía" cuando el descuento es una cortesía; si falta, el ticket dice "Descuento". */
+  etiquetaDescuento?: string;
   impuestos?: number;
   etiquetaImpuestos?: string;
   pagos?: TicketPago[];

@@ -196,6 +196,9 @@ export class SyncService {
             // cocina que lo transicione. `?? true`: todo PEDIDO/CREATE que llega por el outbox
             // de un mesero es una orden que el mesero ya dio por enviada.
             enviarInmediato: p.enviarInmediato ?? true,
+            // Cortesía autorizada en la terminal (APK): se guarda como descuento del pedido.
+            cortesia: p.cortesia,
+            cortesiaAutorizadaPorId: p.cortesiaAutorizadaPorId,
           });
         } else if (item.operacion === SyncOperacion.UPDATE && p.accion === "CANCELAR") {
           // Cancelación hecha en una terminal, con el PIN del gerente ya validado allí (ver

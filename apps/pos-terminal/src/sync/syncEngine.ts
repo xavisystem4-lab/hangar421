@@ -78,7 +78,7 @@ export function detenerSync() {
 /** Campos del payload que en el ERP son claves foráneas a Usuario. Se traducen con
  *  `mapaUsuariosErp` para los usuarios viejos registrados con otro id; el resto viaja tal cual,
  *  porque su alta (SyncEntidad.USUARIO) llega al ERP con el mismo id y antes que sus ventas. */
-const CAMPOS_USUARIO = ["meseroId", "cajeroId", "usuarioId", "autorizadoPorId", "solicitadoPorId", "nuevoUsuarioId"] as const;
+const CAMPOS_USUARIO = ["meseroId", "cajeroId", "usuarioId", "autorizadoPorId", "solicitadoPorId", "nuevoUsuarioId", "cortesiaAutorizadaPorId"] as const;
 
 function traducirUsuariosDelPayload(
   payload: any,
