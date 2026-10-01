@@ -286,6 +286,15 @@ export class PedidosService {
       );
     }
 
+    // Mismo criterio para el turno: `turnoId` es llave foránea y el APK manda el id de SU turno,
+    // que el ERP puede no tener (el turno se creó con otro id, o todavía no sube). Rechazaba la
+    // venta entera con `pedidos_turnoId_fkey`; ahora entra sin turno y el cobro lo resuelve por
+    // cajero y hora (resolverTurnoDelCobro), igual que con las ventas del POS de Windows.
+    const turnoId = dto.turnoId ? await this.resolverTurnoExistente(dto.turnoId) : undefined;
+    if (dto.turnoId && !turnoId) {
+      this.logger.warn(`Pedido ${dto.id}: el turno ${dto.turnoId} no existe en el ERP — se guarda sin turno y se resuelve al cobrar.`);
+    }
+
     const pedido = await this.prisma.$transaction(async (tx) => {
       const creado = await tx.pedido.create({
         data: {
@@ -299,7 +308,7 @@ export class PedidosService {
           numComensales: dto.numComensales ?? 1,
           meseroId,
           dispositivoId,
-          turnoId: dto.turnoId ?? null,
+          turnoId: turnoId ?? null,
           canalOrigen: dto.canalOrigen,
           notasGenerales: dto.notasGenerales,
           idempotencyKey: dto.idempotencyKey,
@@ -652,6 +661,11 @@ export class PedidosService {
 
   /** Devuelve el id solo si ese usuario existe de verdad; si no, undefined. Evita que un id
    *  huérfano tumbe la operación entera por violación de clave foránea. */
+  private async resolverTurnoExistente(turnoId: string): Promise<string | undefined> {
+    const turno = await this.prisma.turno.findUnique({ where: { id: turnoId }, select: { id: true } });
+    return turno?.id;
+  }
+
   private async resolverUsuarioExistente(usuarioId?: string | null): Promise<string | undefined> {
     if (!usuarioId) return undefined;
     const usuario = await this.prisma.usuario.findUnique({ where: { id: usuarioId }, select: { id: true } });
