@@ -44,7 +44,7 @@ class TicketRenderer(private val context: Context, private val cfg: ConfigImpres
 
         b.leftRight("Subtotal", dinero(t.optDouble("subtotal", 0.0)))
         val descuento = t.optDouble("descuento", 0.0)
-        if (descuento > 0.005) b.leftRight("Descuento", "-" + dinero(descuento))
+        if (descuento > 0.005) b.leftRight(t.texto("etiquetaDescuento") ?: "Descuento", "-" + dinero(descuento))
         val impuestos = t.optDouble("impuestos", 0.0)
         if (impuestos > 0.005) b.leftRight(t.texto("etiquetaImpuestos") ?: "IVA", dinero(impuestos))
 
