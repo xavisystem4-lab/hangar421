@@ -129,9 +129,13 @@ function crearPrismaFake() {
   };
 
   const auditLog = { create: jest.fn(async ({ data }: any) => data) };
+  // Solo "turno-1" existe en el ERP de prueba (ver aceptarPedido: el turno de la terminal se
+  // descarta si el ERP no lo conoce).
+  const turno = { findUnique: jest.fn(async ({ where }: any) => (where.id === "turno-1" ? { id: "turno-1" } : null)) };
 
   return {
     plataformaConfig,
+    turno,
     plataformaWebhookEvent,
     plataformaOrdenSync,
     auditLog,
@@ -467,6 +471,39 @@ describe("PlataformasService — pedidos entrantes (bandeja de aceptación manua
     expect(dtoEnviado.canalOrigen).toBe("PLATAFORMA_DELIVERY");
     expect(dtoEnviado.items).toEqual([{ productoId: "producto-croissant", cantidad: 3, notas: undefined }]);
     expect(pedido).toBeTruthy();
+  });
+
+  it("aceptarPedido usa el id, turno y cajero que manda la terminal (APK) para no duplicar la venta", async () => {
+    const { service, pedidos, orden, prisma } = await conPedidoEntrante();
+
+    await service.aceptarPedido(orden.id, {
+      sucursalId: "sucursal-1",
+      items: [{ productoId: "producto-croissant", cantidad: 3 }],
+      pedidoId: "0192f0a1-0000-7000-8000-000000000001",
+      turnoId: "turno-1",
+      meseroId: "cajero-1",
+      dispositivoId: "tablet-1",
+    } as any);
+
+    const dtoEnviado = (pedidos.crear as jest.Mock).mock.calls[0][0];
+    expect(dtoEnviado.id).toBe("0192f0a1-0000-7000-8000-000000000001");
+    expect(dtoEnviado.turnoId).toBe("turno-1");
+    expect(dtoEnviado.meseroId).toBe("cajero-1");
+    expect(dtoEnviado.dispositivoId).toBe("tablet-1");
+    const actualizada = Array.from(prisma._ordenSyncs.values())[0] as any;
+    expect(actualizada.pedidoId).toBe("0192f0a1-0000-7000-8000-000000000001");
+  });
+
+  it("aceptarPedido descarta un turnoId que el ERP no conoce (el cobro lo resuelve después)", async () => {
+    const { service, pedidos, orden } = await conPedidoEntrante();
+
+    await service.aceptarPedido(orden.id, {
+      sucursalId: "sucursal-1",
+      items: [{ productoId: "producto-croissant", cantidad: 3 }],
+      turnoId: "turno-solo-en-la-tablet",
+    } as any);
+
+    expect((pedidos.crear as jest.Mock).mock.calls[0][0].turnoId).toBeUndefined();
   });
 
   it("aceptarPedido marca la orden como SINCRONIZADA con el pedidoId creado", async () => {

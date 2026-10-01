@@ -26,10 +26,11 @@ import { PosAdminPagosScreen } from "./PosAdminPagosScreen";
 import { PosAdminInventarioScreen } from "./PosAdminInventarioScreen";
 import { PosAdminSincronizacionScreen } from "./PosAdminSincronizacionScreen";
 import { PosAdminImpresoraScreen } from "./PosAdminImpresoraScreen";
+import { PosAdminPlataformasScreen } from "./PosAdminPlataformasScreen";
 import { ReciboEnPantallaScreen } from "./ReciboEnPantallaScreen";
 
 type Pantalla = "venta" | "cobro" | "caja" | "consultar" | "admin";
-type PantallaAdmin = "catalogo" | "inventario" | "reportes" | "usuarios" | "pagos" | "sync" | "impresora";
+type PantallaAdmin = "catalogo" | "inventario" | "reportes" | "usuarios" | "pagos" | "sync" | "impresora" | "plataformas";
 
 const TABS: { id: Pantalla; etiqueta: string }[] = [
   { id: "venta", etiqueta: "Venta" },
@@ -332,6 +333,9 @@ export function PosNavigator() {
               <TouchableOpacity onPress={() => setPantallaAdmin("impresora")} style={[estilos.subTab, pantallaAdmin === "impresora" && estilos.subTabActivo]}>
                 <Text style={{ color: pantallaAdmin === "impresora" ? "#fff" : colores.texto, fontWeight: "700" }}>Impresora</Text>
               </TouchableOpacity>
+              <TouchableOpacity onPress={() => setPantallaAdmin("plataformas")} style={[estilos.subTab, pantallaAdmin === "plataformas" && estilos.subTabActivo]}>
+                <Text style={{ color: pantallaAdmin === "plataformas" ? "#fff" : colores.texto, fontWeight: "700" }}>Delivery</Text>
+              </TouchableOpacity>
             </ScrollView>
             <View style={{ flex: 1 }}>
               {pantallaAdmin === "catalogo" && <PosAdminCatalogoScreen onCerrar={() => setPantalla("venta")} />}
@@ -341,6 +345,7 @@ export function PosNavigator() {
               {pantallaAdmin === "inventario" && <PosAdminInventarioScreen onCerrar={() => setPantalla("venta")} />}
               {pantallaAdmin === "sync" && <PosAdminSincronizacionScreen onCerrar={() => setPantalla("venta")} />}
               {pantallaAdmin === "impresora" && <PosAdminImpresoraScreen onCerrar={() => setPantalla("venta")} />}
+              {pantallaAdmin === "plataformas" && <PosAdminPlataformasScreen onCerrar={() => setPantalla("venta")} />}
             </View>
           </View>
         )}
