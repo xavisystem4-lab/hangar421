@@ -1,6 +1,6 @@
 import { Type } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { ArrayMinSize, IsArray, IsBoolean, IsEnum, IsInt, IsObject, IsOptional, IsString, Min, ValidateNested } from "class-validator";
+import { ArrayMinSize, IsArray, IsBoolean, IsEnum, IsInt, IsObject, IsOptional, IsString, MaxLength, Min, ValidateNested } from "class-validator";
 import { AmbientePlataforma } from "@hangar421/shared";
 
 export class GuardarConfigPlataformaDto {
@@ -67,6 +67,17 @@ export class AceptarPedidoEntranteDto {
   items!: ItemPedidoEntranteDto[];
 
   @ApiPropertyOptional() @IsOptional() @IsString() notasGenerales?: string;
+
+  /** Id que la terminal ya generó (uuid7) para la venta local que va a registrar este pedido.
+   *  El Pedido del ERP nace con ese mismo id, así que cuando la venta de la terminal sube después
+   *  por /sync/push, `PedidosService.crear` la reconoce como el mismo pedido (es idempotente por
+   *  id) y solo se le aplica el cobro: el pedido nunca se cuenta dos veces. Sin él (POS Windows,
+   *  CRM) se genera uno nuevo, como siempre. */
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(64) pedidoId?: string;
+  /** Turno de caja de la terminal que lo acepta — enlaza la venta a ese corte. */
+  @ApiPropertyOptional() @IsOptional() @IsString() turnoId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() meseroId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() dispositivoId?: string;
 }
 
 export class RechazarPedidoEntranteDto {

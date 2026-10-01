@@ -10,6 +10,18 @@ export interface PagoVenta {
   referencia?: string;
 }
 
+/** Para ventas que no nacen en el carrito de mostrador (pedidos de DiDi/Uber/Rappi aceptados en
+ *  Admin → Plataformas, ver plataformas/aceptarPedidoPlataforma.ts). Todo es opcional: sin
+ *  opciones la venta es la de mostrador de siempre. */
+export interface OpcionesVenta {
+  /** Id ya acordado con el ERP: el Pedido del ERP se creó con este mismo id al aceptar el
+   *  pedido de la plataforma, y así /sync/push lo reconoce en vez de crear otro. */
+  ventaId?: string;
+  canalOrigen?: CanalOrigen;
+  tipo?: TipoPedido;
+  notas?: string;
+}
+
 export interface VentaConfirmada {
   id: string;
   folioLocal: number;
@@ -26,13 +38,15 @@ export interface VentaConfirmada {
 export async function confirmarVenta(
   db: SQLiteDatabase,
   datos: { items: ItemCarrito[]; pagos: PagoVenta[]; totales: TotalesPedido; turnoId: string | null; usuarioId: string },
+  opciones: OpcionesVenta = {},
 ): Promise<VentaConfirmada> {
   if (datos.items.length === 0) throw new Error("El carrito está vacío");
 
   const { suficiente, faltante } = validarPagoSuficiente(datos.pagos, datos.totales.total);
   if (!suficiente) throw new Error(`El total pagado no cubre el importe a pagar (faltan $${faltante.toFixed(2)})`);
 
-  const ventaId = uuid7();
+  const ventaId = opciones.ventaId ?? uuid7();
+  const canalOrigen = opciones.canalOrigen ?? CanalOrigen.APP_POS_MOVIL;
   const idempotencyKeyVenta = uuid7();
   const ahora = new Date().toISOString();
   const [sucursalId, dispositivoId, empresaId] = await Promise.all([
@@ -54,10 +68,10 @@ export async function confirmarVenta(
 
     await db.runAsync(
       `INSERT INTO ventas
-         (id, sucursal_id, folio_local, mesa_id, cliente_id, estado, subtotal, descuento_monto, impuestos, total, canal_origen, turno_id, usuario_id, created_at, updated_at, idempotency_key)
-       VALUES (?, ?, ?, NULL, NULL, 'COBRADA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, sucursal_id, folio_local, mesa_id, cliente_id, estado, subtotal, descuento_monto, impuestos, total, canal_origen, turno_id, usuario_id, notas, created_at, updated_at, idempotency_key)
+       VALUES (?, ?, ?, NULL, NULL, 'COBRADA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ventaId, sucursalId, folioLocal, datos.totales.subtotal, datos.totales.descuentoTotal, datos.totales.impuesto, datos.totales.total,
-      CanalOrigen.APP_POS_MOVIL, datos.turnoId, datos.usuarioId, ahora, ahora, idempotencyKeyVenta,
+      canalOrigen, datos.turnoId, datos.usuarioId, opciones.notas ?? null, ahora, ahora, idempotencyKeyVenta,
     );
 
     const itemsPayload: { productoId: string; cantidad: number; notas?: string; modificadores: { opcionModificadorId: string }[] }[] = [];
@@ -111,10 +125,11 @@ export async function confirmarVenta(
         empresaId,
         mesaId: undefined,
         clienteId: undefined,
-        tipo: TipoPedido.MOSTRADOR,
+        tipo: opciones.tipo ?? TipoPedido.MOSTRADOR,
         numComensales: 1,
         meseroId: datos.usuarioId,
-        canalOrigen: CanalOrigen.APP_POS_MOVIL,
+        canalOrigen,
+        notasGenerales: opciones.notas,
         idempotencyKey: idempotencyKeyVenta,
         // El turno viaja con la venta: es lo que permite al ERP saber qué ventas pertenecen a
         // cada corte sin deducirlo por el cajero (ver CajaService.filtroVentasDelTurno).

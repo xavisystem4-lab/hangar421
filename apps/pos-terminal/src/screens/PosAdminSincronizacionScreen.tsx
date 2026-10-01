@@ -2,9 +2,8 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
-import { contarPendientes, listarProblemasSync, reintentarProblema, type ProblemaSync } from "../db/outboxRepo";
-import { procesarCola } from "../sync/syncEngine";
-import { refrescarCatalogo } from "../sync/pullEngine";
+import { contarPendientes, listarProblemasSync, type ProblemaSync } from "../db/outboxRepo";
+import { subirAlErp, textoResumenSubida } from "../sync/subirAlErp";
 import { formatearFechaHora } from "../reportes/armarReporte";
 
 const ETIQUETA_ENTIDAD: Record<string, string> = {
@@ -43,19 +42,15 @@ export function PosAdminSincronizacionScreen({ onCerrar }: { onCerrar: () => voi
     cargar();
   }, []);
 
-  async function reintentarTodo() {
+  /** Mismo botón "Subir a ERP" de la barra superior (ver sync/subirAlErp.ts). */
+  async function subir() {
     setTrabajando(true);
     try {
-      const db = await abrirBaseDeDatos();
-      // Se baja el catálogo antes de reintentar: la causa más común de un pedido rechazado es
-      // que apunte a un producto que solo existe en la tablet, y refrescarCatalogo repara esos
-      // ids (ver repararProductosLocalesEnOutbox).
-      await refrescarCatalogo().catch(() => undefined);
-      for (const p of problemas) await reintentarProblema(db, p.localId);
-      await procesarCola(true);
+      const { titulo, detalle } = textoResumenSubida(await subirAlErp());
       await cargar();
+      Alert.alert(titulo, detalle);
     } catch (e: any) {
-      Alert.alert("Reintentar", e?.message ?? "No se pudo reintentar.");
+      Alert.alert("Subir a ERP", e?.message ?? "No se pudo subir. No se perdió nada: inténtalo de nuevo.");
     } finally {
       setTrabajando(false);
     }
@@ -89,13 +84,11 @@ export function PosAdminSincronizacionScreen({ onCerrar }: { onCerrar: () => voi
         </Text>
       </View>
 
-      {problemas.length > 0 && (
-        <TouchableOpacity onPress={reintentarTodo} disabled={trabajando} style={estilos.botonPrincipal}>
-          {trabajando
-            ? <ActivityIndicator color="#fff" />
-            : <Text style={estilos.botonPrincipalTexto}>Reparar y reintentar todo</Text>}
-        </TouchableOpacity>
-      )}
+      <TouchableOpacity onPress={subir} disabled={trabajando} style={estilos.botonPrincipal}>
+        {trabajando
+          ? <ActivityIndicator color="#fff" />
+          : <Text style={estilos.botonPrincipalTexto}>⬆ Subir a ERP</Text>}
+      </TouchableOpacity>
 
       {problemas.map((p) => (
         <View key={p.localId} style={estilos.tarjetaProblema}>

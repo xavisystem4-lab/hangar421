@@ -301,10 +301,21 @@ export class PlataformasService {
       dto.notasGenerales,
     ].filter(Boolean).join(" — ");
 
+    // `Pedido.turnoId` es llave foránea. El turno que manda la terminal puede no existir todavía
+    // en el ERP (se abrió sin conexión y aún no sube): con él, Prisma rechazaría el pedido entero.
+    // Sin turno, el cobro lo resuelve después (PedidosService.resolverTurnoDelCobro).
+    const turnoId = dto.turnoId
+      ? (await this.prisma.turno.findUnique({ where: { id: dto.turnoId }, select: { id: true } }))?.id
+      : undefined;
+
     const pedido = await this.pedidos.crear({
-      id: randomUUID(),
+      // El APK manda el id de su venta local (ver AceptarPedidoEntranteDto.pedidoId).
+      id: dto.pedidoId ?? randomUUID(),
       empresaId: config.empresaId,
       sucursalId: dto.sucursalId,
+      turnoId,
+      meseroId: dto.meseroId,
+      dispositivoId: dto.dispositivoId,
       tipo: TipoPedido.DOMICILIO,
       canalOrigen: CanalOrigen.PLATAFORMA_DELIVERY,
       notasGenerales: notas,

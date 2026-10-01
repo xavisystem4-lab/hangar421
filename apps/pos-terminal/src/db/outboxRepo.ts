@@ -143,3 +143,44 @@ export async function reintentarProblema(db: SQLiteDatabase, localId: string): P
     localId,
   );
 }
+
+/** Payload sin `turnoId` — para una venta que el ERP rechazó porque no conoce ese turno. Pura. */
+export function quitarTurnoDelPayload(payloadJson: string): string | null {
+  try {
+    const payload = JSON.parse(payloadJson);
+    if (!payload || typeof payload !== "object" || !("turnoId" in payload)) return null;
+    delete payload.turnoId;
+    return JSON.stringify(payload);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Ventas rechazadas con `pedidos_turnoId_fkey`: el ERP no conoce el turno de la tablet (lo creó
+ * con otro id). Se reenvían sin turno; el ERP lo asigna al cobrar por cajero y hora. Es lo mismo
+ * que ya hace el backend corregido, pero así funciona aunque el ERP todavía no esté actualizado.
+ * Devuelve cuántas filas se corrigieron.
+ */
+export async function corregirVentasConTurnoDesconocido(db: SQLiteDatabase): Promise<number> {
+  const filas = await db.getAllAsync<{ local_id: string; payload: string }>(
+    "SELECT local_id, payload FROM sync_outbox WHERE estado = 'ERROR' AND entidad = 'PEDIDO' AND ultimo_error LIKE '%turnoId_fkey%'",
+  );
+  let corregidas = 0;
+  for (const f of filas) {
+    const nuevo = quitarTurnoDelPayload(f.payload);
+    if (!nuevo) continue;
+    await db.runAsync(
+      "UPDATE sync_outbox SET payload = ?, estado = 'PENDING', ultimo_error = NULL, next_retry_at = NULL WHERE local_id = ?",
+      nuevo, f.local_id,
+    );
+    corregidas += 1;
+  }
+  return corregidas;
+}
+
+/** Devuelve a la cola TODO lo que está en ERROR (botón "Subir a ERP"). */
+export async function reintentarTodosLosProblemas(db: SQLiteDatabase): Promise<number> {
+  const r = await db.runAsync("UPDATE sync_outbox SET estado = 'PENDING', next_retry_at = NULL WHERE estado = 'ERROR'");
+  return r.changes;
+}

@@ -41,7 +41,7 @@ export async function construirTicketPayload(db: SQLiteDatabase, ventaId: string
       )
     : [];
 
-  const pagos = await db.getAllAsync<any>("SELECT metodo, monto FROM pagos WHERE venta_id = ? ORDER BY created_at", ventaId);
+  const pagos = await db.getAllAsync<any>("SELECT metodo, monto, referencia FROM pagos WHERE venta_id = ? ORDER BY created_at", ventaId);
   const pagado = pagos.reduce((s, p) => s + p.monto, 0);
 
   // Los precios ya incluyen impuestos (calculos.ts: `impuesto` siempre 0). Si algún día la venta
@@ -74,7 +74,9 @@ export async function construirTicketPayload(db: SQLiteDatabase, ventaId: string
     descuento: Number(venta.descuento_monto) || 0,
     impuestos: impuestosVenta > 0 ? impuestosVenta : ivaIncluido(venta.total, tasa),
     etiquetaImpuestos: impuestosVenta > 0 ? "IVA" : `IVA ${Math.round(tasa * 100)}% incluido`,
-    pagos: pagos.map((p) => ({ metodo: p.metodo, monto: p.monto })),
+    // Un pedido de plataforma se paga con metodo OTRO; su referencia ("DiDi #A123") es lo que
+    // dice de verdad quién pagó, así que se imprime esa en vez de "Otro".
+    pagos: pagos.map((p) => ({ metodo: p.metodo === "OTRO" && p.referencia ? p.referencia : p.metodo, monto: p.monto })),
     cambio: pagado > venta.total ? Math.round((pagado - venta.total) * 100) / 100 : 0,
     anchoMM: datosFiscales.anchoImpresoraMM,
   };

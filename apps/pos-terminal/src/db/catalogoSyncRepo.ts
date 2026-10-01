@@ -103,8 +103,11 @@ export async function upsertMesas(db: SQLiteDatabase, mesas: MesaRemota[]): Prom
  *
  * El emparejamiento es por NOMBRE + PRECIO, que es la misma llave natural que usa el seed del
  * backend para sus propios productos ("Solo Bagel" existe dos veces con precios distintos). Si no
- * hay una coincidencia exacta y única, la línea se deja como está: es preferible una venta
- * atascada y visible a una venta que se sincroniza apuntando al producto equivocado.
+ * hay coincidencia exacta, se acepta el NOMBRE solo cuando en el ERP hay un único producto con
+ * ese nombre (sin distinguir acentos ni mayúsculas): era el caso de las ventas atascadas de
+ * Benito Juárez, donde el ERP tenía el producto con otro precio. Si tampoco así hay una
+ * coincidencia única, la línea se deja como está: es preferible una venta atascada y visible a
+ * una venta que se sincroniza apuntando al producto equivocado (ver elegirProductoErp).
  */
 export async function repararProductosLocalesEnOutbox(db: SQLiteDatabase): Promise<number> {
   const pendientes = await db.getAllAsync<{ local_id: string; payload: string }>(
@@ -118,11 +121,6 @@ export async function repararProductosLocalesEnOutbox(db: SQLiteDatabase): Promi
   );
   if (delErp.length === 0) return 0;
 
-  const porNombrePrecio = new Map<string, string[]>();
-  for (const p of delErp) {
-    const clave = `${p.nombre.trim().toLowerCase()}#${Number(p.precio_base).toFixed(2)}`;
-    porNombrePrecio.set(clave, [...(porNombrePrecio.get(clave) ?? []), p.id]);
-  }
 
   // Nombre y precio de los productos locales, para poder construir la clave de búsqueda.
   const locales = await db.getAllAsync<{ id: string; nombre: string; precio_base: number }>(
@@ -142,10 +140,9 @@ export async function repararProductosLocalesEnOutbox(db: SQLiteDatabase): Promi
         if (typeof item?.productoId !== "string" || !item.productoId.startsWith("hangar-prod-")) continue;
         const local = infoLocal.get(item.productoId);
         if (!local) { irresoluble = true; continue; }
-        const candidatos = porNombrePrecio.get(`${local.nombre.trim().toLowerCase()}#${Number(local.precio_base).toFixed(2)}`);
-        // Exactamente uno: con dos coincidencias no hay forma de saber cuál cobró el cajero.
-        if (candidatos?.length === 1) {
-          item.productoId = candidatos[0];
+        const elegido = elegirProductoErp(local, delErp);
+        if (elegido) {
+          item.productoId = elegido;
           cambiado = true;
         } else {
           irresoluble = true;
@@ -166,4 +163,26 @@ export async function repararProductosLocalesEnOutbox(db: SQLiteDatabase): Promi
     }
   }
   return reparadas;
+}
+
+/** "Café  Latte" → "cafe latte": para comparar nombres de la tablet y del ERP. */
+function normalizarNombreProducto(nombre: string): string {
+  return nombre.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/**
+ * Id del ERP que corresponde a un producto sembrado en la tablet, o null si no hay forma segura de
+ * saberlo. Primero nombre + precio; si no, solo nombre. En los dos casos tiene que haber UNA sola
+ * coincidencia: con dos no hay forma de saber cuál cobró el cajero. Pura, para probarla con Jest.
+ */
+export function elegirProductoErp(
+  local: { nombre: string; precio_base: number },
+  delErp: { id: string; nombre: string; precio_base: number }[],
+): string | null {
+  const nombre = normalizarNombreProducto(local.nombre);
+  const mismoNombre = delErp.filter((p) => normalizarNombreProducto(p.nombre) === nombre);
+  const mismoPrecio = mismoNombre.filter((p) => Number(p.precio_base).toFixed(2) === Number(local.precio_base).toFixed(2));
+  if (mismoPrecio.length === 1) return mismoPrecio[0].id;
+  if (mismoPrecio.length > 1) return null;
+  return mismoNombre.length === 1 ? mismoNombre[0].id : null;
 }

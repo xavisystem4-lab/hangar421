@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Alert, BackHandler, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, BackHandler, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { RolUsuario, diasDeTurnoAbierto } from "@hangar421/shared";
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { useSyncStatusStore, type EstadoSync } from "../store/syncStatusStore";
 import { usarColores } from "../store/temaStore";
 import { procesarCola } from "../sync/syncEngine";
+import { subirAlErp, textoResumenSubida } from "../sync/subirAlErp";
 import { abrirBaseDeDatos } from "../db/database";
 import { listarTicketsPendientes } from "../db/ticketsRepo";
 import { obtenerNombreSucursal } from "../db/dispositivoLocal";
@@ -26,10 +27,11 @@ import { PosAdminPagosScreen } from "./PosAdminPagosScreen";
 import { PosAdminInventarioScreen } from "./PosAdminInventarioScreen";
 import { PosAdminSincronizacionScreen } from "./PosAdminSincronizacionScreen";
 import { PosAdminImpresoraScreen } from "./PosAdminImpresoraScreen";
+import { PosAdminPlataformasScreen } from "./PosAdminPlataformasScreen";
 import { ReciboEnPantallaScreen } from "./ReciboEnPantallaScreen";
 
 type Pantalla = "venta" | "cobro" | "caja" | "consultar" | "admin";
-type PantallaAdmin = "catalogo" | "inventario" | "reportes" | "usuarios" | "pagos" | "sync" | "impresora";
+type PantallaAdmin = "catalogo" | "inventario" | "reportes" | "usuarios" | "pagos" | "sync" | "impresora" | "plataformas";
 
 const TABS: { id: Pantalla; etiqueta: string }[] = [
   { id: "venta", etiqueta: "Venta" },
@@ -174,6 +176,27 @@ export function PosNavigator() {
     ]);
   }
 
+  /** Botón "Subir a ERP" de la barra superior: corrige lo que la tablet puede corregir, reenvía
+   *  todo lo pendiente y dice qué subió y qué no (ver sync/subirAlErp.ts). */
+  const [subiendo, setSubiendo] = useState(false);
+  async function subirErp() {
+    if (subiendo) return;
+    setSubiendo(true);
+    try {
+      const resumen = await subirAlErp();
+      const { titulo, detalle } = textoResumenSubida(resumen);
+      Alert.alert(titulo, detalle, [
+        { text: "Cerrar", style: "cancel" },
+        ...(resumen.sinEnlace ? [{ text: "Enlazar terminal", onPress: () => setMostrarConexion(true) }] : []),
+        ...(resumen.problemas.length > 0 ? [{ text: "Ver detalle", onPress: () => { setPantalla("admin"); setPantallaAdmin("sync"); } }] : []),
+      ]);
+    } catch (e: any) {
+      Alert.alert("No se pudo subir", e?.message ?? "Error inesperado. No se perdió nada: inténtalo de nuevo.");
+    } finally {
+      setSubiendo(false);
+    }
+  }
+
   function tocarIndicadorSync() {
     if (!sync.conectadoAlErp) {
       setMostrarConexion(true);
@@ -259,6 +282,11 @@ export function PosNavigator() {
           <TouchableOpacity onPress={tocarIndicadorSync}>
             <Text style={estilos.indicadorSync}>{ETIQUETA_SYNC[sync.estado]}</Text>
           </TouchableOpacity>
+          <TouchableOpacity onPress={subirErp} disabled={subiendo} style={estilos.botonSubirErp} accessibilityLabel="Subir a ERP">
+            {subiendo
+              ? <ActivityIndicator color="#fff" size="small" />
+              : <Text style={estilos.botonSubirErpTexto}>⬆ Subir a ERP{sync.pendientes > 0 ? ` (${sync.pendientes})` : ""}</Text>}
+          </TouchableOpacity>
           {/* El interruptor de modo noche vive en la barra inferior (BarraActualizacion), que se
               dibuja en TODAS las pantallas — incluida la de login, que es la primera que ve un
               cajero al abrir el turno de noche. */}
@@ -332,6 +360,9 @@ export function PosNavigator() {
               <TouchableOpacity onPress={() => setPantallaAdmin("impresora")} style={[estilos.subTab, pantallaAdmin === "impresora" && estilos.subTabActivo]}>
                 <Text style={{ color: pantallaAdmin === "impresora" ? "#fff" : colores.texto, fontWeight: "700" }}>Impresora</Text>
               </TouchableOpacity>
+              <TouchableOpacity onPress={() => setPantallaAdmin("plataformas")} style={[estilos.subTab, pantallaAdmin === "plataformas" && estilos.subTabActivo]}>
+                <Text style={{ color: pantallaAdmin === "plataformas" ? "#fff" : colores.texto, fontWeight: "700" }}>Delivery</Text>
+              </TouchableOpacity>
             </ScrollView>
             <View style={{ flex: 1 }}>
               {pantallaAdmin === "catalogo" && <PosAdminCatalogoScreen onCerrar={() => setPantalla("venta")} />}
@@ -341,6 +372,7 @@ export function PosNavigator() {
               {pantallaAdmin === "inventario" && <PosAdminInventarioScreen onCerrar={() => setPantalla("venta")} />}
               {pantallaAdmin === "sync" && <PosAdminSincronizacionScreen onCerrar={() => setPantalla("venta")} />}
               {pantallaAdmin === "impresora" && <PosAdminImpresoraScreen onCerrar={() => setPantalla("venta")} />}
+              {pantallaAdmin === "plataformas" && <PosAdminPlataformasScreen onCerrar={() => setPantalla("venta")} />}
             </View>
           </View>
         )}
@@ -395,6 +427,8 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     headerTitulo: { color: colores.amber, fontWeight: "800", fontSize: 15 },
     headerSucursal: { color: "rgba(255,255,255,0.85)", fontSize: 12, marginTop: 2 },
     indicadorSync: { color: "#fff", fontSize: 11 },
+    botonSubirErp: { minHeight: 32, paddingHorizontal: 12, borderRadius: 16, backgroundColor: colores.amber, alignItems: "center", justifyContent: "center" },
+    botonSubirErpTexto: { color: colores.navy, fontWeight: "800", fontSize: 13 },
     botonHeader: { width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
     botonHeaderTexto: { fontSize: 15 },
     avisoFolio: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: colores.green, padding: 10, paddingHorizontal: 16 },
