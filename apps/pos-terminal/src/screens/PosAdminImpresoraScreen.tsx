@@ -48,6 +48,17 @@ export function PosAdminImpresoraScreen({ onCerrar }: { onCerrar: () => void }) 
     cargar().catch((e) => Alert.alert("Impresora", e?.message ?? String(e)));
   }, []);
 
+  // La lista se actualiza sola mientras la pantalla está abierta: al conectar o desconectar la
+  // impresora por OTG aparece o desaparece sin tocar "Actualizar". Solo relee los dispositivos
+  // (barato y local); los ajustes no cambian solos.
+  useEffect(() => {
+    if (!impresoraUsb.moduloDisponible) return;
+    const intervalo = setInterval(() => {
+      impresoraUsb.listarDispositivos().then(setDispositivos).catch(() => undefined);
+    }, 3000);
+    return () => clearInterval(intervalo);
+  }, []);
+
   async function ejecutar(etiqueta: string, accion: () => Promise<unknown>) {
     setTrabajando(etiqueta);
     try {
