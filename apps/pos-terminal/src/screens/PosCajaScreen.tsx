@@ -3,7 +3,7 @@ import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View 
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
-import { abrirTurno, cerrarTurno, efectivoDelTurno, listarMovimientosCaja, reasignarTurno, registrarMovimientoCaja, turnoAbierto, type MovimientoCajaLocal, type TurnoLocal } from "../db/turnosRepo";
+import { abrirTurno, cerrarTurno, efectivoDelTurno, fijarTipoCambioTurno, listarMovimientosCaja, reasignarTurno, registrarMovimientoCaja, turnoAbierto, type MovimientoCajaLocal, type TurnoLocal } from "../db/turnosRepo";
 import { listarVentasRecientes, type VentaResumen } from "../db/ventasHistorialRepo";
 import { BILLETES_MXN, BILLETES_USD, MONEDAS_MXN, calcularDiferencia, construirDesglose, round2, type Conteo } from "../caja/denominaciones";
 import { ColumnaDenominaciones, usarRefsDenominaciones } from "../components/DesgloseEfectivo";
@@ -31,7 +31,11 @@ export function PosCajaScreen() {
   const [monedasMXN, setMonedasMXN] = useState<Conteo>({});
   const [billetesUSD, setBilletesUSD] = useState<Conteo>({});
   const [observaciones, setObservaciones] = useState("");
-  const [ventasEnEfectivo, setVentasEnEfectivo] = useState(0);
+  // Ventas en efectivo del turno por moneda: pesos (ya restado el cambio dado por pagos en
+  // dólares) y dólares recibidos. Ver efectivoDelTurno.
+  const [ventasEnEfectivo, setVentasEnEfectivo] = useState({ mxn: 0, usd: 0 });
+  // Pesos por dólar: se pide al abrir caja (y para un turno que se abrió sin él).
+  const [tipoCambioInput, setTipoCambioInput] = useState("");
   // Refs de cada columna, para encadenar el foco con Enter al contar.
   const refsBilletes = usarRefsDenominaciones(BILLETES_MXN.length);
   const refsMonedas = usarRefsDenominaciones(MONEDAS_MXN.length);
@@ -59,11 +63,31 @@ export function PosCajaScreen() {
 
   async function abrir() {
     if (!usuario) return;
+    // Obligatorio: es lo que permite cobrar en dólares durante el turno, y se fija una vez al
+    // abrir para que todo el turno use el mismo.
+    const tc = Number(tipoCambioInput.replace(",", "."));
+    if (!(tc > 0)) {
+      setMensaje("Escribe a cuánto está el dólar antes de abrir caja.");
+      return;
+    }
     try {
       const db = await abrirBaseDeDatos();
-      await abrirTurno(db, { usuarioId: usuario.id, montoInicial: Number(montoInicial) || 0 });
-      setMensaje("Turno abierto.");
+      await abrirTurno(db, { usuarioId: usuario.id, montoInicial: Number(montoInicial) || 0, tipoCambioUsd: tc });
+      setMensaje(`Turno abierto. Dólar a $${tc.toFixed(2)}.`);
       setMontoInicial("0");
+      setTipoCambioInput("");
+      cargar();
+    } catch (e: any) {
+      setMensaje(e.message);
+    }
+  }
+
+  async function fijarTipoCambio() {
+    if (!turno) return;
+    try {
+      await fijarTipoCambioTurno(await abrirBaseDeDatos(), turno.id, Number(tipoCambioInput.replace(",", ".")));
+      setTipoCambioInput("");
+      setMensaje("Tipo de cambio guardado.");
       cargar();
     } catch (e: any) {
       setMensaje(e.message);
@@ -114,20 +138,26 @@ export function PosCajaScreen() {
     if (!turno) return 0;
     const ingresos = movimientos.filter((m) => m.tipo === "INGRESO").reduce((s, m) => s + m.monto, 0);
     const egresos = movimientos.filter((m) => m.tipo === "EGRESO").reduce((s, m) => s + m.monto, 0);
-    return round2(turno.montoInicial + ventasEnEfectivo + ingresos - egresos);
+    return round2(turno.montoInicial + ventasEnEfectivo.mxn + ingresos - egresos);
   })();
 
   const desglose = construirDesglose(billetesMXN, monedasMXN, billetesUSD, observaciones);
   const diferencia = calcularDiferencia(desglose.totalMXN, efectivoEsperado);
+  const diferenciaUsd = calcularDiferencia(desglose.totalUSD, ventasEnEfectivo.usd);
 
   function confirmarCierre() {
     const signo = diferencia > 0 ? "sobran" : "faltan";
     const detalle = diferencia === 0
       ? "El conteo cuadra con lo esperado."
       : `Según el conteo ${signo} $${Math.abs(diferencia).toFixed(2)} respecto a lo esperado ($${efectivoEsperado.toFixed(2)}).`;
+    const detalleUsd = desglose.totalUSD > 0 || ventasEnEfectivo.usd > 0
+      ? diferenciaUsd === 0
+        ? "\nLos dólares cuadran."
+        : `\nDólares: contados US$${desglose.totalUSD.toFixed(2)}, esperados US$${ventasEnEfectivo.usd.toFixed(2)} (${diferenciaUsd > 0 ? "sobran" : "faltan"} US$${Math.abs(diferenciaUsd).toFixed(2)}).`
+      : "";
     Alert.alert(
       "Cerrar caja",
-      `Contado: $${desglose.totalMXN.toFixed(2)}\n${detalle}\n\nEl corte no se puede deshacer.`,
+      `Contado: $${desglose.totalMXN.toFixed(2)}\n${detalle}${detalleUsd}\n\nEl corte no se puede deshacer.`,
       [
         { text: "Cancelar", style: "cancel" },
         { text: "Cerrar caja", style: "destructive", onPress: cerrar },
@@ -176,6 +206,8 @@ export function PosCajaScreen() {
         <View style={estilos.tarjeta}>
           <Text style={estilos.subtitulo}>Abrir turno</Text>
           <TextInput placeholder="Monto inicial" placeholderTextColor={colores.textoSecundario} value={montoInicial} onChangeText={setMontoInicial} keyboardType="decimal-pad" style={estilos.input} />
+          <Text style={estilos.detalle}>¿A cuánto está el dólar hoy? (pesos por dólar)</Text>
+          <TextInput placeholder="Ej. 18.50" placeholderTextColor={colores.textoSecundario} value={tipoCambioInput} onChangeText={setTipoCambioInput} keyboardType="decimal-pad" style={estilos.input} />
           <TouchableOpacity onPress={() => exigir(PERMISOS_TERMINAL.CAJA_ABRIR, abrir)} style={estilos.botonPrincipal}><Text style={estilos.botonPrincipalTexto}>Abrir caja</Text></TouchableOpacity>
         </View>
       ) : (
@@ -186,7 +218,20 @@ export function PosCajaScreen() {
             <Text style={estilos.detalle}>Ventas del turno: {ventasDelTurno.length} · ${totalVentasTurno.toFixed(2)}</Text>
             <Text style={estilos.detalle}>Movimientos: {totalMovimientos >= 0 ? "+" : ""}{totalMovimientos.toFixed(2)}</Text>
             <Text style={[estilos.detalle, estilos.esperado]}>Efectivo esperado: ${efectivoEsperado.toFixed(2)}</Text>
-            <Text style={estilos.detalle}>(solo ventas cobradas en efectivo: ${ventasEnEfectivo.toFixed(2)})</Text>
+            <Text style={estilos.detalle}>(solo ventas cobradas en efectivo: ${ventasEnEfectivo.mxn.toFixed(2)})</Text>
+            <Text style={[estilos.detalle, estilos.esperado]}>Dólares esperados: US${ventasEnEfectivo.usd.toFixed(2)}</Text>
+            {turno.tipoCambioUsd ? (
+              <Text style={estilos.detalle}>Tipo de cambio del turno: US$1 = ${turno.tipoCambioUsd.toFixed(2)}</Text>
+            ) : (
+              // Turno abierto antes de que se preguntara: sin esto no se puede cobrar en dólares.
+              <View style={{ marginTop: 8 }}>
+                <Text style={[estilos.detalle, { color: colores.red }]}>Este turno no tiene tipo de cambio: no se puede cobrar en dólares.</Text>
+                <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+                  <TextInput placeholder="¿A cuánto está el dólar? ej. 18.50" placeholderTextColor={colores.textoSecundario} value={tipoCambioInput} onChangeText={setTipoCambioInput} keyboardType="decimal-pad" style={[estilos.input, { flex: 1 }]} />
+                  <TouchableOpacity onPress={fijarTipoCambio} style={estilos.botonSecundario}><Text style={estilos.botonSecundarioTexto}>Guardar</Text></TouchableOpacity>
+                </View>
+              </View>
+            )}
 
             {/* Relevo de cajero sin cerrar la caja. El arqueo no se mueve: las ventas van
                 enlazadas al turno, no a quién las cobró. */}
@@ -291,11 +336,24 @@ export function PosCajaScreen() {
                   {diferencia === 0 ? "Cuadra" : `${diferencia > 0 ? "+" : "−"}$${Math.abs(diferencia).toFixed(2)}`}
                 </Text>
               </View>
-              {desglose.totalUSD > 0 && (
-                <View style={estilos.filaResumen}>
-                  <Text style={estilos.etiquetaResumen}>Dólares contados</Text>
-                  <Text style={estilos.valorResumen}>US${desglose.totalUSD.toFixed(2)}</Text>
-                </View>
+              {/* Cuadre aparte en dólares: lo esperado son los dólares recibidos en el turno. */}
+              {(desglose.totalUSD > 0 || ventasEnEfectivo.usd > 0) && (
+                <>
+                  <View style={[estilos.filaResumen, { marginTop: 10 }]}>
+                    <Text style={estilos.etiquetaResumen}>Dólares contados</Text>
+                    <Text style={estilos.valorResumen}>US${desglose.totalUSD.toFixed(2)}</Text>
+                  </View>
+                  <View style={estilos.filaResumen}>
+                    <Text style={estilos.etiquetaResumen}>Dólares esperados</Text>
+                    <Text style={estilos.valorResumen}>US${ventasEnEfectivo.usd.toFixed(2)}</Text>
+                  </View>
+                  <View style={[estilos.filaResumen, estilos.filaDiferencia]}>
+                    <Text style={estilos.etiquetaResumen}>Diferencia en dólares</Text>
+                    <Text style={[estilos.valorDiferencia, { color: diferenciaUsd === 0 ? colores.green : colores.red }]}>
+                      {diferenciaUsd === 0 ? "Cuadra" : `${diferenciaUsd > 0 ? "+" : "−"}US$${Math.abs(diferenciaUsd).toFixed(2)}`}
+                    </Text>
+                  </View>
+                </>
               )}
             </View>
 

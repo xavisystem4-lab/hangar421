@@ -3,6 +3,7 @@ import {
   EstadoMesa,
   EstadoPedido,
   EstadoPedidoItem,
+  MetodoPago,
   RolUsuario,
   TipoDescuento,
   TipoMovimientoInventario,
@@ -549,6 +550,9 @@ export class PedidosService {
             metodo: p.metodo,
             monto: p.monto,
             referencia: p.referencia,
+            // Solo los pagos en dólares los traen (ver PagoDto).
+            montoUsd: p.metodo === MetodoPago.EFECTIVO_USD ? p.montoUsd ?? null : null,
+            tipoCambio: p.metodo === MetodoPago.EFECTIVO_USD ? p.tipoCambio ?? null : null,
             usuarioId: cajeroId,
           })),
         });

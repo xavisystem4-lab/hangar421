@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { EstadoPedido, EstadoTurno, MetodoPago, TipoMovimientoCaja } from "@hangar421/shared";
+import { EstadoPedido, EstadoTurno, MetodoPago, TipoMovimientoCaja, efectivoEsperadoPorMoneda } from "@hangar421/shared";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { limiteDelDia } from "../pedidos/ventas-consulta";
@@ -10,7 +10,25 @@ import { resolverUsuarioDeTerminal } from "../common/usuario-terminal.util";
 export class CajaService {
   constructor(private prisma: PrismaService) {}
 
-  async abrirTurno(data: { sucursalId: string; cajaId?: string | null; usuarioId?: string | null; montoInicial: number }) {
+  /**
+   * `id`: el APK genera el id de su turno y lo usa después para el corte, los movimientos de
+   * caja, el relevo y cada venta. Antes el ERP creaba el turno con un id propio, así que todo
+   * eso llegaba nombrando un turno que el ERP no tenía ("Turno no encontrado"). Con el mismo id
+   * también es idempotente: un reintento de la cola devuelve el turno ya creado.
+   */
+  async abrirTurno(data: {
+    id?: string;
+    sucursalId: string;
+    cajaId?: string | null;
+    usuarioId?: string | null;
+    montoInicial: number;
+    tipoCambioUsd?: number | null;
+  }) {
+    if (data.id) {
+      const existente = await this.prisma.turno.findUnique({ where: { id: data.id } });
+      if (existente && existente.sucursalId !== data.sucursalId) throw new BadRequestException("Ese turno pertenece a otra sucursal");
+      if (existente) return existente;
+    }
     const cajaId = await this.resolverCaja(data.sucursalId, data.cajaId);
     // `Turno.usuarioId` es obligatorio, así que aquí no vale dejarlo vacío como en el cobro: si
     // el cajero no existe en el ERP se atribuye el turno al usuario-terminal de la sucursal.
@@ -23,10 +41,12 @@ export class CajaService {
 
     return this.prisma.turno.create({
       data: {
+        ...(data.id ? { id: data.id } : {}),
         sucursalId: data.sucursalId,
         cajaId,
         usuarioId,
         montoInicial: data.montoInicial,
+        tipoCambioUsd: data.tipoCambioUsd && data.tipoCambioUsd > 0 ? data.tipoCambioUsd : null,
       },
     });
   }
@@ -148,34 +168,53 @@ export class CajaService {
     return { sucursalId: turno.sucursalId, cajeroId: turno.usuarioId, createdAt: { gte: turno.fechaApertura } };
   }
 
-  /** Efectivo esperado en caja: monto inicial + ventas en efectivo del turno + ingresos - egresos. */
+  /** Efectivo esperado en caja, por moneda: pesos (inicial + ventas en efectivo + ingresos −
+   *  egresos − cambio dado en pesos por pagos en dólares) y dólares recibidos. La regla vive en
+   *  shared (efectivoEsperadoPorMoneda) para que la tablet calcule exactamente lo mismo. */
   private async calcularMontoEsperado(turno: { id: string; sucursalId: string; usuarioId: string; fechaApertura: Date; montoInicial: any }) {
     const filtroPedido = await this.filtroVentasDelTurno(turno);
-    const [pagosEfectivo, movimientos] = await Promise.all([
-      this.prisma.pago.aggregate({
-        where: { metodo: MetodoPago.EFECTIVO, pedido: filtroPedido },
-        _sum: { monto: true },
+    const [pagos, movimientos] = await Promise.all([
+      this.prisma.pago.findMany({
+        where: { metodo: { in: [MetodoPago.EFECTIVO, MetodoPago.EFECTIVO_USD] }, pedido: filtroPedido },
+        select: { metodo: true, monto: true, montoUsd: true, tipoCambio: true },
       }),
       this.prisma.movimientoCaja.groupBy({ by: ["tipo"], where: { turnoId: turno.id }, _sum: { monto: true } }),
     ]);
 
     const ingresos = Number(movimientos.find((m) => m.tipo === TipoMovimientoCaja.INGRESO)?._sum.monto ?? 0);
     const egresos = Number(movimientos.find((m) => m.tipo === TipoMovimientoCaja.EGRESO)?._sum.monto ?? 0);
-    const montoEsperado = Number(turno.montoInicial) + Number(pagosEfectivo._sum.monto ?? 0) + ingresos - egresos;
-    return { montoEsperado, ingresos, egresos };
+    const esperado = efectivoEsperadoPorMoneda({
+      montoInicial: Number(turno.montoInicial),
+      pagos: pagos.map((p) => ({ metodo: p.metodo, monto: Number(p.monto), montoUsd: p.montoUsd === null ? null : Number(p.montoUsd), tipoCambio: p.tipoCambio === null ? null : Number(p.tipoCambio) })),
+      ingresos,
+      egresos,
+    });
+    return { montoEsperado: esperado.mxn, montoEsperadoUsd: esperado.usd, ingresos, egresos };
   }
 
   /** Corte de caja: compara el efectivo declarado por el cajero (según el desglose de billetes/
    *  monedas contado) contra lo esperado (monto inicial + ventas en efectivo + ingresos - egresos
    *  del turno) y registra la diferencia. `desgloseEfectivo` guarda el conteo tal cual se
    *  presentó en pantalla, para poder auditarlo después. */
-  async cerrarTurno(turnoId: string, montoFinalDeclarado: number, desgloseEfectivo?: unknown) {
+  /** Dólares: `usd.declarado` es lo contado en billetes de dólar; si no llega se toma del
+   *  desglose (`totalUSD`), que el POS Windows ya manda. Solo se cuadra en dólares si el turno
+   *  tuvo tipo de cambio o recibió dólares; si no, esos campos quedan vacíos como siempre. */
+  async cerrarTurno(
+    turnoId: string,
+    montoFinalDeclarado: number,
+    desgloseEfectivo?: unknown,
+    usd?: { declarado?: number | null; tipoCambio?: number | null },
+  ) {
     const turno = await this.prisma.turno.findUnique({ where: { id: turnoId } });
     if (!turno) throw new NotFoundException("Turno no encontrado");
     if (turno.estado === EstadoTurno.CERRADO) throw new BadRequestException("El turno ya está cerrado");
 
-    const { montoEsperado } = await this.calcularMontoEsperado(turno);
+    const { montoEsperado, montoEsperadoUsd } = await this.calcularMontoEsperado(turno);
     const diferencia = round2(montoFinalDeclarado - montoEsperado);
+
+    const tipoCambioUsd = turno.tipoCambioUsd ?? (usd?.tipoCambio && usd.tipoCambio > 0 ? usd.tipoCambio : null);
+    const declaradoUsd = usd?.declarado ?? Number((desgloseEfectivo as any)?.totalUSD ?? 0);
+    const cuadraUsd = !!tipoCambioUsd || montoEsperadoUsd > 0;
 
     return this.prisma.turno.update({
       where: { id: turnoId },
@@ -186,6 +225,10 @@ export class CajaService {
         montoFinalSistema: round2(montoEsperado),
         diferencia,
         desgloseEfectivo: desgloseEfectivo as any,
+        tipoCambioUsd,
+        ...(cuadraUsd
+          ? { montoFinalDeclaradoUsd: round2(declaradoUsd), montoFinalSistemaUsd: montoEsperadoUsd, diferenciaUsd: round2(declaradoUsd - montoEsperadoUsd) }
+          : {}),
       },
     });
   }
@@ -315,6 +358,7 @@ export class CajaService {
       totalIngresos: round2(esperado.ingresos),
       totalEgresos: round2(esperado.egresos),
       montoEsperado: round2(esperado.montoEsperado),
+      montoEsperadoUsd: esperado.montoEsperadoUsd,
     };
   }
 }
@@ -340,6 +384,11 @@ function filaTurno(t: TurnoConRelaciones) {
     montoFinalDeclarado: t.montoFinalDeclarado == null ? null : Number(t.montoFinalDeclarado),
     montoFinalSistema: t.montoFinalSistema == null ? null : Number(t.montoFinalSistema),
     diferencia: t.diferencia == null ? null : Number(t.diferencia),
+    // Cuadre en dólares: null si el turno no manejó dólares.
+    tipoCambioUsd: t.tipoCambioUsd == null ? null : Number(t.tipoCambioUsd),
+    montoFinalDeclaradoUsd: t.montoFinalDeclaradoUsd == null ? null : Number(t.montoFinalDeclaradoUsd),
+    montoFinalSistemaUsd: t.montoFinalSistemaUsd == null ? null : Number(t.montoFinalSistemaUsd),
+    diferenciaUsd: t.diferenciaUsd == null ? null : Number(t.diferenciaUsd),
     pendienteDiaAnterior: esTurnoDeDiaAnterior(t, t.sucursal.timezone),
   };
 }

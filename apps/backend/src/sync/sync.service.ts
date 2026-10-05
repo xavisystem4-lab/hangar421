@@ -271,7 +271,16 @@ export class SyncService {
 
       case SyncEntidad.TURNO:
         if (item.operacion === SyncOperacion.CREATE) {
-          await this.caja.abrirTurno({ sucursalId: item.sucursalId, cajaId: p.cajaId, usuarioId: item.usuarioId ?? p.usuarioId, montoInicial: p.montoInicial });
+          // Con el MISMO id que el turno de la terminal: el corte, los movimientos y las ventas
+          // lo nombran así (ver CajaService.abrirTurno).
+          await this.caja.abrirTurno({
+            id: p.turnoId ?? item.id,
+            sucursalId: item.sucursalId,
+            cajaId: p.cajaId,
+            usuarioId: item.usuarioId ?? p.usuarioId,
+            montoInicial: p.montoInicial,
+            tipoCambioUsd: p.tipoCambioUsd,
+          });
         } else if (p.accion === "REASIGNAR") {
           // Relevo de cajero con la caja abierta. Llega por la cola como todo lo demás, así
           // que funciona igual si la tienda estaba sin red al hacerlo. La autorización ya la
@@ -285,7 +294,10 @@ export class SyncService {
           // `desgloseEfectivo` se perdía al llegar por la cola offline: el POS Windows sí lo
           // manda en su POST directo, pero un corte hecho en el APK llegaba sin el conteo de
           // billetes y monedas, así que no había forma de auditarlo después.
-          await this.caja.cerrarTurno(p.turnoId, p.montoFinalDeclarado, p.desgloseEfectivo);
+          await this.caja.cerrarTurno(p.turnoId, p.montoFinalDeclarado, p.desgloseEfectivo, {
+            declarado: p.montoFinalDeclaradoUsd,
+            tipoCambio: p.tipoCambioUsd,
+          });
         }
         break;
 

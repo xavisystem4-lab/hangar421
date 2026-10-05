@@ -78,6 +78,9 @@ export enum MetodoPago {
   TRANSFERENCIA = "TRANSFERENCIA",
   QR = "QR",
   OTRO = "OTRO",
+  /** Billetes en dólares. `monto` es lo que cubre de la venta en PESOS; los dólares recibidos y
+   *  el tipo de cambio van en `montoUsd` / `tipoCambio`, y el cambio se da en pesos. */
+  EFECTIVO_USD = "EFECTIVO_USD",
 }
 
 export enum TipoMovimientoInventario {

@@ -1,6 +1,8 @@
 import { TipoDescuento, TipoMovimientoInventario } from "./enums";
 import {
   calcularCortesia,
+  cobroEnDolares,
+  efectivoEsperadoPorMoneda,
   calcularDiferenciaTraspaso,
   calcularImpuesto,
   calcularMontoDescuento,
@@ -201,5 +203,36 @@ describe("calcularCortesia", () => {
   it("nunca cobra más que el subtotal ni montos negativos", () => {
     expect(calcularCortesia(50, 80)).toEqual({ montoCortesia: 0, total: 50 });
     expect(calcularCortesia(50, -5)).toEqual({ montoCortesia: 50, total: 0 });
+  });
+});
+
+describe("cobroEnDolares", () => {
+  it("US$20 a $18.50 cubre una cuenta de $300 y deja $70 de cambio en pesos", () => {
+    expect(cobroEnDolares(300, 20, 18.5)).toEqual({ equivalenteMxn: 370, suficiente: true, faltanteMxn: 0, cambioMxn: 70 });
+  });
+
+  it("dice cuánto falta si los dólares no alcanzan", () => {
+    expect(cobroEnDolares(300, 10, 18.5)).toEqual({ equivalenteMxn: 185, suficiente: false, faltanteMxn: 115, cambioMxn: 0 });
+  });
+
+  it("sin tipo de cambio no se puede cobrar en dólares", () => {
+    expect(cobroEnDolares(0, 20, 0).suficiente).toBe(false);
+  });
+});
+
+describe("efectivoEsperadoPorMoneda", () => {
+  it("separa pesos y dólares, y el cambio de un pago en dólares sale de los pesos", () => {
+    expect(
+      efectivoEsperadoPorMoneda({
+        montoInicial: 500,
+        pagos: [
+          { metodo: "EFECTIVO", monto: 120 },
+          { metodo: "EFECTIVO_USD", monto: 300, montoUsd: 20, tipoCambio: 18.5 },
+          { metodo: "TARJETA", monto: 250 },
+        ],
+        ingresos: 50,
+        egresos: 30,
+      }),
+    ).toEqual({ mxn: 570, usd: 20 }); // 500 + 120 + 50 − 30 − 70 de cambio
   });
 });

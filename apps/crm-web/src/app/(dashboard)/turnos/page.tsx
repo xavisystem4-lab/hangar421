@@ -18,6 +18,11 @@ interface Turno {
   montoFinalDeclarado: number | null;
   montoFinalSistema: number | null;
   diferencia: number | null;
+  /** Cuadre aparte en dólares; null si el turno no manejó dólares. */
+  tipoCambioUsd?: number | null;
+  montoFinalDeclaradoUsd?: number | null;
+  montoFinalSistemaUsd?: number | null;
+  diferenciaUsd?: number | null;
   pendienteDiaAnterior: boolean;
   ventas?: { numTickets: number; total: number };
 }
@@ -218,6 +223,19 @@ export default function TurnosPage() {
                     }}
                   >
                     {dinero(t.diferencia)}
+                    {/* Dólares bajo la cifra en pesos: el corte los cuadra aparte. */}
+                    {t.montoFinalSistemaUsd != null && (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 400,
+                          color: t.diferenciaUsd == null || Math.abs(t.diferenciaUsd) < 0.01 ? "var(--h421-gray-400)" : "var(--h421-red)",
+                        }}
+                        title={`Esperado US$${t.montoFinalSistemaUsd.toFixed(2)} · contado US$${(t.montoFinalDeclaradoUsd ?? 0).toFixed(2)}${t.tipoCambioUsd ? ` · dólar a $${t.tipoCambioUsd.toFixed(2)}` : ""}`}
+                      >
+                        US${(t.diferenciaUsd ?? 0).toFixed(2)}
+                      </div>
+                    )}
                   </td>
                   <td style={celda}>
                     <a href={enlaceVentas(t)}>Ventas</a>

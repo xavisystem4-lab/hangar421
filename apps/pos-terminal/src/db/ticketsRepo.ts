@@ -41,9 +41,23 @@ export async function construirTicketPayload(db: SQLiteDatabase, ventaId: string
       )
     : [];
 
-  const pagos = await db.getAllAsync<any>("SELECT metodo, monto, referencia FROM pagos WHERE venta_id = ? ORDER BY created_at", ventaId);
+  const pagos = await db.getAllAsync<any>(
+    "SELECT metodo, monto, referencia, monto_recibido, monto_usd, tipo_cambio FROM pagos WHERE venta_id = ? ORDER BY created_at",
+    ventaId,
+  );
   const cortesia = await db.getFirstAsync<any>("SELECT id FROM descuentos WHERE venta_id = ? AND motivo LIKE 'Cortesía%' LIMIT 1", ventaId);
-  const pagado = pagos.reduce((s, p) => s + p.monto, 0);
+  // Lo que ENTREGÓ el cliente, en pesos, para "paga con" y el cambio. `monto` es lo que cubrió
+  // (migración 12); los pagos viejos no tienen monto_recibido y su monto ya era lo entregado.
+  const entregado = (p: any) =>
+    p.metodo === "EFECTIVO_USD" && p.monto_usd != null && p.tipo_cambio != null
+      ? Math.round(p.monto_usd * p.tipo_cambio * 100) / 100
+      : p.monto_recibido ?? p.monto;
+  const pagado = pagos.reduce((s, p) => s + entregado(p), 0);
+  const etiquetaPago = (p: any): string => {
+    if (p.metodo === "OTRO" && p.referencia) return p.referencia;
+    if (p.metodo === "EFECTIVO_USD" && p.monto_usd != null) return `Dólares US$${Number(p.monto_usd).toFixed(2)} × $${Number(p.tipo_cambio).toFixed(2)}`;
+    return p.metodo;
+  };
 
   // Los precios ya incluyen impuestos (calculos.ts: `impuesto` siempre 0). Si algún día la venta
   // trae impuestos desglosados se imprimen esos; si no, la parte de IVA contenida en el total,
@@ -78,7 +92,8 @@ export async function construirTicketPayload(db: SQLiteDatabase, ventaId: string
     etiquetaImpuestos: impuestosVenta > 0 ? "IVA" : `IVA ${Math.round(tasa * 100)}% incluido`,
     // Un pedido de plataforma se paga con metodo OTRO; su referencia ("DiDi #A123") es lo que
     // dice de verdad quién pagó, así que se imprime esa en vez de "Otro".
-    pagos: pagos.map((p) => ({ metodo: p.metodo === "OTRO" && p.referencia ? p.referencia : p.metodo, monto: p.monto })),
+    // En dólares sale "Dólares US$20.00 × $18.50" con su equivalente en pesos.
+    pagos: pagos.map((p) => ({ metodo: etiquetaPago(p), monto: entregado(p) })),
     cambio: pagado > venta.total ? Math.round((pagado - venta.total) * 100) / 100 : 0,
     anchoMM: datosFiscales.anchoImpresoraMM,
   };

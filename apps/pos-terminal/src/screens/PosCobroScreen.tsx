@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { MetodoPago } from "@hangar421/shared";
+import { MetodoPago, cobroEnDolares } from "@hangar421/shared";
 import { useCarritoStore } from "../store/carritoStore";
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { usarColores } from "../store/temaStore";
@@ -17,6 +17,7 @@ import { PERMISOS_TERMINAL, tienePermiso } from "../auth/permisosTerminal";
 
 const ICONO: Record<MetodoPago, string> = {
   [MetodoPago.EFECTIVO]: "💵",
+  [MetodoPago.EFECTIVO_USD]: "🇺🇸",
   [MetodoPago.TARJETA]: "💳",
   [MetodoPago.TRANSFERENCIA]: "🏦",
   [MetodoPago.QR]: "▦",
@@ -66,18 +67,28 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
     })();
   }, []);
 
+  // Pesos por dólar del turno abierto (se pregunta al abrir caja). Sin él no se cobra en dólares.
+  const [tipoCambio, setTipoCambio] = useState<number | null>(null);
+  useEffect(() => {
+    abrirBaseDeDatos().then(turnoAbierto).then((turno) => setTipoCambio(turno?.tipoCambioUsd ?? null)).catch(() => undefined);
+  }, []);
+
   // El teclado ya no arma pagos parciales: es solo "con cuánto paga el cliente", para calcular el
-  // cambio. Dejarlo en 0 significa pago exacto — ver `montoCobrado`.
+  // cambio. Dejarlo en 0 significa pago exacto — ver `montoCobrado`. En dólares se teclean los
+  // dólares entregados y no hay "exacto": hay que escribirlos.
   const recibido = Number(montoInput || 0);
+  const enDolares = metodoActivo === MetodoPago.EFECTIVO_USD;
+  const conTeclado = metodoActivo === MetodoPago.EFECTIVO || enDolares;
+  const cobroUsd = cobroEnDolares(t.total, recibido, tipoCambio ?? 0);
   // Solo en efectivo cuenta lo tecleado; con tarjeta o transferencia siempre es el total exacto.
   const montoCobrado = metodoActivo === MetodoPago.EFECTIVO && recibido > 0 ? recibido : t.total;
-  const restante = Math.max(0, t.total - montoCobrado);
-  const cambio = Math.max(0, montoCobrado - t.total);
+  const restante = enDolares ? (cobroUsd.suficiente ? 0 : Math.max(cobroUsd.faltanteMxn, 0.01)) : Math.max(0, t.total - montoCobrado);
+  const cambio = enDolares ? cobroUsd.cambioMxn : Math.max(0, montoCobrado - t.total);
 
   // En métodos distintos de efectivo el importe es el total exacto: si la cortesía cambia el total,
   // el monto mostrado debe seguirlo.
   useEffect(() => {
-    if (metodoActivo !== MetodoPago.EFECTIVO) setMontoInput(t.total.toFixed(2));
+    if (!conTeclado) setMontoInput(t.total.toFixed(2));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [t.total]);
 
@@ -98,7 +109,7 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
     setMetodoActivo(metodo);
     // En efectivo el cajero teclea con cuánto le pagan; en los demás métodos el importe es
     // siempre el total exacto, así que no hay nada que teclear.
-    setMontoInput(metodo === MetodoPago.EFECTIVO ? "0" : t.total.toFixed(2));
+    setMontoInput(metodo === MetodoPago.EFECTIVO || metodo === MetodoPago.EFECTIVO_USD ? "0" : t.total.toFixed(2));
     setReferencia("");
   }
 
@@ -118,10 +129,20 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
     // Una cortesía completa (total $0) no lleva pago: no entró dinero por ningún método.
     // Fuera de efectivo no hay cambio: se registra el total exacto, con la referencia que haya
     // dado la terminal del banco o la transferencia (viaja al ERP en `pagos.referencia`).
-    const esEfectivo = metodoActivo === MetodoPago.EFECTIVO;
-    const pagosFinales = t.total > 0
-      ? [{ metodo: metodoActivo, monto: esEfectivo ? montoCobrado : t.total, referencia: esEfectivo ? undefined : referencia.trim() || undefined }]
-      : [];
+    //
+    // `monto` es siempre lo que el pago cubre (el total): lo entregado va aparte, para el ticket.
+    // Antes en efectivo se guardaba lo entregado y el corte esperaba de más el cambio devuelto.
+    const pago =
+      metodoActivo === MetodoPago.EFECTIVO
+        ? { metodo: metodoActivo, monto: t.total, montoRecibido: montoCobrado }
+        : enDolares
+          ? { metodo: metodoActivo, monto: t.total, montoUsd: recibido, tipoCambio: tipoCambio ?? undefined }
+          : { metodo: metodoActivo, monto: t.total, referencia: referencia.trim() || undefined };
+    if (enDolares && !cobroUsd.suficiente) {
+      setError(tipoCambio ? `Los dólares no alcanzan: faltan $${cobroUsd.faltanteMxn.toFixed(2)}.` : "Falta el tipo de cambio del dólar: fíjalo en Caja.");
+      return;
+    }
+    const pagosFinales = t.total > 0 ? [pago] : [];
     setProcesando(true);
     try {
       const db = await abrirBaseDeDatos();
@@ -229,7 +250,7 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
 
         {(!cortesia || t.total > 0) && (
         <>
-        {metodoActivo !== MetodoPago.EFECTIVO ? (
+        {!conTeclado ? (
           // Sin integración con terminal: el cajero cobra en la terminal del banco y aquí solo
           // lo registra. No hay teclado de "paga con" porque no hay cambio que calcular.
           <View style={estilos.tecladoContenedor}>
@@ -250,14 +271,28 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
         ) : (
         <>
         <View style={estilos.totalesBox}>
-          <Text style={[estilos.totalGrande, { color: restante > 0 ? colores.navyTexto : colores.green }]}>
-            {restante > 0 ? `Falta cubrir: $${restante.toFixed(2)}` : `Cambio: $${cambio.toFixed(2)}`}
-          </Text>
+          {enDolares && !tipoCambio ? (
+            <Text style={[estilos.totalGrande, { color: colores.red, fontSize: 16 }]}>
+              Falta el tipo de cambio del dólar. Fíjalo en la pestaña Caja.
+            </Text>
+          ) : (
+            <Text style={[estilos.totalGrande, { color: restante > 0 ? colores.navyTexto : colores.green }]}>
+              {restante > 0
+                ? `Falta cubrir: $${(enDolares ? cobroUsd.faltanteMxn : restante).toFixed(2)}`
+                : `Cambio${enDolares ? " en pesos" : ""}: $${cambio.toFixed(2)}`}
+            </Text>
+          )}
+          {enDolares && tipoCambio ? (
+            <Text style={estilos.etiquetaMonto}>
+              US$1 = ${tipoCambio.toFixed(2)} · la cuenta de ${t.total.toFixed(2)} son US${(t.total / tipoCambio).toFixed(2)}
+              {recibido > 0 ? ` · US$${recibido.toFixed(2)} = $${cobroUsd.equivalenteMxn.toFixed(2)}` : ""}
+            </Text>
+          ) : null}
         </View>
 
         <View style={estilos.tecladoContenedor}>
-          <Text style={estilos.etiquetaMonto}>Paga con (déjalo en 0 si es importe exacto)</Text>
-          <Text style={estilos.montoIngresado}>${montoInput}</Text>
+          <Text style={estilos.etiquetaMonto}>{enDolares ? "¿Con cuántos dólares paga?" : "Paga con (déjalo en 0 si es importe exacto)"}</Text>
+          <Text style={estilos.montoIngresado}>{enDolares ? "US$" : "$"}{montoInput}</Text>
           <View style={estilos.teclado}>
             {TECLAS.map((k) => (
               <TouchableOpacity key={k} onPress={() => presionarTecla(k)} style={[estilos.tecla, k === "borrar" && estilos.teclaBorrar]}>

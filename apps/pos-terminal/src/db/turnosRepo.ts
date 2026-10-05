@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from "expo-sqlite";
-import { uuid7, round2, SyncEntidad, SyncOperacion, turnoDeDiaAnterior } from "@hangar421/shared";
+import { uuid7, round2, SyncEntidad, SyncOperacion, turnoDeDiaAnterior, efectivoEsperadoPorMoneda } from "@hangar421/shared";
 import type { DesgloseEfectivo } from "../caja/denominaciones";
 import { encolarSync } from "./outboxRepo";
 import { obtenerNombreSucursal, obtenerOCrearDispositivoId, obtenerOCrearSucursalIdLocal } from "./dispositivoLocal";
@@ -12,6 +12,15 @@ export interface TurnoLocal {
   estado: "ABIERTO" | "CERRADO";
   abiertoAt: string;
   cerradoAt: string | null;
+  /** Pesos por dólar fijados al abrir caja; null en turnos abiertos antes de existir el dato. */
+  tipoCambioUsd: number | null;
+}
+
+function aTurnoLocal(f: any): TurnoLocal {
+  return {
+    id: f.id, usuarioId: f.usuario_id, montoInicial: f.monto_inicial, montoFinalDeclarado: f.monto_final_declarado,
+    estado: f.estado, abiertoAt: f.abierto_at, cerradoAt: f.cerrado_at, tipoCambioUsd: f.tipo_cambio_usd ?? null,
+  };
 }
 
 export interface MovimientoCajaLocal {
@@ -31,8 +40,7 @@ export async function turnoAbierto(db: SQLiteDatabase): Promise<TurnoLocal | nul
     "SELECT * FROM turnos WHERE sucursal_id = ? AND estado = 'ABIERTO' ORDER BY abierto_at DESC LIMIT 1",
     sucursalId,
   );
-  if (!f) return null;
-  return { id: f.id, usuarioId: f.usuario_id, montoInicial: f.monto_inicial, montoFinalDeclarado: f.monto_final_declarado, estado: f.estado, abiertoAt: f.abierto_at, cerradoAt: f.cerrado_at };
+  return f ? aTurnoLocal(f) : null;
 }
 
 export interface TurnoPendiente {
@@ -55,9 +63,10 @@ export async function turnoPendienteDeDiaAnterior(db: SQLiteDatabase, ahora: Dat
 }
 
 /** Abrir caja — una sola transacción: fila de turno + su evento de sync, todo o nada. */
-export async function abrirTurno(db: SQLiteDatabase, datos: { usuarioId: string; montoInicial: number }): Promise<TurnoLocal> {
+export async function abrirTurno(db: SQLiteDatabase, datos: { usuarioId: string; montoInicial: number; tipoCambioUsd: number | null }): Promise<TurnoLocal> {
   const yaAbierto = await turnoAbierto(db);
   if (yaAbierto) throw new Error("Ya hay un turno de caja abierto");
+  const tipoCambioUsd = datos.tipoCambioUsd && datos.tipoCambioUsd > 0 ? round4(datos.tipoCambioUsd) : null;
 
   const id = uuid7();
   const ahora = new Date().toISOString();
@@ -66,8 +75,8 @@ export async function abrirTurno(db: SQLiteDatabase, datos: { usuarioId: string;
 
   await db.withTransactionAsync(async () => {
     await db.runAsync(
-      "INSERT INTO turnos (id, sucursal_id, usuario_id, monto_inicial, estado, abierto_at, idempotency_key) VALUES (?, ?, ?, ?, 'ABIERTO', ?, ?)",
-      id, sucursalId, datos.usuarioId, round2(datos.montoInicial), ahora, idempotencyKey,
+      "INSERT INTO turnos (id, sucursal_id, usuario_id, monto_inicial, estado, abierto_at, idempotency_key, tipo_cambio_usd) VALUES (?, ?, ?, ?, 'ABIERTO', ?, ?, ?)",
+      id, sucursalId, datos.usuarioId, round2(datos.montoInicial), ahora, idempotencyKey, tipoCambioUsd,
     );
     await encolarSync(db, {
       entidad: SyncEntidad.TURNO,
@@ -76,11 +85,22 @@ export async function abrirTurno(db: SQLiteDatabase, datos: { usuarioId: string;
       sucursalId,
       dispositivoId,
       usuarioId: datos.usuarioId,
-      payload: { turnoId: id, cajaId: null, usuarioId: datos.usuarioId, montoInicial: round2(datos.montoInicial), idempotencyKey },
+      payload: { turnoId: id, cajaId: null, usuarioId: datos.usuarioId, montoInicial: round2(datos.montoInicial), tipoCambioUsd, idempotencyKey },
     });
   });
 
-  return { id, usuarioId: datos.usuarioId, montoInicial: round2(datos.montoInicial), montoFinalDeclarado: null, estado: "ABIERTO", abiertoAt: ahora, cerradoAt: null };
+  return { id, usuarioId: datos.usuarioId, montoInicial: round2(datos.montoInicial), montoFinalDeclarado: null, estado: "ABIERTO", abiertoAt: ahora, cerradoAt: null, tipoCambioUsd };
+}
+
+function round4(n: number): number {
+  return Math.round(n * 10_000) / 10_000;
+}
+
+/** Tipo de cambio para un turno que se abrió sin él (antes de existir la pregunta). Solo local:
+ *  viaja al ERP con el corte (cerrarTurno), y cada pago en dólares lleva el suyo. */
+export async function fijarTipoCambioTurno(db: SQLiteDatabase, turnoId: string, tipoCambioUsd: number): Promise<void> {
+  if (!(tipoCambioUsd > 0)) throw new Error("Escribe a cuánto está el dólar.");
+  await db.runAsync("UPDATE turnos SET tipo_cambio_usd = ? WHERE id = ?", round4(tipoCambioUsd), turnoId);
 }
 
 /** Un solo movimiento (ingreso/egreso) dentro de un turno ya abierto — distinto de TURNO
@@ -123,7 +143,7 @@ export async function listarMovimientosCaja(db: SQLiteDatabase, turnoId: string)
 /** Cerrar caja — una sola transacción: actualiza el turno + su evento de sync. */
 export async function cerrarTurno(
   db: SQLiteDatabase,
-  datos: { turnoId: string; montoFinalDeclarado: number; desgloseEfectivo?: DesgloseEfectivo },
+  datos: { turnoId: string; montoFinalDeclarado: number; desgloseEfectivo?: DesgloseEfectivo; montoFinalDeclaradoUsd?: number },
 ): Promise<void> {
   const ahora = new Date().toISOString();
   const [sucursalId, dispositivoId, turno] = await Promise.all([
@@ -151,6 +171,10 @@ export async function cerrarTurno(
         // Mismo campo y forma que manda el POS Windows en su POST directo, para que el ERP
         // reciba un solo formato venga de donde venga.
         desgloseEfectivo: datos.desgloseEfectivo,
+        // Cuadre aparte en dólares (ver CajaService.cerrarTurno). El tipo de cambio va también
+        // aquí por los turnos que lo fijaron después de abrir.
+        montoFinalDeclaradoUsd: datos.montoFinalDeclaradoUsd ?? datos.desgloseEfectivo?.totalUSD ?? 0,
+        tipoCambioUsd: turno.tipo_cambio_usd ?? null,
       },
     });
   });
@@ -203,13 +227,22 @@ export async function reasignarTurno(
 /** Efectivo cobrado durante el turno — lo que el sistema espera encontrar en el cajón, sumado
  *  al monto de apertura y a los movimientos. Se calcula en local para que el cajero vea la
  *  diferencia mientras cuenta, sin depender de la red; el ERP lo recalcula por su cuenta al
- *  recibir el corte (CajaService.calcularMontoEsperado), y esa es la cifra oficial. */
-export async function efectivoDelTurno(db: SQLiteDatabase, turnoId: string): Promise<number> {
-  const fila = await db.getFirstAsync<{ total: number }>(
-    `SELECT COALESCE(SUM(p.monto), 0) AS total
+ *  recibir el corte (CajaService.calcularMontoEsperado), y esa es la cifra oficial.
+ *
+ *  Por moneda, con la misma regla que el ERP (efectivoEsperadoPorMoneda): los pagos en dólares
+ *  suman dólares y restan de los pesos el cambio que se dio. Puede salir negativo en pesos si se
+ *  dio más cambio del que entró en pesos — es lo que de verdad salió del cajón. */
+export async function efectivoDelTurno(db: SQLiteDatabase, turnoId: string): Promise<{ mxn: number; usd: number }> {
+  const pagos = await db.getAllAsync<{ metodo: string; monto: number; monto_usd: number | null; tipo_cambio: number | null }>(
+    `SELECT p.metodo, p.monto, p.monto_usd, p.tipo_cambio
      FROM pagos p JOIN ventas v ON v.id = p.venta_id
-     WHERE v.turno_id = ? AND v.estado = 'COBRADA' AND p.metodo = 'EFECTIVO'`,
+     WHERE v.turno_id = ? AND v.estado = 'COBRADA' AND p.metodo IN ('EFECTIVO', 'EFECTIVO_USD')`,
     turnoId,
   );
-  return round2(fila?.total ?? 0);
+  return efectivoEsperadoPorMoneda({
+    montoInicial: 0,
+    ingresos: 0,
+    egresos: 0,
+    pagos: pagos.map((p) => ({ metodo: p.metodo, monto: p.monto, montoUsd: p.monto_usd, tipoCambio: p.tipo_cambio })),
+  });
 }

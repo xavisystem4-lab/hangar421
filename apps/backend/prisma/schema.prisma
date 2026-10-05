@@ -92,6 +92,7 @@ enum MetodoPago {
   TRANSFERENCIA
   QR
   OTRO
+  EFECTIVO_USD
 }
 
 enum EstadoConexionTerminal {
@@ -630,6 +631,11 @@ model Turno {
   montoFinalSistema   Decimal?    @db.Decimal(10, 2)
   diferencia          Decimal?    @db.Decimal(10, 2)
   desgloseEfectivo    Json? // conteo de billetes/monedas MXN y billetes USD declarados al corte
+  // Dólares: tipo de cambio que se fijó al abrir y cuadre aparte en USD al cortar.
+  tipoCambioUsd          Decimal?    @db.Decimal(10, 4)
+  montoFinalDeclaradoUsd Decimal?    @db.Decimal(10, 2)
+  montoFinalSistemaUsd   Decimal?    @db.Decimal(10, 2)
+  diferenciaUsd          Decimal?    @db.Decimal(10, 2)
   estado              EstadoTurno @default(ABIERTO)
   fechaApertura       DateTime    @default(now())
   fechaCierre         DateTime?
@@ -782,6 +788,10 @@ model Pago {
   monto      Decimal    @db.Decimal(10, 2)
   referencia String?
   usuarioId  String?
+  // Solo EFECTIVO_USD: dólares entregados y pesos por dólar. `monto` es lo que cubrió en pesos;
+  // el cambio se dio en pesos (equivalente − monto). Ver efectivoEsperadoPorMoneda en shared.
+  montoUsd   Decimal?   @db.Decimal(10, 2)
+  tipoCambio Decimal?   @db.Decimal(10, 4)
   createdAt  DateTime   @default(now())
 
   pedido Pedido @relation(fields: [pedidoId], references: [id])

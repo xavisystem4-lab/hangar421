@@ -504,6 +504,51 @@ export const MIGRACIONES: Migracion[] = [
       `);
     },
   },
+  {
+    version: 12,
+    nombre: "cobro_en_dolares",
+    up: async (db) => {
+      // Cobro con billetes en dólares, cambio en pesos (ver cobroEnDolares en shared).
+      //  - metodos_pago_config: su CHECK no admite EFECTIVO_USD y SQLite no deja cambiar un CHECK,
+      //    así que se reconstruye la tabla. El método se agrega solo si la tabla ya estaba
+      //    sembrada: en una instalación nueva la siembra (sembrarMetodosPagoPorDefecto) lo trae.
+      //  - turnos.tipo_cambio_usd: pesos por dólar, se pregunta al abrir caja.
+      //  - pagos.monto_usd / tipo_cambio: los dólares recibidos y a cuánto se tomaron.
+      //  - pagos.monto_recibido: lo que entregó el cliente, solo para el ticket ("paga con" y
+      //    cambio). `monto` pasa a ser siempre lo que el pago CUBRIÓ de la venta: antes, en
+      //    efectivo, guardaba lo entregado y el corte esperaba de más el cambio ya devuelto.
+      await db.execAsync(`
+        CREATE TABLE metodos_pago_config_nueva (
+          id TEXT PRIMARY KEY,
+          tipo TEXT NOT NULL CHECK(tipo IN ('EFECTIVO','EFECTIVO_USD','TARJETA','TRANSFERENCIA','QR','OTRO')),
+          habilitado INTEGER NOT NULL DEFAULT 1,
+          orden INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT INTO metodos_pago_config_nueva (id, tipo, habilitado, orden)
+          SELECT id, tipo, habilitado, CASE WHEN orden >= 2 THEN orden + 1 ELSE orden END FROM metodos_pago_config;
+        INSERT INTO metodos_pago_config_nueva (id, tipo, habilitado, orden)
+          SELECT 'metodo-efectivo-usd', 'EFECTIVO_USD', 1, 2 WHERE EXISTS (SELECT 1 FROM metodos_pago_config);
+        DROP TABLE metodos_pago_config;
+        ALTER TABLE metodos_pago_config_nueva RENAME TO metodos_pago_config;
+
+        ALTER TABLE turnos ADD COLUMN tipo_cambio_usd REAL;
+        ALTER TABLE pagos ADD COLUMN monto_usd REAL;
+        ALTER TABLE pagos ADD COLUMN tipo_cambio REAL;
+        ALTER TABLE pagos ADD COLUMN monto_recibido REAL;
+
+        -- Pagos en efectivo ya guardados con lo entregado: se pasa eso a monto_recibido y monto
+        -- queda en lo que cubrió. Solo ventas de un único pago (las de esta app), que es donde
+        -- lo cubierto es exactamente el total. Así el corte del turno abierto deja de esperar
+        -- de más; lo que ya subió al ERP no se toca desde aquí.
+        UPDATE pagos SET
+          monto_recibido = monto,
+          monto = (SELECT v.total FROM ventas v WHERE v.id = pagos.venta_id)
+        WHERE metodo = 'EFECTIVO'
+          AND monto > (SELECT v.total FROM ventas v WHERE v.id = pagos.venta_id)
+          AND (SELECT COUNT(*) FROM pagos p2 WHERE p2.venta_id = pagos.venta_id) = 1;
+      `);
+    },
+  },
 ];
 
 /** Corre, en orden, toda migración con `version` mayor a la ya aplicada — cada una dentro de su
