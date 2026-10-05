@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { MetodoPago, cobroEnDolares } from "@hangar421/shared";
+import { MetodoPago, cobroEnDolares, round2 } from "@hangar421/shared";
 import { useCarritoStore } from "../store/carritoStore";
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { usarColores } from "../store/temaStore";
@@ -57,6 +57,11 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
   const [metodos, setMetodos] = useState<{ valor: MetodoPago; etiqueta: string; icono: string }[]>([]);
   const [metodoActivo, setMetodoActivo] = useState<MetodoPago>(MetodoPago.EFECTIVO);
   const [montoInput, setMontoInput] = useState("0");
+  // Propina (en pesos), igual que en el Comandero Móvil: el teclado escribe en el recuadro activo.
+  // Se suma a lo que paga el cliente y queda anotada en el pago ("Propina $20.00"); la venta sigue
+  // valiendo su total. En efectivo cuenta para el corte porque ese dinero entra al cajón.
+  const [propinaInput, setPropinaInput] = useState("0");
+  const [editando, setEditando] = useState<"paga" | "propina">("paga");
   // Autorización / últimos 4 dígitos de la terminal del banco, o folio de la transferencia.
   const [referencia, setReferencia] = useState("");
   const [procesando, setProcesando] = useState(false);
@@ -83,11 +88,14 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
   const recibido = Number(montoInput || 0);
   const enDolares = metodoActivo === MetodoPago.EFECTIVO_USD;
   const conTeclado = metodoActivo === MetodoPago.EFECTIVO || enDolares;
-  const cobroUsd = cobroEnDolares(t.total, recibido, tipoCambio ?? 0);
+  // La propina solo se captura con teclado (efectivo en pesos o dólares).
+  const propina = conTeclado ? round2(Number(propinaInput || 0)) : 0;
+  const aPagar = round2(t.total + propina);
+  const cobroUsd = cobroEnDolares(aPagar, recibido, tipoCambio ?? 0);
   // Solo en efectivo cuenta lo tecleado; con tarjeta o transferencia siempre es el total exacto.
-  const montoCobrado = metodoActivo === MetodoPago.EFECTIVO && recibido > 0 ? recibido : t.total;
-  const restante = enDolares ? (cobroUsd.suficiente ? 0 : Math.max(cobroUsd.faltanteMxn, 0.01)) : Math.max(0, t.total - montoCobrado);
-  const cambio = enDolares ? cobroUsd.cambioMxn : Math.max(0, montoCobrado - t.total);
+  const montoCobrado = metodoActivo === MetodoPago.EFECTIVO && recibido > 0 ? recibido : aPagar;
+  const restante = enDolares ? (cobroUsd.suficiente ? 0 : Math.max(cobroUsd.faltanteMxn, 0.01)) : Math.max(0, aPagar - montoCobrado);
+  const cambio = enDolares ? cobroUsd.cambioMxn : Math.max(0, montoCobrado - aPagar);
 
   // En métodos distintos de efectivo el importe es el total exacto: si la cortesía cambia el total,
   // el monto mostrado debe seguirlo.
@@ -115,10 +123,12 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
     // siempre el total exacto, así que no hay nada que teclear.
     setMontoInput(metodo === MetodoPago.EFECTIVO || metodo === MetodoPago.EFECTIVO_USD ? "0" : t.total.toFixed(2));
     setReferencia("");
+    setPropinaInput("0");
+    setEditando("paga");
   }
 
   function presionarTecla(tecla: string) {
-    setMontoInput((m) => {
+    (editando === "propina" ? setPropinaInput : setMontoInput)((m) => {
       if (tecla === "borrar") return m.length > 1 ? m.slice(0, -1) : "0";
       if (tecla === ".") return m.includes(".") ? m : `${m}.`;
       return m === "0" ? tecla : m + tecla;
@@ -136,17 +146,18 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
     //
     // `monto` es siempre lo que el pago cubre (el total): lo entregado va aparte, para el ticket.
     // Antes en efectivo se guardaba lo entregado y el corte esperaba de más el cambio devuelto.
+    const notaPropina = propina > 0 ? `Propina $${propina.toFixed(2)}` : undefined;
     const pago =
       metodoActivo === MetodoPago.EFECTIVO
-        ? { metodo: metodoActivo, monto: t.total, montoRecibido: montoCobrado }
+        ? { metodo: metodoActivo, monto: aPagar, montoRecibido: montoCobrado, referencia: notaPropina }
         : enDolares
-          ? { metodo: metodoActivo, monto: t.total, montoUsd: recibido, tipoCambio: tipoCambio ?? undefined }
+          ? { metodo: metodoActivo, monto: aPagar, montoUsd: recibido, tipoCambio: tipoCambio ?? undefined, referencia: notaPropina }
           : { metodo: metodoActivo, monto: t.total, referencia: referencia.trim() || undefined };
     if (enDolares && !cobroUsd.suficiente) {
       setError(tipoCambio ? `Los dólares no alcanzan: faltan $${cobroUsd.faltanteMxn.toFixed(2)}.` : "Falta el tipo de cambio del dólar: fíjalo en Caja.");
       return;
     }
-    const pagosFinales = t.total > 0 ? [pago] : [];
+    const pagosFinales = aPagar > 0 ? [pago] : [];
     setProcesando(true);
     try {
       const db = await abrirBaseDeDatos();
@@ -195,7 +206,15 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
   return (
     <View style={{ flex: 1, backgroundColor: colores.fondo }}>
       <View style={estilos.encabezado}>
-        <Text style={estilos.encabezadoTitulo}>💵 Cobrar cuenta</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
+          <Text style={{ fontSize: 34 }}>💵</Text>
+          <View>
+            <Text style={estilos.encabezadoTitulo}>Cobrar cuenta</Text>
+            <Text style={estilos.encabezadoSubtitulo}>
+              Mostrador · {items.reduce((s, i) => s + i.cantidad, 0)} artículo{items.reduce((s, i) => s + i.cantidad, 0) === 1 ? "" : "s"}
+            </Text>
+          </View>
+        </View>
         <TouchableOpacity onPress={onCerrar}><Text style={estilos.cerrar}>✕</Text></TouchableOpacity>
       </View>
 
@@ -214,7 +233,10 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
               <View style={estilos.filaTotal}><Text style={{ color: colores.amber, fontWeight: "700" }}>🎁 Cortesía</Text><Text style={{ color: colores.amber, fontWeight: "700" }}>-${t.descuentoTotal.toFixed(2)}</Text></View>
             </>
           )}
-          <View style={estilos.filaTotal}><Text style={[estilos.totalGrande, estilos.totalNaranja]}>{cortesia ? "A cobrar" : "Total"}</Text><Text style={[estilos.totalGrande, estilos.totalNaranja, { fontSize: 28 }]}>${t.total.toFixed(2)}</Text></View>
+          {propina > 0 && (
+            <View style={estilos.filaTotal}><Text style={{ color: colores.green, fontSize: 15 }}>Propina</Text><Text style={{ color: colores.green, fontSize: 15, fontWeight: "700" }}>${propina.toFixed(2)}</Text></View>
+          )}
+          <View style={estilos.filaTotal}><Text style={[estilos.totalGrande, estilos.totalNaranja]}>{cortesia ? "A cobrar" : "Total"}</Text><Text style={[estilos.totalGrande, estilos.totalNaranja, { fontSize: 28 }]}>${aPagar.toFixed(2)}</Text></View>
         </View>
 
         <Text style={estilos.subtitulo}>Método de pago</Text>
@@ -296,20 +318,35 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
           )}
           {enDolares && tipoCambio ? (
             <Text style={estilos.etiquetaMonto}>
-              US$1 = ${tipoCambio.toFixed(2)} · la cuenta de ${t.total.toFixed(2)} son US${(t.total / tipoCambio).toFixed(2)}
+              US$1 = ${tipoCambio.toFixed(2)} · la cuenta de ${aPagar.toFixed(2)} son US${(aPagar / tipoCambio).toFixed(2)}
               {recibido > 0 ? ` · US$${recibido.toFixed(2)} = $${cobroUsd.equivalenteMxn.toFixed(2)}` : ""}
             </Text>
           ) : null}
         </View>
 
         <View style={estilos.tecladoContenedor}>
-          <View style={estilos.cajaMonto}>
-            <Text style={estilos.cajaMontoEtiqueta}>{enDolares ? "Paga con (dólares)" : "Paga con"}</Text>
-            <Text style={estilos.montoIngresado}>{enDolares ? "US$" : "$"}{montoInput}</Text>
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <TouchableOpacity onPress={() => setEditando("paga")} style={[estilos.cajaMonto, editando !== "paga" && estilos.cajaMontoInactiva]}>
+              <Text style={[estilos.cajaMontoEtiqueta, editando !== "paga" && { color: colores.textoSecundario }]}>{enDolares ? "Paga con (US$)" : "Paga con"}</Text>
+              <Text style={estilos.montoIngresado}>{enDolares ? "US$" : "$"}{montoInput}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setEditando("propina")} style={[estilos.cajaMonto, editando !== "propina" && estilos.cajaMontoInactiva]}>
+              <Text style={[estilos.cajaMontoEtiqueta, editando !== "propina" && { color: colores.textoSecundario }]}>Propina</Text>
+              <Text style={estilos.montoIngresado}>${propinaInput}</Text>
+            </TouchableOpacity>
           </View>
-          <Text style={[estilos.etiquetaMonto, { marginVertical: 6 }]}>
-            {enDolares ? "¿Con cuántos dólares paga?" : "Déjalo en 0 si paga el importe exacto"}
+          <Text style={[estilos.etiquetaMonto, { marginVertical: 8 }]}>
+            {editando === "propina" ? "Escribe la propina" : enDolares ? "¿Con cuántos dólares paga?" : "Déjalo en 0 si paga el importe exacto"}
           </Text>
+          {editando === "paga" && (
+            <View style={estilos.filaRapidos}>
+              {(enDolares ? [["Exacto", "0"], ["US$10", "10"], ["US$20", "20"], ["US$50", "50"]] : [["Exacto", "0"], ["$100", "100"], ["$200", "200"], ["$500", "500"]]).map(([etiqueta, valor]) => (
+                <TouchableOpacity key={etiqueta} onPress={() => setMontoInput(valor)} style={estilos.botonRapido}>
+                  <Text style={estilos.botonRapidoTexto}>{etiqueta}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
           <View style={estilos.teclado}>
             {TECLAS.map((k) => (
               <TouchableOpacity key={k} onPress={() => presionarTecla(k)} style={[estilos.tecla, k === "borrar" && estilos.teclaBorrar]}>
@@ -339,7 +376,7 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
             style={[estilos.botonAccion, { flex: 2, backgroundColor: restante > 0 ? colores.gray200 : colores.green }]}
           >
             <Text style={{ color: restante > 0 ? colores.texto : "#fff", fontWeight: "800", fontSize: 17 }}>
-              {procesando ? "Procesando…" : cortesia && t.total === 0 ? "Confirmar cortesía" : `Confirmar pago $${t.total.toFixed(2)}`}
+              {procesando ? "Procesando…" : cortesia && t.total === 0 ? "Confirmar cortesía" : `Confirmar pago $${aPagar.toFixed(2)}`}
             </Text>
           </TouchableOpacity>
         </View>
@@ -366,6 +403,7 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
   return StyleSheet.create({
     encabezado: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 18, paddingVertical: 16, backgroundColor: colores.navy, borderBottomWidth: 4, borderBottomColor: NARANJA },
     encabezadoTitulo: { color: "#fff", fontWeight: "800", fontSize: 22 },
+    encabezadoSubtitulo: { color: "#CFD8E6", fontSize: 14 },
     cerrar: { color: "#fff", fontSize: 26 },
     filaItem: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 },
     totalesBox: { borderTopWidth: 1, borderTopColor: colores.borde, marginTop: 10, paddingTop: 10 },
@@ -384,7 +422,11 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     tecladoContenedor: { marginTop: 12, backgroundColor: colores.superficie, borderRadius: 18, padding: 12 },
     inputReferencia: { borderWidth: 1, borderColor: colores.borde, borderRadius: 8, padding: 12, minHeight: 48, marginTop: 10, color: colores.texto, backgroundColor: colores.superficie, fontSize: 15 },
     etiquetaMonto: { fontSize: 12, textAlign: "center", color: colores.textoSecundario, marginBottom: 2 },
-    cajaMonto: { borderWidth: 2, borderColor: NARANJA, borderRadius: 14, paddingVertical: 10, alignItems: "center", backgroundColor: colores.fondo },
+    cajaMonto: { flex: 1, borderWidth: 2, borderColor: NARANJA, borderRadius: 14, paddingVertical: 10, alignItems: "center", backgroundColor: colores.fondo },
+    cajaMontoInactiva: { borderColor: colores.borde },
+    filaRapidos: { flexDirection: "row", gap: 8, marginBottom: 10 },
+    botonRapido: { flex: 1, height: 40, borderRadius: 10, borderWidth: 1, borderColor: NARANJA, alignItems: "center", justifyContent: "center", backgroundColor: colores.fondo },
+    botonRapidoTexto: { color: colores.texto, fontWeight: "800", fontSize: 14 },
     cajaMontoEtiqueta: { color: NARANJA, fontWeight: "700", fontSize: 13 },
     montoIngresado: { fontSize: 30, fontWeight: "800", textAlign: "center", color: colores.texto },
     teclado: { flexDirection: "row", flexWrap: "wrap", rowGap: 8, justifyContent: "space-between" },

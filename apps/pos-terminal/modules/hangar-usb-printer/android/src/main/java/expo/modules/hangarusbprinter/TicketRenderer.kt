@@ -52,6 +52,8 @@ class TicketRenderer(private val context: Context, private val cfg: ConfigImpres
         b.feed(1).setBold(true).setSize(doubleWidth = true, doubleHeight = true)
         b.leftRight("TOTAL", dinero(t.optDouble("total", 0.0)), columnas / 2)
         b.setSize(doubleWidth = false, doubleHeight = false).setBold(false)
+        val propina = t.optDouble("propina", 0.0)
+        if (propina > 0.005) b.leftRight("Propina", dinero(propina))
 
         val pagos = t.optJSONArray("pagos")
         if (pagos != null && pagos.length() > 0) {

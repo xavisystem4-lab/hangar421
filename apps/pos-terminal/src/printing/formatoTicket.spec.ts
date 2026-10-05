@@ -1,4 +1,4 @@
-import { etiquetaMetodoPago, formatearFechaTicket, ivaIncluido, prepararTicketParaImpresora } from "./formatoTicket";
+import { propinaDeReferencia, etiquetaMetodoPago, formatearFechaTicket, ivaIncluido, prepararTicketParaImpresora } from "./formatoTicket";
 
 describe("formatoTicket", () => {
   it("formatea la fecha como dd/mm/aaaa hh:mm en hora local", () => {
@@ -35,5 +35,16 @@ describe("formatoTicket", () => {
     expect(t.fechaTexto).toBe("02/01/2026 09:03");
     expect(t.pagos).toEqual([{ metodo: "Tarjeta", monto: 55 }]);
     expect(t.total).toBe(55);
+  });
+});
+
+describe("propinaDeReferencia", () => {
+  it("lee la propina anotada en el pago", () => {
+    expect(propinaDeReferencia("Propina $20.00")).toBe(20);
+    expect(propinaDeReferencia("1234 · Propina $1,050.50")).toBe(1050.5);
+  });
+  it("devuelve 0 sin propina", () => {
+    expect(propinaDeReferencia("DiDi Food #A1")).toBe(0);
+    expect(propinaDeReferencia(null)).toBe(0);
   });
 });

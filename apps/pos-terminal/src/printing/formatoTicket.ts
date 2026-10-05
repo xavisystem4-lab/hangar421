@@ -45,3 +45,9 @@ export function prepararTicketParaImpresora(t: TicketPayload): TicketPayload & {
     pagos: t.pagos?.map((p) => ({ ...p, metodo: etiquetaMetodoPago(p.metodo) })),
   };
 }
+
+/** Propina anotada en la referencia de un pago ("Propina $20.00", ver PosCobroScreen). 0 si no hay. */
+export function propinaDeReferencia(referencia: string | null | undefined): number {
+  const m = /Propina \$([\d,]+(?:\.\d+)?)/.exec(referencia ?? "");
+  return m ? Number(m[1].replace(/,/g, "")) || 0 : 0;
+}

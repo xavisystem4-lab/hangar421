@@ -33,6 +33,8 @@ export interface TicketPayload {
   etiquetaImpuestos?: string;
   pagos?: TicketPago[];
   cambio?: number;
+  /** Propina que pagó el cliente aparte del total (va anotada en el pago). */
+  propina?: number;
   /** Texto del QR del pie (p. ej. URL de autofacturación). Sin él no se imprime QR. */
   qrTexto?: string;
   qrLeyenda?: string;
