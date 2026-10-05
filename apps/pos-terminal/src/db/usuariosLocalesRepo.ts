@@ -17,6 +17,8 @@ export interface UsuarioLocal {
   /** El ERP le asignó sucursales a esta persona (terminal multisucursal): su rol lo manda el
    *  ERP y se reescribe en cada sincronización, así que no se puede cambiar desde la tablet. */
   rolDesdeErp?: boolean;
+  /** Turno de trabajo asignado (informativo, ver turnosTrabajoRepo). */
+  turnoTrabajoId?: string | null;
 }
 
 function aUsuarioLocal(f: any): UsuarioLocal {
@@ -29,6 +31,7 @@ function aUsuarioLocal(f: any): UsuarioLocal {
     ultimaVerificacionOnline: f.ultima_verificacion_online,
     permisos: leerPermisosGuardados(f.permisos_json),
     rolDesdeErp: !!f.rol_desde_erp,
+    turnoTrabajoId: f.turno_trabajo_id ?? null,
   };
 }
 

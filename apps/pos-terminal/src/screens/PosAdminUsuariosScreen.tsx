@@ -6,6 +6,7 @@ import { useAuthLocalStore } from "../store/authLocalStore";
 import { abrirBaseDeDatos } from "../db/database";
 import { listarUsuariosLocales, eliminarUsuarioLocal, crearUsuarioLocal, guardarRolYPermisos, type UsuarioLocal } from "../db/usuariosLocalesRepo";
 import { sincronizarPronto } from "../sync/syncEngine";
+import { asignarTurnoTrabajo, crearTurnoTrabajo, eliminarTurnoTrabajo, listarTurnosTrabajo, motivoTurnoInvalido, textoTurno, type TurnoTrabajo } from "../db/turnosTrabajoRepo";
 import { GRUPOS_PERMISOS, PERMISOS_DEFECTO_POR_ROL, esRolAdmin, permisosEfectivos } from "../auth/permisosTerminal";
 
 /** Roles que se pueden asignar desde la tablet, en el orden en que se ofrecen. */
@@ -44,10 +45,40 @@ export function PosAdminUsuariosScreen({ onCerrar }: { onCerrar: () => void }) {
   const [editando, setEditando] = useState<UsuarioLocal | null>(null);
   const [rolBorrador, setRolBorrador] = useState<string>(RolUsuario.CAJERO);
   const [permisosBorrador, setPermisosBorrador] = useState<Set<string>>(new Set());
+  const [turnoBorrador, setTurnoBorrador] = useState<string | null>(null);
+
+  // Turnos de trabajo de esta sucursal (informativos, ver turnosTrabajoRepo).
+  const [turnos, setTurnos] = useState<TurnoTrabajo[]>([]);
+  const [turnoNuevo, setTurnoNuevo] = useState({ nombre: "", horaInicio: "", horaFin: "" });
+  const [errorTurno, setErrorTurno] = useState<string | null>(null);
 
   async function cargar() {
     const db = await abrirBaseDeDatos();
-    setUsuarios(await listarUsuariosLocales(db));
+    const [lista, listaTurnos] = await Promise.all([listarUsuariosLocales(db), listarTurnosTrabajo(db)]);
+    setUsuarios(lista);
+    setTurnos(listaTurnos);
+  }
+
+  async function crearTurno() {
+    const motivo = motivoTurnoInvalido(turnoNuevo);
+    setErrorTurno(motivo);
+    if (motivo) return;
+    const db = await abrirBaseDeDatos();
+    await crearTurnoTrabajo(db, turnoNuevo);
+    setTurnoNuevo({ nombre: "", horaInicio: "", horaFin: "" });
+    cargar();
+  }
+
+  function confirmarEliminarTurno(t: TurnoTrabajo) {
+    const asignados = usuarios.filter((u) => u.turnoTrabajoId === t.id).length;
+    Alert.alert(
+      "Borrar turno",
+      `¿Borrar "${textoTurno(t)}"?${asignados > 0 ? `\n\n${asignados} persona(s) quedarán sin turno.` : ""}`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        { text: "Borrar", style: "destructive", onPress: async () => { await eliminarTurnoTrabajo(await abrirBaseDeDatos(), t.id); cargar(); } },
+      ],
+    );
   }
 
   useEffect(() => {
@@ -84,6 +115,7 @@ export function PosAdminUsuariosScreen({ onCerrar }: { onCerrar: () => void }) {
     setEditando(u);
     setRolBorrador(u.rol);
     setPermisosBorrador(new Set(permisosEfectivos(u.rol, u.permisos)));
+    setTurnoBorrador(u.turnoTrabajoId ?? null);
   }
 
   /** Al cambiar de rol las casillas pasan a las de ese rol: es lo que se espera al "hacer
@@ -114,6 +146,7 @@ export function PosAdminUsuariosScreen({ onCerrar }: { onCerrar: () => void }) {
       rol: editando.rolDesdeErp ? undefined : rolBorrador,
       permisos: personalizados,
     });
+    await asignarTurnoTrabajo(db, editando.id, turnoBorrador);
     const nombre = editando.nombre;
     setEditando(null);
     await cargar();
@@ -134,6 +167,32 @@ export function PosAdminUsuariosScreen({ onCerrar }: { onCerrar: () => void }) {
         <TouchableOpacity onPress={onCerrar}><Text style={estilos.cerrar}>✕</Text></TouchableOpacity>
       </View>
 
+      <View style={estilos.tarjeta}>
+        <Text style={estilos.subtitulo}>Turnos de trabajo</Text>
+        <Text style={estilos.ayuda}>Crea los turnos de esta sucursal y asígnalos a cada persona en "Rol, turno y funciones". Son informativos: no bloquean la entrada fuera de horario.</Text>
+        {turnos.length === 0 && <Text style={estilos.ayuda}>Todavía no hay turnos.</Text>}
+        {turnos.map((t) => (
+          <View key={t.id} style={estilos.filaTurno}>
+            <View style={{ flex: 1 }}>
+              <Text style={estilos.etiquetaCheck}>{textoTurno(t)}</Text>
+              <Text style={estilos.ayudaSinMargen}>{usuarios.filter((u) => u.turnoTrabajoId === t.id).map((u) => u.nombre).join(", ") || "Nadie asignado"}</Text>
+            </View>
+            <TouchableOpacity onPress={() => confirmarEliminarTurno(t)} style={[estilos.botonChico, { backgroundColor: colores.red + "22" }]}>
+              <Text style={{ color: colores.red, fontSize: 12 }}>Borrar</Text>
+            </TouchableOpacity>
+          </View>
+        ))}
+        <TextInput placeholder="Nombre (ej. Mañana)" placeholderTextColor={colores.textoSecundario} value={turnoNuevo.nombre} onChangeText={(nombre) => setTurnoNuevo((t) => ({ ...t, nombre }))} style={[estilos.input, { marginTop: 10 }]} />
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <TextInput placeholder="Inicio 07:00" placeholderTextColor={colores.textoSecundario} value={turnoNuevo.horaInicio} onChangeText={(horaInicio) => setTurnoNuevo((t) => ({ ...t, horaInicio }))} keyboardType="numbers-and-punctuation" maxLength={5} style={[estilos.input, { flex: 1 }]} />
+          <TextInput placeholder="Fin 15:00" placeholderTextColor={colores.textoSecundario} value={turnoNuevo.horaFin} onChangeText={(horaFin) => setTurnoNuevo((t) => ({ ...t, horaFin }))} keyboardType="numbers-and-punctuation" maxLength={5} style={[estilos.input, { flex: 1 }]} />
+        </View>
+        {errorTurno && <Text style={[estilos.ayuda, { color: colores.red }]}>{errorTurno}</Text>}
+        <TouchableOpacity onPress={crearTurno} style={estilos.botonPrincipal}>
+          <Text style={estilos.botonPrincipalTexto}>Crear turno</Text>
+        </TouchableOpacity>
+      </View>
+
       {usuarios.map((u) => (
         <View key={u.id} style={estilos.tarjeta}>
           <View style={estilos.filaEncabezado}>
@@ -143,6 +202,7 @@ export function PosAdminUsuariosScreen({ onCerrar }: { onCerrar: () => void }) {
             </Text>
           </View>
           <Text style={estilos.rol}>{ETIQUETA_ROL[u.rol] ?? u.rol} · {resumenPermisos(u)}</Text>
+          <Text style={estilos.rol}>🕒 {(() => { const t = turnos.find((x) => x.id === u.turnoTrabajoId); return t ? textoTurno(t) : "Sin turno"; })()}</Text>
 
           {editando?.id === u.id ? (
             <EditorPermisos
@@ -151,6 +211,9 @@ export function PosAdminUsuariosScreen({ onCerrar }: { onCerrar: () => void }) {
               rol={rolBorrador}
               permisos={permisosBorrador}
               onRol={cambiarRolBorrador}
+              turnos={turnos}
+              turno={turnoBorrador}
+              onTurno={setTurnoBorrador}
               onAlternar={alternarPermiso}
               onRestablecer={() => setPermisosBorrador(new Set(permisosEfectivos(rolBorrador, null)))}
               onGuardar={guardarEdicion}
@@ -159,7 +222,7 @@ export function PosAdminUsuariosScreen({ onCerrar }: { onCerrar: () => void }) {
           ) : (
             <View style={{ flexDirection: "row", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
               <TouchableOpacity onPress={() => empezarEdicion(u)} style={[estilos.botonChico, { backgroundColor: colores.navy }]}>
-                <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>Rol y funciones</Text>
+                <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>Rol, turno y funciones</Text>
               </TouchableOpacity>
               {yo?.id !== u.id && (
                 <TouchableOpacity onPress={() => confirmarEliminar(u)} style={[estilos.botonChico, { backgroundColor: colores.red + "22" }]}>
@@ -197,6 +260,9 @@ function EditorPermisos({
   rol,
   permisos,
   onRol,
+  turnos,
+  turno,
+  onTurno,
   onAlternar,
   onRestablecer,
   onGuardar,
@@ -207,6 +273,9 @@ function EditorPermisos({
   rol: string;
   permisos: Set<string>;
   onRol: (rol: string) => void;
+  turnos: TurnoTrabajo[];
+  turno: string | null;
+  onTurno: (turnoId: string | null) => void;
   onAlternar: (clave: string) => void;
   onRestablecer: () => void;
   onGuardar: () => void;
@@ -244,6 +313,19 @@ function EditorPermisos({
             </Text>
           )}
         </>
+      )}
+
+      <Text style={[estilos.subtitulo, { marginTop: 12 }]}>Turno</Text>
+      {turnos.length === 0 ? (
+        <Text style={estilos.ayuda}>Crea turnos arriba, en "Turnos de trabajo", para poder asignarlos.</Text>
+      ) : (
+        <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+          {[{ id: null as string | null, texto: "Sin turno" }, ...turnos.map((t) => ({ id: t.id as string | null, texto: textoTurno(t) }))].map((op) => (
+            <TouchableOpacity key={op.id ?? "ninguno"} onPress={() => onTurno(op.id)} style={[estilos.chipRol, turno === op.id && estilos.chipRolActivo]}>
+              <Text style={{ color: turno === op.id ? "#fff" : colores.texto, fontSize: 13 }}>{op.texto}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       )}
 
       <Text style={[estilos.subtitulo, { marginTop: 12 }]}>¿Qué puede hacer?</Text>
@@ -324,5 +406,7 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     checkMarcado: { backgroundColor: colores.navy, borderColor: colores.navy },
     checkPalomita: { color: "#fff", fontWeight: "900", fontSize: 15 },
     etiquetaCheck: { fontSize: 14, color: colores.texto },
+    filaTurno: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colores.borde },
+    ayudaSinMargen: { fontSize: 12, color: colores.textoSecundario, marginTop: 2 },
   });
 }
