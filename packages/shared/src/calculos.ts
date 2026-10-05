@@ -76,6 +76,55 @@ export function validarPagoSuficiente(pagos: { monto: number }[], total: number)
   return { suficiente: totalPagado >= total, totalPagado, faltante };
 }
 
+/**
+ * Cobro con billetes en dólares y cambio en pesos.
+ *
+ * Ej.: cuenta $300, dólar a $18.50, paga US$20 → equivale a $370 y se le dan $70 de cambio.
+ * El pago se registra por los $300 que cubre (así el total por método cuadra con la venta) y
+ * los US$20 y el tipo de cambio aparte; el cambio sale del cajón de PESOS.
+ */
+export function cobroEnDolares(totalMxn: number, usdRecibidos: number, tipoCambio: number): {
+  equivalenteMxn: number;
+  suficiente: boolean;
+  faltanteMxn: number;
+  cambioMxn: number;
+} {
+  const equivalenteMxn = round2(usdRecibidos * tipoCambio);
+  const faltanteMxn = round2(Math.max(totalMxn - equivalenteMxn, 0));
+  return {
+    equivalenteMxn,
+    suficiente: tipoCambio > 0 && equivalenteMxn >= totalMxn,
+    faltanteMxn,
+    cambioMxn: round2(Math.max(equivalenteMxn - totalMxn, 0)),
+  };
+}
+
+/**
+ * Efectivo que debe haber en caja al corte, por moneda.
+ *
+ * `monto` de cada pago es lo que cubrió de la venta en pesos (no lo que entregó el cliente). En
+ * EFECTIVO entran esos pesos; en EFECTIVO_USD entran los dólares y SALEN del cajón de pesos los
+ * de cambio (equivalente − monto). Otros métodos no tocan el cajón.
+ */
+export function efectivoEsperadoPorMoneda(datos: {
+  montoInicial: number;
+  pagos: { metodo: string; monto: number; montoUsd?: number | null; tipoCambio?: number | null }[];
+  ingresos: number;
+  egresos: number;
+}): { mxn: number; usd: number } {
+  let mxn = datos.montoInicial + datos.ingresos - datos.egresos;
+  let usd = 0;
+  for (const p of datos.pagos) {
+    if (p.metodo === "EFECTIVO") mxn += p.monto;
+    else if (p.metodo === "EFECTIVO_USD") {
+      const recibidos = Number(p.montoUsd ?? 0);
+      usd += recibidos;
+      mxn -= Math.max(round2(recibidos * Number(p.tipoCambio ?? 0)) - p.monto, 0);
+    }
+  }
+  return { mxn: round2(mxn), usd: round2(usd) };
+}
+
 /** Diferencia detectada al recibir un traspaso — positiva si llegó de más, negativa si hubo merma
  *  en tránsito. Se usa para la validación final del flujo de traspasos entre sucursales. */
 export function calcularDiferenciaTraspaso(cantidadEnviada: number, cantidadRecibida: number): number {

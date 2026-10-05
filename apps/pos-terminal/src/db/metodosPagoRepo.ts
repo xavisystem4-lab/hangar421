@@ -10,6 +10,7 @@ export interface MetodoPagoConfig {
 
 const ETIQUETA: Record<MetodoPago, string> = {
   [MetodoPago.EFECTIVO]: "Efectivo",
+  [MetodoPago.EFECTIVO_USD]: "Dólares",
   [MetodoPago.TARJETA]: "Tarjeta",
   [MetodoPago.TRANSFERENCIA]: "Transferencia",
   [MetodoPago.QR]: "QR",
@@ -33,10 +34,11 @@ export async function sembrarMetodosPagoPorDefecto(db: SQLiteDatabase): Promise<
 
   const defaults: { tipo: MetodoPago; habilitado: boolean; orden: number }[] = [
     { tipo: MetodoPago.EFECTIVO, habilitado: true, orden: 1 },
-    { tipo: MetodoPago.TARJETA, habilitado: true, orden: 2 },
-    { tipo: MetodoPago.TRANSFERENCIA, habilitado: true, orden: 3 },
-    { tipo: MetodoPago.QR, habilitado: false, orden: 4 },
-    { tipo: MetodoPago.OTRO, habilitado: true, orden: 5 },
+    { tipo: MetodoPago.EFECTIVO_USD, habilitado: true, orden: 2 },
+    { tipo: MetodoPago.TARJETA, habilitado: true, orden: 3 },
+    { tipo: MetodoPago.TRANSFERENCIA, habilitado: true, orden: 4 },
+    { tipo: MetodoPago.QR, habilitado: false, orden: 5 },
+    { tipo: MetodoPago.OTRO, habilitado: true, orden: 6 },
   ];
 
   await db.withTransactionAsync(async () => {

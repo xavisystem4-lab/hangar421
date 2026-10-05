@@ -6,8 +6,15 @@ import { obtenerOCrearDispositivoId, obtenerOCrearSucursalIdLocal, obtenerOCrear
 
 export interface PagoVenta {
   metodo: string;
+  /** Lo que el pago CUBRE de la venta, en pesos — no lo que entregó el cliente. Es lo que
+   *  suman el corte y los reportes por método (ver efectivoEsperadoPorMoneda). */
   monto: number;
   referencia?: string;
+  /** Solo para el ticket ("paga con" y cambio); no viaja al ERP. */
+  montoRecibido?: number;
+  /** Solo EFECTIVO_USD: dólares entregados y pesos por dólar. */
+  montoUsd?: number;
+  tipoCambio?: number;
 }
 
 /** Para ventas que no nacen en el carrito de mostrador (pedidos de DiDi/Uber/Rappi aceptados en
@@ -115,10 +122,16 @@ export async function confirmarVenta(
     const pagosPayload: PagoVenta[] = [];
     for (const pago of datos.pagos) {
       await db.runAsync(
-        "INSERT INTO pagos (id, venta_id, metodo, monto, referencia, created_at, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO pagos (id, venta_id, metodo, monto, referencia, created_at, idempotency_key, monto_recibido, monto_usd, tipo_cambio) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         uuid7(), ventaId, pago.metodo, round2(pago.monto), pago.referencia ?? null, ahora, uuid7(),
+        pago.montoRecibido != null ? round2(pago.montoRecibido) : null, pago.montoUsd ?? null, pago.tipoCambio ?? null,
       );
-      pagosPayload.push({ metodo: pago.metodo, monto: round2(pago.monto), referencia: pago.referencia });
+      pagosPayload.push({
+        metodo: pago.metodo,
+        monto: round2(pago.monto),
+        referencia: pago.referencia,
+        ...(pago.montoUsd != null ? { montoUsd: round2(pago.montoUsd), tipoCambio: pago.tipoCambio } : {}),
+      });
     }
 
     // Orden PEDIDO→PAGO: sync_outbox se drena por orden_secuencia (Fase 2a) — el pago necesita

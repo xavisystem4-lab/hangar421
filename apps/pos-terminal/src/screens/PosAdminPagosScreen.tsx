@@ -7,6 +7,7 @@ import { listarMetodosPago, alternarMetodoPago, etiquetaMetodoPago, sembrarMetod
 
 const ICONO: Record<MetodoPago, string> = {
   [MetodoPago.EFECTIVO]: "💵",
+  [MetodoPago.EFECTIVO_USD]: "🇺🇸",
   [MetodoPago.TARJETA]: "💳",
   [MetodoPago.TRANSFERENCIA]: "🏦",
   [MetodoPago.QR]: "▦",
@@ -15,6 +16,7 @@ const ICONO: Record<MetodoPago, string> = {
 
 const DESCRIPCION: Record<MetodoPago, string> = {
   [MetodoPago.EFECTIVO]: "Calcula el cambio con el teclado numérico.",
+  [MetodoPago.EFECTIVO_USD]: "Billetes en dólares al tipo de cambio que se fijó al abrir caja. El cambio se da en pesos y el corte cuadra los dólares aparte.",
   [MetodoPago.TARJETA]: "El cliente paga en la terminal del banco y se registra aquí. Entra en el corte de caja y en los reportes como cualquier otro método.",
   [MetodoPago.TRANSFERENCIA]: "Para pagos por app bancaria o SPEI.",
   [MetodoPago.QR]: "Requiere un proveedor configurado.",

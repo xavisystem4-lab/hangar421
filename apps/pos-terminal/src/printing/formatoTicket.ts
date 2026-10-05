@@ -26,6 +26,7 @@ export function ivaIncluido(total: number, tasa: number): number {
 
 const ETIQUETA_METODO: Record<string, string> = {
   EFECTIVO: "Efectivo",
+  EFECTIVO_USD: "Dólares",
   TARJETA: "Tarjeta",
   TRANSFERENCIA: "Transferencia",
   QR: "Pago QR",

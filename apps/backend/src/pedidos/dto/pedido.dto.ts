@@ -101,6 +101,9 @@ export class PagoDto {
   @ApiProperty({ enum: MetodoPago }) @IsEnum(MetodoPago) metodo!: MetodoPago;
   @ApiProperty() @IsNumber() @Min(0.01) monto!: number;
   @ApiPropertyOptional() @IsOptional() @IsString() referencia?: string;
+  /** Solo EFECTIVO_USD: dólares entregados y pesos por dólar (el cambio se da en pesos). */
+  @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(0) montoUsd?: number;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(0) tipoCambio?: number;
 }
 
 export class CobrarPedidoDto {

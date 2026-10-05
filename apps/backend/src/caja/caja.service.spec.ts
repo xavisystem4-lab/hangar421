@@ -246,3 +246,51 @@ describe("CajaService.reasignarTurno", () => {
     );
   });
 });
+
+describe("CajaService — turno con el id de la terminal y cuadre en dólares", () => {
+  it("crea el turno con el id que manda la terminal y el tipo de cambio", async () => {
+    const { service, prisma } = crearServicio();
+    (prisma.turno as any).findUnique = jest.fn(() => Promise.resolve(null));
+    await service.abrirTurno({ ...BASE, id: "turno-apk", tipoCambioUsd: 18.5 });
+    expect(prisma.turno.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ id: "turno-apk", tipoCambioUsd: 18.5 }) }),
+    );
+  });
+
+  it("un reintento de la cola devuelve el turno ya creado en vez de chocar", async () => {
+    const { service, prisma } = crearServicio();
+    (prisma.turno as any).findUnique = jest.fn(() => Promise.resolve({ id: "turno-apk", sucursalId: "suc-1" }));
+    const turno = await service.abrirTurno({ ...BASE, id: "turno-apk" });
+    expect(turno.id).toBe("turno-apk");
+    expect(prisma.turno.create).not.toHaveBeenCalled();
+  });
+
+  it("rechaza un id de turno de otra sucursal", async () => {
+    const { service } = crearServicio();
+    (service as any).prisma.turno.findUnique = jest.fn(() => Promise.resolve({ id: "turno-x", sucursalId: "otra" }));
+    await expect(service.abrirTurno({ ...BASE, id: "turno-x" })).rejects.toThrow(/otra sucursal/);
+  });
+
+  it("al cortar cuadra pesos y dólares por separado", async () => {
+    const { service, prisma } = crearServicio();
+    const update = jest.fn((args: any) => Promise.resolve(args.data));
+    Object.assign(prisma.turno, {
+      findUnique: jest.fn(() => Promise.resolve({ id: "t1", sucursalId: "suc-1", usuarioId: "user-1", fechaApertura: new Date(), montoInicial: 500, estado: "ABIERTO", tipoCambioUsd: 18.5 })),
+      update,
+    });
+    (prisma as any).pago = {
+      findMany: jest.fn(() => Promise.resolve([
+        { metodo: "EFECTIVO", monto: 120, montoUsd: null, tipoCambio: null },
+        { metodo: "EFECTIVO_USD", monto: 300, montoUsd: 20, tipoCambio: 18.5 },
+      ])),
+    };
+    (prisma as any).movimientoCaja = { groupBy: jest.fn(() => Promise.resolve([])) };
+
+    await service.cerrarTurno("t1", 550, { totalUSD: 20 });
+
+    // Pesos: 500 + 120 − 70 de cambio del pago en dólares = 550. Dólares: 20.
+    expect(update.mock.calls[0][0].data).toEqual(expect.objectContaining({
+      montoFinalSistema: 550, diferencia: 0, montoFinalSistemaUsd: 20, montoFinalDeclaradoUsd: 20, diferenciaUsd: 0,
+    }));
+  });
+});

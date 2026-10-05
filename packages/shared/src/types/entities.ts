@@ -188,6 +188,9 @@ export interface Pago {
   metodo: MetodoPago;
   monto: number;
   referencia?: string | null;
+  /** Solo EFECTIVO_USD: dólares entregados y pesos por dólar con que se tomaron. */
+  montoUsd?: number | null;
+  tipoCambio?: number | null;
 }
 
 export interface Pedido {
