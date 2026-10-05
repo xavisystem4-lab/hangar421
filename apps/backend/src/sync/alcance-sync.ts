@@ -46,7 +46,7 @@ export class AlcanceSync {
     return null;
   }
 
-  private async sucursalAccesible(sucursalId: string): Promise<boolean> {
+  async sucursalAccesible(sucursalId: string): Promise<boolean> {
     const cacheado = this.sucursales.get(sucursalId);
     if (cacheado !== undefined) return cacheado;
 
