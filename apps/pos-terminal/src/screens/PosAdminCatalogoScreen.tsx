@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { abrirBaseDeDatos } from "../db/database";
@@ -37,7 +37,7 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
 
   async function cargar() {
     const db = await abrirBaseDeDatos();
-    const [cats, prods] = await Promise.all([listarCategorias(db), listarProductos(db)]);
+    const [cats, prods] = await Promise.all([listarCategorias(db), listarProductos(db, { incluirStandby: true })]);
     setCategorias(cats);
     setProductos(prods);
     setCambiosLocales(await contarCambiosSoloLocales(db));
@@ -87,11 +87,22 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
     cargar();
   }
 
-  async function alternarDisponibilidad(p: ProductoLocal) {
+  /** En standby el producto deja de salir en los botones de Venta y en la búsqueda, pero se
+   *  queda aquí para volver a ponerlo en venta. Se confirma porque con un toque accidental el
+   *  producto "desaparecía" del mostrador sin que nadie supiera por qué. */
+  function alternarDisponibilidad(p: ProductoLocal) {
     if (!usuario) return;
-    const db = await abrirBaseDeDatos();
-    await alternarDisponibilidadProducto(db, p.id, !p.activo, usuario.id);
-    cargar();
+    const aplicar = async () => {
+      const db = await abrirBaseDeDatos();
+      await alternarDisponibilidadProducto(db, p.id, !p.activo, usuario.id);
+      cargar();
+    };
+    if (!p.activo) { aplicar(); return; }
+    Alert.alert(
+      "Poner en standby",
+      `"${p.nombre}" dejará de aparecer en los botones de venta de esta sucursal. Puedes volver a ponerlo en venta desde aquí.`,
+      [{ text: "Cancelar", style: "cancel" }, { text: "Poner en standby", onPress: aplicar }],
+    );
   }
 
   return (
@@ -104,6 +115,30 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
       {cambiosLocales > 0 && (
         <Text style={estilos.avisoLocal}>⚠ {cambiosLocales} cambio(s) sin confirmar del ERP: los productos nuevos creados aquí se quedan solo en este dispositivo; los cambios de precio/disponibilidad de productos ya sincronizados sí se envían al conectar.</Text>
       )}
+
+      {/* El alta va primero: es lo que se viene a hacer aquí la mayoría de las veces, y al
+          final de una lista larga de productos quedaba escondida. */}
+      <View style={estilos.tarjeta}>
+        <Text style={estilos.subtitulo}>Nueva categoría</Text>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <TextInput placeholder="Nombre" placeholderTextColor={colores.textoSecundario} value={nombreCategoria} onChangeText={setNombreCategoria} style={[estilos.input, { flex: 1 }]} />
+          <TouchableOpacity onPress={agregarCategoria} style={[estilos.botonChico, { backgroundColor: colores.navy }]}><Text style={{ color: "#fff" }}>+ Agregar</Text></TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={estilos.tarjeta}>
+        <Text style={estilos.subtitulo}>Nuevo producto</Text>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+          {categorias.map((c) => (
+            <TouchableOpacity key={c.id} onPress={() => setCategoriaNuevoProducto(c.id)} style={[estilos.chip, categoriaNuevoProducto === c.id && estilos.chipActivo]}>
+              <Text style={{ color: categoriaNuevoProducto === c.id ? "#fff" : colores.texto, fontSize: 12 }}>{c.nombre}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <TextInput placeholder="Nombre del producto" placeholderTextColor={colores.textoSecundario} value={nombreProducto} onChangeText={setNombreProducto} style={estilos.input} />
+        <TextInput placeholder="Precio" placeholderTextColor={colores.textoSecundario} value={precioProducto} onChangeText={setPrecioProducto} keyboardType="decimal-pad" style={estilos.input} />
+        <TouchableOpacity onPress={agregarProducto} style={estilos.botonPrincipal}><Text style={estilos.botonPrincipalTexto}>Crear producto</Text></TouchableOpacity>
+      </View>
 
       {categorias.map((cat) => (
         <View key={cat.id} style={estilos.tarjeta}>
@@ -133,10 +168,12 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
                 </>
               ) : (
                 <>
-                  <Text style={{ color: colores.texto, flex: 1 }} numberOfLines={1}>{p.nombre}</Text>
+                  <Text style={{ color: p.activo ? colores.texto : colores.textoSecundario, flex: 1 }} numberOfLines={1}>
+                    {p.nombre}{p.activo ? "" : " · standby"}
+                  </Text>
                   <Text style={{ color: colores.textoSecundario, width: 60, textAlign: "right" }}>${p.precioBase.toFixed(2)}</Text>
-                  <TouchableOpacity onPress={() => alternarDisponibilidad(p)}>
-                    <Text style={{ color: p.activo ? colores.green : colores.red, fontSize: 12, marginLeft: 10 }}>{p.activo ? "Disponible" : "Agotado"}</Text>
+                  <TouchableOpacity onPress={() => alternarDisponibilidad(p)} style={[estilos.pildoraEstado, p.activo ? estilos.pildoraEnVenta : estilos.pildoraStandby]}>
+                    <Text style={{ color: p.activo ? colores.green : colores.amber, fontSize: 12, fontWeight: "700" }}>{p.activo ? "● En venta" : "⏸ Standby"}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => { setProductoEditando(p.id); setProductoBorrador({ nombre: p.nombre, precio: String(p.precioBase) }); }}>
                     <Text style={{ color: colores.navyTexto, fontSize: 12, marginLeft: 10 }}>Editar</Text>
@@ -148,27 +185,6 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
         </View>
       ))}
 
-      <View style={estilos.tarjeta}>
-        <Text style={estilos.subtitulo}>Nueva categoría</Text>
-        <View style={{ flexDirection: "row", gap: 8 }}>
-          <TextInput placeholder="Nombre" placeholderTextColor={colores.textoSecundario} value={nombreCategoria} onChangeText={setNombreCategoria} style={[estilos.input, { flex: 1 }]} />
-          <TouchableOpacity onPress={agregarCategoria} style={[estilos.botonChico, { backgroundColor: colores.navy }]}><Text style={{ color: "#fff" }}>+ Agregar</Text></TouchableOpacity>
-        </View>
-      </View>
-
-      <View style={estilos.tarjeta}>
-        <Text style={estilos.subtitulo}>Nuevo producto</Text>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-          {categorias.map((c) => (
-            <TouchableOpacity key={c.id} onPress={() => setCategoriaNuevoProducto(c.id)} style={[estilos.chip, categoriaNuevoProducto === c.id && estilos.chipActivo]}>
-              <Text style={{ color: categoriaNuevoProducto === c.id ? "#fff" : colores.texto, fontSize: 12 }}>{c.nombre}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        <TextInput placeholder="Nombre del producto" placeholderTextColor={colores.textoSecundario} value={nombreProducto} onChangeText={setNombreProducto} style={estilos.input} />
-        <TextInput placeholder="Precio" placeholderTextColor={colores.textoSecundario} value={precioProducto} onChangeText={setPrecioProducto} keyboardType="decimal-pad" style={estilos.input} />
-        <TouchableOpacity onPress={agregarProducto} style={estilos.botonPrincipal}><Text style={estilos.botonPrincipalTexto}>Crear producto</Text></TouchableOpacity>
-      </View>
     </ScrollView>
   );
 }
@@ -190,5 +206,8 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     botonChico: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
     botonPrincipal: { backgroundColor: colores.green, borderRadius: 10, padding: 14, alignItems: "center", marginTop: 4 },
     botonPrincipalTexto: { color: "#fff", fontWeight: "700" },
+    pildoraEstado: { marginLeft: 10, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, minHeight: 32, justifyContent: "center" },
+    pildoraEnVenta: { backgroundColor: colores.green + "1A" },
+    pildoraStandby: { backgroundColor: colores.amber + "26" },
   });
 }

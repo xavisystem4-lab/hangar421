@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
 import { construirTicketPayload, marcarTicketImpreso } from "../db/ticketsRepo";
@@ -24,7 +24,10 @@ export function ReciboEnPantallaScreen({ ventaId, onCerrar }: { ventaId: string;
     setReintentando(true);
     try {
       const db = await abrirBaseDeDatos();
-      await imprimirTicket(db, ventaId);
+      // Antes no decía nada: ni si salió (y la pantalla seguía abierta) ni por qué no.
+      const r = await imprimirTicket(db, ventaId);
+      if (r.impreso) onCerrar();
+      else Alert.alert("No se imprimió", r.motivo ?? "Inténtalo de nuevo.");
     } finally {
       setReintentando(false);
     }

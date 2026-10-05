@@ -123,8 +123,8 @@ export function PosConsultarVentasScreen({ onCerrar }: { onCerrar: () => void })
     setImprimiendo(true);
     try {
       const db = await abrirBaseDeDatos();
-      const impreso = await imprimirTicket(db, venta.id);
-      if (!impreso) Alert.alert("No se imprimió", "No se encontró la impresora. Revisa que esté conectada y encendida (Admin → Impresora) e inténtalo de nuevo.");
+      const r = await imprimirTicket(db, venta.id);
+      if (!r.impreso) Alert.alert("No se imprimió", r.motivo ?? "Inténtalo de nuevo.");
     } finally {
       setImprimiendo(false);
     }
