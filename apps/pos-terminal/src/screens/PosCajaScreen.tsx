@@ -11,9 +11,12 @@ import { sincronizarPronto } from "../sync/syncEngine";
 import { listarUsuariosLocales, type UsuarioLocal } from "../db/usuariosLocalesRepo";
 import { ModalAutorizacion } from "../components/ModalAutorizacion";
 import type { Autorizador } from "../auth/autorizacion";
+import { useExigirPermiso } from "../hooks/useExigirPermiso";
+import { PERMISOS_TERMINAL } from "../auth/permisosTerminal";
 
 export function PosCajaScreen() {
   const { usuario } = useAuthLocalStore();
+  const { exigir, modalPermiso } = useExigirPermiso();
   const colores = usarColores();
   const estilos = crearEstilos(colores);
   const [turno, setTurno] = useState<TurnoLocal | null | undefined>(undefined);
@@ -173,7 +176,7 @@ export function PosCajaScreen() {
         <View style={estilos.tarjeta}>
           <Text style={estilos.subtitulo}>Abrir turno</Text>
           <TextInput placeholder="Monto inicial" placeholderTextColor={colores.textoSecundario} value={montoInicial} onChangeText={setMontoInicial} keyboardType="decimal-pad" style={estilos.input} />
-          <TouchableOpacity onPress={abrir} style={estilos.botonPrincipal}><Text style={estilos.botonPrincipalTexto}>Abrir caja</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => exigir(PERMISOS_TERMINAL.CAJA_ABRIR, abrir)} style={estilos.botonPrincipal}><Text style={estilos.botonPrincipalTexto}>Abrir caja</Text></TouchableOpacity>
         </View>
       ) : (
         <>
@@ -210,7 +213,7 @@ export function PosCajaScreen() {
             </View>
             <TextInput placeholder="Monto" placeholderTextColor={colores.textoSecundario} value={montoMovimiento} onChangeText={setMontoMovimiento} keyboardType="decimal-pad" style={estilos.input} />
             <TextInput placeholder="Motivo (opcional)" placeholderTextColor={colores.textoSecundario} value={motivoMovimiento} onChangeText={setMotivoMovimiento} style={estilos.input} />
-            <TouchableOpacity onPress={agregarMovimiento} style={estilos.botonPrincipal}><Text style={estilos.botonPrincipalTexto}>Registrar movimiento</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => exigir(PERMISOS_TERMINAL.CAJA_MOVIMIENTOS, agregarMovimiento)} style={estilos.botonPrincipal}><Text style={estilos.botonPrincipalTexto}>Registrar movimiento</Text></TouchableOpacity>
 
             {movimientos.map((m) => (
               <View key={m.id} style={estilos.filaMovimiento}>
@@ -296,7 +299,7 @@ export function PosCajaScreen() {
               )}
             </View>
 
-            <TouchableOpacity onPress={confirmarCierre} style={[estilos.botonPrincipal, { backgroundColor: colores.red }]}><Text style={estilos.botonPrincipalTexto}>Cerrar caja</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => exigir(PERMISOS_TERMINAL.CAJA_CERRAR, confirmarCierre)} style={[estilos.botonPrincipal, { backgroundColor: colores.red }]}><Text style={estilos.botonPrincipalTexto}>Cerrar caja</Text></TouchableOpacity>
           </View>
         </>
       )}
@@ -353,6 +356,7 @@ export function PosCajaScreen() {
           onAutorizado={(autorizador) => asignarA(candidato, autorizador)}
         />
       )}
+      {modalPermiso}
     </>
   );
 }

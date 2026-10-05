@@ -459,6 +459,51 @@ export const MIGRACIONES: Migracion[] = [
       `);
     },
   },
+  {
+    version: 9,
+    nombre: "permisos_por_usuario",
+    up: async (db) => {
+      // Funciones que un administrador le da o quita a cada persona en esta tablet (ver
+      // auth/permisosTerminal.ts). NULL = nunca personalizado: usa los del rol, así que los
+      // usuarios que ya existían siguen pudiendo hacer exactamente lo mismo que antes.
+      await db.execAsync(`ALTER TABLE usuarios_locales ADD COLUMN permisos_json TEXT;`);
+    },
+  },
+  {
+    version: 10,
+    nombre: "tarjeta_manual_habilitada",
+    up: async (db) => {
+      // Las tablets sembradas antes de que Tarjeta viniera encendida (ver
+      // sembrarMetodosPagoPorDefecto) la tenían apagada, y la siembra no vuelve a correr si ya
+      // hay métodos. El negocio cobra con tarjeta en la terminal del banco y la registra a mano,
+      // así que se enciende una vez; sigue pudiéndose apagar en Admin → Pagos.
+      await db.execAsync(`UPDATE metodos_pago_config SET habilitado = 1 WHERE tipo = 'TARJETA';`);
+    },
+  },
+  {
+    version: 11,
+    nombre: "turnos_trabajo",
+    up: async (db) => {
+      // Turnos de TRABAJO (ej. "Mañana 07:00–15:00") que el administrador crea en esta tablet y
+      // asigna a cada persona. Son informativos: no tienen que ver con el turno de CAJA (tabla
+      // `turnos`, apertura y corte) ni bloquean el acceso fuera de horario. Por sucursal, igual
+      // que los usuarios. Borrar uno lo desactiva, para no dejar asignaciones colgando.
+      await db.execAsync(`
+        CREATE TABLE turnos_trabajo (
+          id TEXT PRIMARY KEY,
+          sucursal_id TEXT NOT NULL,
+          nombre TEXT NOT NULL,
+          hora_inicio TEXT NOT NULL,
+          hora_fin TEXT NOT NULL,
+          activo INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX idx_turnos_trabajo_sucursal ON turnos_trabajo(sucursal_id);
+
+        ALTER TABLE usuarios_locales ADD COLUMN turno_trabajo_id TEXT;
+      `);
+    },
+  },
 ];
 
 /** Corre, en orden, toda migración con `version` mayor a la ya aplicada — cada una dentro de su

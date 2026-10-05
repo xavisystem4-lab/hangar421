@@ -3,6 +3,7 @@ import { uuid7, SyncEntidad, SyncOperacion } from "@hangar421/shared";
 import { generarSalt, derivarHashPin, algoritmoHashActual } from "../auth/offlineAuth";
 import { obtenerOCrearDispositivoId, obtenerOCrearSucursalIdLocal } from "./dispositivoLocal";
 import { encolarSync } from "./outboxRepo";
+import { leerPermisosGuardados } from "../auth/permisosTerminal";
 
 export interface UsuarioLocal {
   id: string;
@@ -11,6 +12,47 @@ export interface UsuarioLocal {
   erpUsuarioId: string | null;
   activo: boolean;
   ultimaVerificacionOnline: string | null;
+  /** Funciones personalizadas en esta tablet; null = las del rol (ver permisosTerminal). */
+  permisos: string[] | null;
+  /** El ERP le asignó sucursales a esta persona (terminal multisucursal): su rol lo manda el
+   *  ERP y se reescribe en cada sincronización, así que no se puede cambiar desde la tablet. */
+  rolDesdeErp?: boolean;
+  /** Turno de trabajo asignado (informativo, ver turnosTrabajoRepo). */
+  turnoTrabajoId?: string | null;
+}
+
+function aUsuarioLocal(f: any): UsuarioLocal {
+  return {
+    id: f.id,
+    nombre: f.nombre,
+    rol: f.rol,
+    erpUsuarioId: f.erp_usuario_id,
+    activo: !!f.activo,
+    ultimaVerificacionOnline: f.ultima_verificacion_online,
+    permisos: leerPermisosGuardados(f.permisos_json),
+    rolDesdeErp: !!f.rol_desde_erp,
+    turnoTrabajoId: f.turno_trabajo_id ?? null,
+  };
+}
+
+/**
+ * Rol y funciones de una persona en ESTA tablet. Solo lo llama Admin → Usuarios.
+ *
+ * `permisos` null vuelve a los del rol. El rol no viaja al ERP (el ERP conserva el suyo): por
+ * eso quien pasa a supervisor aquí autoriza en la tablet, pero el ERP puede rechazar una
+ * cancelación que autorice hasta que también se le cambie allá.
+ */
+export async function guardarRolYPermisos(
+  db: SQLiteDatabase,
+  usuarioLocalId: string,
+  datos: { rol?: string; permisos: string[] | null },
+): Promise<void> {
+  const permisosJson = datos.permisos ? JSON.stringify(datos.permisos) : null;
+  if (datos.rol) {
+    await db.runAsync("UPDATE usuarios_locales SET rol = ?, permisos_json = ? WHERE id = ?", datos.rol, permisosJson, usuarioLocalId);
+  } else {
+    await db.runAsync("UPDATE usuarios_locales SET permisos_json = ? WHERE id = ?", permisosJson, usuarioLocalId);
+  }
 }
 
 /** El alta local (nombre+PIN+rol) es el equivalente offline del paso real de "adoptar
@@ -46,7 +88,7 @@ export async function crearUsuarioLocal(
     await encolarAltaEnErp(db, { id, nombre: datos.nombre, rol: datos.rol, sucursalId, dispositivoId });
   });
 
-  return { id, nombre: datos.nombre, rol: datos.rol, erpUsuarioId: null, activo: true, ultimaVerificacionOnline: ahora };
+  return { id, nombre: datos.nombre, rol: datos.rol, erpUsuarioId: null, activo: true, ultimaVerificacionOnline: ahora, permisos: null };
 }
 
 async function encolarAltaEnErp(
@@ -87,8 +129,7 @@ export async function encolarUsuariosSinRegistrarEnErp(db: SQLiteDatabase): Prom
  *  multisucursal la sucursal todavía no está elegida. */
 export async function obtenerUsuarioLocal(db: SQLiteDatabase, id: string): Promise<UsuarioLocal | null> {
   const f = await db.getFirstAsync<any>("SELECT * FROM usuarios_locales WHERE id = ? AND activo = 1", id);
-  if (!f) return null;
-  return { id: f.id, nombre: f.nombre, rol: f.rol, erpUsuarioId: f.erp_usuario_id, activo: !!f.activo, ultimaVerificacionOnline: f.ultima_verificacion_online };
+  return f ? aUsuarioLocal(f) : null;
 }
 
 /** Lo llama el motor de sincronización cuando el ERP confirma el alta (SyncEntidad.USUARIO). */
@@ -104,19 +145,14 @@ export async function listarUsuariosLocales(db: SQLiteDatabase): Promise<Usuario
   // Terminal multisucursal: también cuenta quien tiene ESTA sucursal asignada en el ERP aunque
   // su alta en la tablet haya sido en otra (ver multisucursalRepo).
   const filas = await db.getAllAsync<any>(
-    `SELECT * FROM usuarios_locales
-      WHERE activo = 1 AND (sucursal_id = ? OR id IN (SELECT usuario_id FROM usuarios_sucursales WHERE sucursal_id = ?))
-      ORDER BY nombre`,
+    `SELECT u.*, us.rol AS rol_erp, (us.usuario_id IS NOT NULL) AS rol_desde_erp FROM usuarios_locales u
+      LEFT JOIN usuarios_sucursales us ON us.usuario_id = u.id AND us.sucursal_id = ?
+      WHERE u.activo = 1 AND (u.sucursal_id = ? OR us.usuario_id IS NOT NULL)
+      ORDER BY u.nombre`,
     sucursalId, sucursalId,
   );
-  return filas.map((f) => ({
-    id: f.id,
-    nombre: f.nombre,
-    rol: f.rol,
-    erpUsuarioId: f.erp_usuario_id,
-    activo: !!f.activo,
-    ultimaVerificacionOnline: f.ultima_verificacion_online,
-  }));
+  // El rol que se muestra es el que rige en ESTA sucursal: el del ERP si lo asignó.
+  return filas.map((f) => aUsuarioLocal({ ...f, rol: f.rol_erp ?? f.rol }));
 }
 
 /** Valida el PIN completamente offline contra el hash local cacheado — nunca sale a red. */

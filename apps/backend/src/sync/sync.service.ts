@@ -60,6 +60,8 @@ export class SyncService {
       resultados.push(await this.aplicarItem(item, alcance.empresaId));
     }
 
+    // Sin sesión a propósito: una venta vieja de la cola offline (hecha en otra sucursal antes
+    // de cambiar) no debe mover el equipo; de eso se encarga el latido, que nombra la activa.
     if (primeroAceptado) await this.marcarVisto(primeroAceptado.dispositivoId, primeroAceptado.sucursalId);
 
     return { resultados, serverTime: new Date().toISOString() };
@@ -110,12 +112,25 @@ export class SyncService {
     }));
   }
 
-  async marcarVisto(huella: string | undefined, sucursalId: string | undefined): Promise<void> {
+  /**
+   * Con `sesion` (solo el latido la pasa), además mueve el equipo a la sucursal activa que
+   * reporta. El APK vinculado a la empresa queda registrado en la primera sucursal por orden
+   * alfabético (ver vincularAEmpresa) y el latido solo refrescaba `ultimaConexion`: en
+   * Sucursales salía una sucursal "conectada" que no era donde la tablet estaba trabajando, y la
+   * real se veía sin conexión. La sucursal se valida contra la sesión para que un latido no
+   * pueda colgar el equipo de una sucursal ajena.
+   */
+  async marcarVisto(huella: string | undefined, sucursalId: string | undefined, sesion?: JwtPayload): Promise<void> {
     if (!huella) return;
     const dispositivoId = await resolverDispositivoId(this.prisma, huella, sucursalId);
     if (!dispositivoId) return;
+
+    const mover = !!sesion && !!sucursalId && (await new AlcanceSync(this.prisma, sesion).sucursalAccesible(sucursalId));
     await this.prisma.dispositivo
-      .update({ where: { id: dispositivoId }, data: { ultimaConexion: new Date() } })
+      .update({
+        where: { id: dispositivoId },
+        data: { ultimaConexion: new Date(), ...(mover ? { sucursalId } : {}) },
+      })
       .catch(() => undefined);
   }
 

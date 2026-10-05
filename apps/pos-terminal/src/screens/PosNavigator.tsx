@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, BackHandler, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { RolUsuario, diasDeTurnoAbierto } from "@hangar421/shared";
+import { diasDeTurnoAbierto } from "@hangar421/shared";
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { useSyncStatusStore, type EstadoSync } from "../store/syncStatusStore";
 import { usarColores } from "../store/temaStore";
@@ -11,6 +11,8 @@ import { listarTicketsPendientes } from "../db/ticketsRepo";
 import { obtenerNombreSucursal } from "../db/dispositivoLocal";
 import { turnoPendienteDeDiaAnterior, type TurnoPendiente } from "../db/turnosRepo";
 import { useBotonAtras } from "../hooks/useBotonAtras";
+import { useExigirPermiso } from "../hooks/useExigirPermiso";
+import { PERMISOS_TERMINAL, esRolAdmin, type PermisoTerminal } from "../auth/permisosTerminal";
 import { ModalRenombrarSucursal } from "../components/ModalRenombrarSucursal";
 import { ModalAutorizacion } from "../components/ModalAutorizacion";
 import { SelectorSucursal } from "../components/SelectorSucursal";
@@ -38,7 +40,18 @@ const TABS: { id: Pantalla; etiqueta: string }[] = [
   { id: "caja", etiqueta: "Caja" },
 ];
 
-const ROLES_ADMIN = new Set([RolUsuario.ADMIN_SUCURSAL, RolUsuario.ADMIN_CORPORATIVO]);
+/** Subpantallas de Admin y el permiso que abre cada una. Usuarios no lleva permiso: gestionar
+ *  quién puede hacer qué es solo de administradores, si no un cajero podría darse todo. */
+const SECCIONES_ADMIN: { id: PantallaAdmin; etiqueta: string; permiso: PermisoTerminal | null }[] = [
+  { id: "catalogo", etiqueta: "Catálogo", permiso: PERMISOS_TERMINAL.ADMIN_CATALOGO },
+  { id: "inventario", etiqueta: "Inventario", permiso: PERMISOS_TERMINAL.ADMIN_INVENTARIO },
+  { id: "reportes", etiqueta: "Reportes", permiso: PERMISOS_TERMINAL.ADMIN_REPORTES },
+  { id: "usuarios", etiqueta: "Usuarios", permiso: null },
+  { id: "sync", etiqueta: "Sincronización", permiso: PERMISOS_TERMINAL.ADMIN_SINCRONIZACION },
+  { id: "pagos", etiqueta: "Pagos", permiso: PERMISOS_TERMINAL.ADMIN_PAGOS },
+  { id: "impresora", etiqueta: "Impresora", permiso: PERMISOS_TERMINAL.ADMIN_IMPRESORA },
+  { id: "plataformas", etiqueta: "Delivery", permiso: PERMISOS_TERMINAL.ADMIN_PLATAFORMAS },
+];
 
 const ETIQUETA_SYNC: Record<EstadoSync, string> = {
   SIN_CONEXION: "○ Sin conexión",
@@ -53,11 +66,18 @@ export function PosNavigator() {
   const sync = useSyncStatusStore();
   const colores = usarColores();
   const estilos = crearEstilos(colores);
-  const esAdmin = !!usuario && ROLES_ADMIN.has(usuario.rol as RolUsuario);
-  const tabs = esAdmin ? [...TABS, { id: "admin" as Pantalla, etiqueta: "Admin" }] : TABS;
+  const { exigir, modalPermiso, puede } = useExigirPermiso();
+  // Las secciones de Admin se ocultan (no piden PIN): son navegación, no una acción puntual.
+  const seccionesAdmin = SECCIONES_ADMIN.filter((s) => (s.permiso ? puede(s.permiso) : esRolAdmin(usuario?.rol)));
+  const tabs = [
+    ...TABS,
+    ...(puede(PERMISOS_TERMINAL.VENTAS_CONSULTAR) ? [{ id: "consultar" as Pantalla, etiqueta: "Ventas" }] : []),
+    ...(seccionesAdmin.length > 0 ? [{ id: "admin" as Pantalla, etiqueta: "Admin" }] : []),
+  ];
+  const seccionInicial = seccionesAdmin[0]?.id ?? "catalogo";
 
   const [pantalla, setPantalla] = useState<Pantalla>("venta");
-  const [pantallaAdmin, setPantallaAdmin] = useState<PantallaAdmin>("catalogo");
+  const [pantallaAdmin, setPantallaAdmin] = useState<PantallaAdmin>(seccionInicial);
   const [ultimoFolio, setUltimoFolio] = useState<{ folio: number; total: number } | null>(null);
   const [mostrarConexion, setMostrarConexion] = useState(false);
   const [reciboPendiente, setReciboPendiente] = useState<string | null>(null);
@@ -118,7 +138,7 @@ export function PosNavigator() {
     if (mostrarConexion) { setMostrarConexion(false); return true; }
     if (reciboPendiente) { setReciboPendiente(null); return true; }
 
-    if (pantalla === "admin" && pantallaAdmin !== "catalogo") { setPantallaAdmin("catalogo"); return true; }
+    if (pantalla === "admin" && pantallaAdmin !== seccionInicial) { setPantallaAdmin(seccionInicial); return true; }
     if (pantalla !== "venta") { setPantalla("venta"); return true; }
 
     Alert.alert("Salir del Punto de Venta", "¿Seguro que quieres cerrar la aplicación?", [
@@ -126,7 +146,7 @@ export function PosNavigator() {
       { text: "Salir", style: "destructive", onPress: () => BackHandler.exitApp() },
     ]);
     return true;
-  }, [autorizando, renombrando, eligiendoSucursal, mostrarConexion, reciboPendiente, pantalla, pantallaAdmin]);
+  }, [autorizando, renombrando, eligiendoSucursal, mostrarConexion, reciboPendiente, pantalla, pantallaAdmin, seccionInicial]);
 
   /** Tocar la sucursal ya no lleva directo a Conexión: desde aquí se puede tanto cambiar de
    *  sucursal como corregir su nombre, que son las dos cosas que se buscan en ese sitio. */
@@ -282,7 +302,7 @@ export function PosNavigator() {
           <TouchableOpacity onPress={tocarIndicadorSync}>
             <Text style={estilos.indicadorSync}>{ETIQUETA_SYNC[sync.estado]}</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={subirErp} disabled={subiendo} style={estilos.botonSubirErp} accessibilityLabel="Subir a ERP">
+          <TouchableOpacity onPress={() => exigir(PERMISOS_TERMINAL.ERP_SUBIR, subirErp)} disabled={subiendo} style={estilos.botonSubirErp} accessibilityLabel="Subir a ERP">
             {subiendo
               ? <ActivityIndicator color="#fff" size="small" />
               : <Text style={estilos.botonSubirErpTexto}>⬆ Subir a ERP{sync.pendientes > 0 ? ` (${sync.pendientes})` : ""}</Text>}
@@ -331,7 +351,7 @@ export function PosNavigator() {
       )}
 
       <View style={{ flex: 1 }}>
-        {pantalla === "venta" && <PosVentaScreen key={versionSucursal} onCobrar={() => setPantalla("cobro")} />}
+        {pantalla === "venta" && <PosVentaScreen key={versionSucursal} onCobrar={() => exigir(PERMISOS_TERMINAL.VENTA_COBRAR, () => setPantalla("cobro"))} />}
         {pantalla === "cobro" && <PosCobroScreen onCerrar={() => setPantalla("venta")} onCobrado={cobroConfirmado} />}
         {pantalla === "caja" && <PosCajaScreen />}
         {pantalla === "consultar" && <PosConsultarVentasScreen onCerrar={() => setPantalla("venta")} />}
@@ -339,32 +359,16 @@ export function PosNavigator() {
           <View style={{ flex: 1 }}>
             {/* Horizontal: con cuatro pestañas ya no caben en el ancho de un celular. */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={estilos.subTabs} contentContainerStyle={{ gap: 8, paddingHorizontal: 12 }}>
-              <TouchableOpacity onPress={() => setPantallaAdmin("catalogo")} style={[estilos.subTab, pantallaAdmin === "catalogo" && estilos.subTabActivo]}>
-                <Text style={{ color: pantallaAdmin === "catalogo" ? "#fff" : colores.texto, fontWeight: "700" }}>Catálogo</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setPantallaAdmin("inventario")} style={[estilos.subTab, pantallaAdmin === "inventario" && estilos.subTabActivo]}>
-                <Text style={{ color: pantallaAdmin === "inventario" ? "#fff" : colores.texto, fontWeight: "700" }}>Inventario</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setPantallaAdmin("reportes")} style={[estilos.subTab, pantallaAdmin === "reportes" && estilos.subTabActivo]}>
-                <Text style={{ color: pantallaAdmin === "reportes" ? "#fff" : colores.texto, fontWeight: "700" }}>Reportes</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setPantallaAdmin("usuarios")} style={[estilos.subTab, pantallaAdmin === "usuarios" && estilos.subTabActivo]}>
-                <Text style={{ color: pantallaAdmin === "usuarios" ? "#fff" : colores.texto, fontWeight: "700" }}>Usuarios</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setPantallaAdmin("sync")} style={[estilos.subTab, pantallaAdmin === "sync" && estilos.subTabActivo]}>
-                <Text style={{ color: pantallaAdmin === "sync" ? "#fff" : colores.texto, fontWeight: "700" }}>Sincronización</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setPantallaAdmin("pagos")} style={[estilos.subTab, pantallaAdmin === "pagos" && estilos.subTabActivo]}>
-                <Text style={{ color: pantallaAdmin === "pagos" ? "#fff" : colores.texto, fontWeight: "700" }}>Pagos</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setPantallaAdmin("impresora")} style={[estilos.subTab, pantallaAdmin === "impresora" && estilos.subTabActivo]}>
-                <Text style={{ color: pantallaAdmin === "impresora" ? "#fff" : colores.texto, fontWeight: "700" }}>Impresora</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setPantallaAdmin("plataformas")} style={[estilos.subTab, pantallaAdmin === "plataformas" && estilos.subTabActivo]}>
-                <Text style={{ color: pantallaAdmin === "plataformas" ? "#fff" : colores.texto, fontWeight: "700" }}>Delivery</Text>
-              </TouchableOpacity>
+              {seccionesAdmin.map((sec) => (
+                <TouchableOpacity key={sec.id} onPress={() => setPantallaAdmin(sec.id)} style={[estilos.subTab, pantallaAdmin === sec.id && estilos.subTabActivo]}>
+                  <Text style={{ color: pantallaAdmin === sec.id ? "#fff" : colores.texto, fontWeight: "700" }}>{sec.etiqueta}</Text>
+                </TouchableOpacity>
+              ))}
             </ScrollView>
             <View style={{ flex: 1 }}>
+              {/* Solo se dibuja una sección permitida: "Ver detalle" de Subir a ERP manda a
+                  Sincronización, y quien no la tiene asignada no debe entrar por ahí. */}
+              {seccionesAdmin.some((sec) => sec.id === pantallaAdmin) && <>
               {pantallaAdmin === "catalogo" && <PosAdminCatalogoScreen onCerrar={() => setPantalla("venta")} />}
               {pantallaAdmin === "reportes" && <PosAdminReportesScreen onCerrar={() => setPantalla("venta")} />}
               {pantallaAdmin === "usuarios" && <PosAdminUsuariosScreen onCerrar={() => setPantalla("venta")} />}
@@ -373,6 +377,7 @@ export function PosNavigator() {
               {pantallaAdmin === "sync" && <PosAdminSincronizacionScreen onCerrar={() => setPantalla("venta")} />}
               {pantallaAdmin === "impresora" && <PosAdminImpresoraScreen onCerrar={() => setPantalla("venta")} />}
               {pantallaAdmin === "plataformas" && <PosAdminPlataformasScreen onCerrar={() => setPantalla("venta")} />}
+              </>}
             </View>
           </View>
         )}
@@ -399,6 +404,8 @@ export function PosNavigator() {
           }}
         />
       )}
+
+      {modalPermiso}
 
       {renombrando && sucursalActiva && (
         <ModalRenombrarSucursal

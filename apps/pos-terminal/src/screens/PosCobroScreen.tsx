@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { MetodoPago } from "@hangar421/shared";
 import { useCarritoStore } from "../store/carritoStore";
 import { useAuthLocalStore } from "../store/authLocalStore";
@@ -13,6 +13,7 @@ import { imprimirTicket } from "../printing/imprimirTicket";
 import { ModalAutorizacion } from "../components/ModalAutorizacion";
 import type { Autorizador } from "../auth/autorizacion";
 import { extrasCobrables, motivoCortesia, totalesConCortesia } from "../caja/cortesia";
+import { PERMISOS_TERMINAL, tienePermiso } from "../auth/permisosTerminal";
 
 const ICONO: Record<MetodoPago, string> = {
   [MetodoPago.EFECTIVO]: "💵",
@@ -51,6 +52,8 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
   const [metodos, setMetodos] = useState<{ valor: MetodoPago; etiqueta: string; icono: string }[]>([]);
   const [metodoActivo, setMetodoActivo] = useState<MetodoPago>(MetodoPago.EFECTIVO);
   const [montoInput, setMontoInput] = useState("0");
+  // Autorización / últimos 4 dígitos de la terminal del banco, o folio de la transferencia.
+  const [referencia, setReferencia] = useState("");
   const [procesando, setProcesando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,7 +69,8 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
   // El teclado ya no arma pagos parciales: es solo "con cuánto paga el cliente", para calcular el
   // cambio. Dejarlo en 0 significa pago exacto — ver `montoCobrado`.
   const recibido = Number(montoInput || 0);
-  const montoCobrado = recibido > 0 ? recibido : t.total;
+  // Solo en efectivo cuenta lo tecleado; con tarjeta o transferencia siempre es el total exacto.
+  const montoCobrado = metodoActivo === MetodoPago.EFECTIVO && recibido > 0 ? recibido : t.total;
   const restante = Math.max(0, t.total - montoCobrado);
   const cambio = Math.max(0, montoCobrado - t.total);
 
@@ -95,6 +99,7 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
     // En efectivo el cajero teclea con cuánto le pagan; en los demás métodos el importe es
     // siempre el total exacto, así que no hay nada que teclear.
     setMontoInput(metodo === MetodoPago.EFECTIVO ? "0" : t.total.toFixed(2));
+    setReferencia("");
   }
 
   function presionarTecla(tecla: string) {
@@ -111,7 +116,12 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
     // Un solo pago con el método activo. Si el cajero no tecleó nada se cobra el total exacto:
     // es el caso mayoritario y ahorra teclear el importe que ya está en pantalla.
     // Una cortesía completa (total $0) no lleva pago: no entró dinero por ningún método.
-    const pagosFinales = t.total > 0 ? [{ metodo: metodoActivo, monto: montoCobrado }] : [];
+    // Fuera de efectivo no hay cambio: se registra el total exacto, con la referencia que haya
+    // dado la terminal del banco o la transferencia (viaja al ERP en `pagos.referencia`).
+    const esEfectivo = metodoActivo === MetodoPago.EFECTIVO;
+    const pagosFinales = t.total > 0
+      ? [{ metodo: metodoActivo, monto: esEfectivo ? montoCobrado : t.total, referencia: esEfectivo ? undefined : referencia.trim() || undefined }]
+      : [];
     setProcesando(true);
     try {
       const db = await abrirBaseDeDatos();
@@ -129,9 +139,19 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
       // e irrevocable, y el cajero no debe quedarse mirando una pantalla bloqueada por la red.
       sincronizarPronto();
       // La venta ya está confirmada e irrevocable en este punto — lo que pase con la impresión
-      // de aquí en adelante nunca la afecta (ver printing/imprimirTicket.ts).
-      await imprimirTicket(db, venta.id);
-      onCobrado(venta.id, venta.folioLocal, venta.total);
+      // de aquí en adelante nunca la afecta (ver printing/imprimirTicket.ts). Se pregunta
+      // porque muchos clientes no quieren ticket: imprimirlo siempre gasta papel. Si luego
+      // cambian de opinión, se reimprime desde la pestaña Ventas.
+      const terminar = () => onCobrado(venta.id, venta.folioLocal, venta.total);
+      Alert.alert(
+        `Venta #${venta.folioLocal} cobrada`,
+        "¿Quieres imprimir el ticket?",
+        [
+          { text: "No", style: "cancel", onPress: terminar },
+          { text: "🖨 Imprimir", onPress: () => { imprimirTicket(db, venta.id).finally(terminar); } },
+        ],
+        { cancelable: false },
+      );
     } catch (e: any) {
       setError(e.message ?? "No se pudo procesar el cobro");
     } finally {
@@ -171,9 +191,13 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
               <Text style={{ color: metodoActivo === m.valor ? "#fff" : colores.texto }}>{m.icono} {m.etiqueta}</Text>
             </TouchableOpacity>
           ))}
-          <TouchableOpacity onPress={alternarCortesia} style={[estilos.botonChip, cortesia && estilos.botonChipCortesia]}>
-            <Text style={{ color: cortesia ? colores.navy : colores.texto, fontWeight: cortesia ? "800" : "400" }}>🎁 Cortesía{cortesia ? " ✓" : ""}</Text>
-          </TouchableOpacity>
+          {/* Sin el permiso no se ofrece: el PIN de supervisor ya es obligatorio para la cortesía,
+              así que la casilla decide quién puede siquiera pedirla. */}
+          {tienePermiso(usuario, PERMISOS_TERMINAL.VENTA_CORTESIA) && (
+            <TouchableOpacity onPress={alternarCortesia} style={[estilos.botonChip, cortesia && estilos.botonChipCortesia]}>
+              <Text style={{ color: cortesia ? colores.navy : colores.texto, fontWeight: cortesia ? "800" : "400" }}>🎁 Cortesía{cortesia ? " ✓" : ""}</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {cortesia && (
@@ -205,6 +229,26 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
 
         {(!cortesia || t.total > 0) && (
         <>
+        {metodoActivo !== MetodoPago.EFECTIVO ? (
+          // Sin integración con terminal: el cajero cobra en la terminal del banco y aquí solo
+          // lo registra. No hay teclado de "paga con" porque no hay cambio que calcular.
+          <View style={estilos.tecladoContenedor}>
+            <Text style={estilos.etiquetaMonto}>
+              {metodoActivo === MetodoPago.TARJETA
+                ? `Cobra $${t.total.toFixed(2)} en la terminal del banco y confirma aquí.`
+                : `Registra el pago de $${t.total.toFixed(2)} y confirma aquí.`}
+            </Text>
+            <TextInput
+              value={referencia}
+              onChangeText={setReferencia}
+              placeholder={metodoActivo === MetodoPago.TARJETA ? "Autorización o últimos 4 dígitos (opcional)" : "Referencia (opcional)"}
+              placeholderTextColor={colores.textoSecundario}
+              maxLength={40}
+              style={estilos.inputReferencia}
+            />
+          </View>
+        ) : (
+        <>
         <View style={estilos.totalesBox}>
           <Text style={[estilos.totalGrande, { color: restante > 0 ? colores.navyTexto : colores.green }]}>
             {restante > 0 ? `Falta cubrir: $${restante.toFixed(2)}` : `Cambio: $${cambio.toFixed(2)}`}
@@ -222,6 +266,8 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
             ))}
           </View>
         </View>
+        </>
+        )}
 
         </>
         )}
@@ -282,6 +328,7 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     cortesiaAyuda: { fontSize: 12, color: colores.textoSecundario, marginTop: 4, lineHeight: 17 },
     filaExtra: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colores.borde },
     tecladoContenedor: { marginTop: 20, backgroundColor: colores.gray50, borderRadius: 12, padding: 16 },
+    inputReferencia: { borderWidth: 1, borderColor: colores.borde, borderRadius: 8, padding: 12, minHeight: 48, marginTop: 10, color: colores.texto, backgroundColor: colores.superficie, fontSize: 15 },
     etiquetaMonto: { fontSize: 12, textAlign: "center", color: colores.textoSecundario, marginBottom: 2 },
     montoIngresado: { fontSize: 30, fontWeight: "800", textAlign: "center", color: colores.texto, marginBottom: 12 },
     teclado: { flexDirection: "row", flexWrap: "wrap", gap: 10 },

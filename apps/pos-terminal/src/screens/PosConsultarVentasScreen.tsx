@@ -10,6 +10,8 @@ import { procesarCola } from "../sync/syncEngine";
 import { ModalAutorizacion } from "../components/ModalAutorizacion";
 import { formatearDinero, formatearFechaHora } from "../reportes/armarReporte";
 import type { Autorizador } from "../auth/autorizacion";
+import { PERMISOS_TERMINAL, tienePermiso } from "../auth/permisosTerminal";
+import { imprimirTicket } from "../printing/imprimirTicket";
 
 type RangoRapido = "hoy" | "7dias" | "30dias";
 
@@ -111,6 +113,20 @@ export function PosConsultarVentasScreen({ onCerrar }: { onCerrar: () => void })
       Alert.alert("Ticket cancelado", `Folio #${cancelando.folioLocal} cancelado y autorizado por ${autorizador.nombre}.`);
     } catch (e: any) {
       Alert.alert("Cancelar", e?.message ?? "No se pudo cancelar el ticket.");
+    }
+  }
+
+  /** Para el cliente que al final sí quiere su ticket. Imprime el mismo ticket de la venta
+   *  (mismo folio y datos), no uno nuevo. */
+  const [imprimiendo, setImprimiendo] = useState(false);
+  async function reimprimir(venta: VentaConsulta) {
+    setImprimiendo(true);
+    try {
+      const db = await abrirBaseDeDatos();
+      const impreso = await imprimirTicket(db, venta.id);
+      if (!impreso) Alert.alert("No se imprimió", "No se encontró la impresora. Revisa que esté conectada y encendida (Admin → Impresora) e inténtalo de nuevo.");
+    } finally {
+      setImprimiendo(false);
     }
   }
 
@@ -245,6 +261,15 @@ export function PosConsultarVentasScreen({ onCerrar }: { onCerrar: () => void })
               </View>
 
               {detalle.venta.estado !== "CANCELADA" && (
+                <TouchableOpacity onPress={() => reimprimir(detalle.venta)} disabled={imprimiendo} style={estilos.botonReimprimir}>
+                  {imprimiendo
+                    ? <ActivityIndicator color="#fff" />
+                    : <Text style={estilos.botonCancelarTicketTexto}>🖨 Reimprimir ticket</Text>}
+                </TouchableOpacity>
+              )}
+
+              {/* Sin el permiso no se ofrece; con él, igual pide el PIN de un supervisor. */}
+              {detalle.venta.estado !== "CANCELADA" && tienePermiso(usuario, PERMISOS_TERMINAL.VENTA_CANCELAR) && (
                 <TouchableOpacity onPress={() => { const v = detalle.venta; setDetalle(null); pedirCancelacion(v); }} style={estilos.botonCancelarTicket}>
                   <Text style={estilos.botonCancelarTicketTexto}>Cancelar este ticket</Text>
                 </TouchableOpacity>
@@ -330,5 +355,6 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     textoCancelada: { fontSize: 13, fontWeight: "800", color: colores.red, marginBottom: 4 },
     botonCancelarTicket: { backgroundColor: colores.red, borderRadius: 10, padding: 15, alignItems: "center", minHeight: 50, justifyContent: "center", marginTop: 12 },
     botonCancelarTicketTexto: { color: "#fff", fontWeight: "800", fontSize: 15 },
+    botonReimprimir: { backgroundColor: colores.navy, borderRadius: 10, padding: 15, alignItems: "center", minHeight: 50, justifyContent: "center", marginTop: 12 },
   });
 }

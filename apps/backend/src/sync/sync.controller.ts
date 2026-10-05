@@ -43,8 +43,8 @@ export class SyncController {
    * entiende: la terminal está encendida y alcanza al ERP.
    */
   @Post("heartbeat")
-  async heartbeat(@Body() dto: SyncHeartbeatDto) {
-    await this.sync.marcarVisto(dto.dispositivoId, dto.sucursalId);
+  async heartbeat(@Req() req: any, @Body() dto: SyncHeartbeatDto) {
+    await this.sync.marcarVisto(dto.dispositivoId, dto.sucursalId, req.user);
     return { serverTime: new Date().toISOString() };
   }
 }
