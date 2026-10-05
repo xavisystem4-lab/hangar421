@@ -41,9 +41,13 @@ export async function listarCategorias(db: SQLiteDatabase): Promise<CategoriaLoc
 
 /** Ordenado por `orden` (el del catálogo, igual que en el POS de Windows) y solo alfabético como
  *  desempate — antes era alfabético puro, que mezclaba el menú sin razón. */
-export async function listarProductos(db: SQLiteDatabase): Promise<ProductoLocal[]> {
+/** Por defecto solo los que están en venta: es lo que alimenta los botones de Venta y la
+ *  búsqueda. Admin → Catálogo pide también los que están en standby (`incluirStandby`), o una
+ *  vez puesto en standby no habría desde dónde volver a ponerlo en venta. */
+export async function listarProductos(db: SQLiteDatabase, opciones: { incluirStandby?: boolean } = {}): Promise<ProductoLocal[]> {
   const filas = await db.getAllAsync<any>(
-    "SELECT id, categoria_id, nombre, subcategoria, precio_base, orden, activo, requiere_personalizacion FROM productos WHERE activo = 1 ORDER BY orden, nombre",
+    `SELECT id, categoria_id, nombre, subcategoria, precio_base, orden, activo, requiere_personalizacion FROM productos
+     ${opciones.incluirStandby ? "" : "WHERE activo = 1"} ORDER BY orden, nombre`,
   );
   return filas.map((f) => ({
     id: f.id,

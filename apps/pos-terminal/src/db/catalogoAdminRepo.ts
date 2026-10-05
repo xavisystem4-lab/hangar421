@@ -61,9 +61,16 @@ export async function editarProducto(db: SQLiteDatabase, id: string, datos: { no
   });
 }
 
+/** En venta / en standby, para la sucursal activa. En standby el producto no sale en los
+ *  botones de Venta ni en la búsqueda, pero sigue en Admin → Catálogo para reactivarlo.
+ *
+ *  Se escribe también en `precios_sucursal` (terminal multisucursal): al cambiar de sucursal o
+ *  reabrir sesión `aplicarPreciosDeSucursal` reescribe `productos.activo` desde ahí, y sin esto
+ *  el standby se deshacía solo. Viaja al ERP como disponibilidad de la sucursal. */
 export async function alternarDisponibilidadProducto(db: SQLiteDatabase, id: string, activo: boolean, usuarioId: string): Promise<void> {
-  await db.runAsync("UPDATE productos SET activo = ?, synced_at = NULL WHERE id = ?", activo ? 1 : 0, id);
   const [sucursalId, dispositivoId] = await Promise.all([obtenerOCrearSucursalIdLocal(db), obtenerOCrearDispositivoId(db)]);
+  await db.runAsync("UPDATE productos SET activo = ?, synced_at = NULL WHERE id = ?", activo ? 1 : 0, id);
+  await db.runAsync("UPDATE precios_sucursal SET disponible = ? WHERE producto_id = ? AND sucursal_id = ?", activo ? 1 : 0, id, sucursalId);
   await encolarSync(db, {
     entidad: SyncEntidad.PRODUCTO_SUCURSAL,
     operacion: SyncOperacion.UPDATE,
