@@ -459,6 +459,27 @@ export const MIGRACIONES: Migracion[] = [
       `);
     },
   },
+  {
+    version: 9,
+    nombre: "permisos_por_usuario",
+    up: async (db) => {
+      // Funciones que un administrador le da o quita a cada persona en esta tablet (ver
+      // auth/permisosTerminal.ts). NULL = nunca personalizado: usa los del rol, así que los
+      // usuarios que ya existían siguen pudiendo hacer exactamente lo mismo que antes.
+      await db.execAsync(`ALTER TABLE usuarios_locales ADD COLUMN permisos_json TEXT;`);
+    },
+  },
+  {
+    version: 10,
+    nombre: "tarjeta_manual_habilitada",
+    up: async (db) => {
+      // Las tablets sembradas antes de que Tarjeta viniera encendida (ver
+      // sembrarMetodosPagoPorDefecto) la tenían apagada, y la siembra no vuelve a correr si ya
+      // hay métodos. El negocio cobra con tarjeta en la terminal del banco y la registra a mano,
+      // así que se enciende una vez; sigue pudiéndose apagar en Admin → Pagos.
+      await db.execAsync(`UPDATE metodos_pago_config SET habilitado = 1 WHERE tipo = 'TARJETA';`);
+    },
+  },
 ];
 
 /** Corre, en orden, toda migración con `version` mayor a la ya aplicada — cada una dentro de su
