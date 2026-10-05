@@ -169,7 +169,15 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
         "¿Quieres imprimir el ticket?",
         [
           { text: "No", style: "cancel", onPress: terminar },
-          { text: "🖨 Imprimir", onPress: () => { imprimirTicket(db, venta.id).finally(terminar); } },
+          {
+            text: "🖨 Imprimir",
+            onPress: () => {
+              // Si falla se dice por qué; el recibo en pantalla sale igual como respaldo.
+              imprimirTicket(db, venta.id)
+                .then((r) => { if (!r.impreso) Alert.alert("No se imprimió el ticket", r.motivo ?? "Inténtalo desde la pestaña Ventas."); })
+                .finally(terminar);
+            },
+          },
         ],
         { cancelable: false },
       );
