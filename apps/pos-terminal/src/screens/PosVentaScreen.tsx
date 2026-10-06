@@ -44,6 +44,7 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
     agregarItem({
       productoId: producto.id,
       nombreProducto: producto.nombre,
+      categoria: nombrePorCategoria.get(producto.categoriaId),
       cantidad: 1,
       precioUnitario: producto.precioBase,
       modificadores: [],
@@ -306,6 +307,7 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
             agregarItem({
               productoId: personalizando.producto.id,
               nombreProducto: personalizando.producto.nombre,
+              categoria: nombrePorCategoria.get(personalizando.producto.categoriaId),
               cantidad,
               precioUnitario: personalizando.producto.precioBase,
               notas: notas || undefined,

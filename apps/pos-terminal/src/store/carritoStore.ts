@@ -15,6 +15,9 @@ export interface ItemCarrito {
   cantidad: number;
   precioUnitario: number;
   notas?: string;
+  /** Nombre de la categoría del producto ("DIDI", "Bebidas"…): con él se reconoce una venta del
+   *  grupo DIDI al cobrar. */
+  categoria?: string;
   /** Lo elegido en el modal de personalización. Vacío en un producto sin modificadores. */
   modificadores: SeleccionModificador[];
 }

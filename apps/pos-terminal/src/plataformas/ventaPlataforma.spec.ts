@@ -91,6 +91,7 @@ describe("ventaPlataforma", () => {
     expect(venta.opciones).toEqual({
       ventaId: "0192f0a1-0000-7000-8000-000000000001",
       canalOrigen: "PLATAFORMA_DELIVERY",
+      plataforma: "DIDI",
       tipo: "DOMICILIO",
       notas: "Pedido de DiDi Food #A123 — Cliente: María López",
     });

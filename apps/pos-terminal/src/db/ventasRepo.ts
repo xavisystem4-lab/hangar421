@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 import { uuid7, round2, validarPagoSuficiente, CanalOrigen, SyncEntidad, SyncOperacion, TipoPedido, type TotalesPedido } from "@hangar421/shared";
 import type { ItemCarrito } from "../store/carritoStore";
+import type { CodigoOrigen } from "../caja/origenVenta";
 import { normalizarNombreCliente, notasConNombreCliente } from "../caja/nombreCliente";
 import { encolarSync } from "./outboxRepo";
 import { obtenerOCrearDispositivoId, obtenerOCrearSucursalIdLocal, obtenerOCrearEmpresaIdLocal } from "./dispositivoLocal";
@@ -26,6 +27,8 @@ export interface OpcionesVenta {
    *  pedido de la plataforma, y así /sync/push lo reconoce en vez de crear otro. */
   ventaId?: string;
   canalOrigen?: CanalOrigen;
+  /** 'DIDI' | 'UBER' | 'RAPPI': separa estas ventas en el corte y los reportes. Sin él, mostrador. */
+  plataforma?: CodigoOrigen | null;
   tipo?: TipoPedido;
   notas?: string;
   /** Cortesía autorizada con PIN de supervisor (ver caja/cortesia.ts). Los totales que recibe
@@ -88,10 +91,10 @@ export async function confirmarVenta(
 
     await db.runAsync(
       `INSERT INTO ventas
-         (id, sucursal_id, folio_local, mesa_id, cliente_id, estado, subtotal, descuento_monto, impuestos, total, canal_origen, turno_id, usuario_id, notas, created_at, updated_at, idempotency_key, nombre_cliente)
-       VALUES (?, ?, ?, NULL, NULL, 'COBRADA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, sucursal_id, folio_local, mesa_id, cliente_id, estado, subtotal, descuento_monto, impuestos, total, canal_origen, turno_id, usuario_id, notas, created_at, updated_at, idempotency_key, nombre_cliente, plataforma)
+       VALUES (?, ?, ?, NULL, NULL, 'COBRADA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ventaId, sucursalId, folioLocal, datos.totales.subtotal, datos.totales.descuentoTotal, datos.totales.impuesto, datos.totales.total,
-      canalOrigen, datos.turnoId, datos.usuarioId, opciones.notas ?? null, ahora, ahora, idempotencyKeyVenta, nombreCliente,
+      canalOrigen, datos.turnoId, datos.usuarioId, opciones.notas ?? null, ahora, ahora, idempotencyKeyVenta, nombreCliente, opciones.plataforma ?? null,
     );
 
     const itemsPayload: { productoId: string; cantidad: number; notas?: string; modificadores: { opcionModificadorId: string }[] }[] = [];

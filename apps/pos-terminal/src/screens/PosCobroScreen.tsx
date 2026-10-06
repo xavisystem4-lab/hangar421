@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { MetodoPago, cobroEnDolares, round2 } from "@hangar421/shared";
+import { CanalOrigen, MetodoPago, TipoPedido, cobroEnDolares, round2 } from "@hangar421/shared";
+import { carritoMezclaDidi, esVentaDidi } from "../caja/origenVenta";
 import { useCarritoStore } from "../store/carritoStore";
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { usarColores } from "../store/temaStore";
@@ -54,6 +55,14 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
   const [extrasCobrados, setExtrasCobrados] = useState<string[]>([]);
   const extras = useMemo(() => extrasCobrables(items), [items]);
   const t = cortesia ? totalesConCortesia(totalesCarrito, items, extrasCobrados) : totalesCarrito;
+
+  // Venta del grupo DIDI: se marca como DiDi para separarla en el corte. En ese caso el método
+  // de pago no viene preseleccionado: hay que preguntar cómo pagó (efectivo, tarjeta…).
+  const categoriasCarrito = items.map((i) => i.categoria);
+  const esDidi = esVentaDidi(categoriasCarrito);
+  const mezclaDidi = carritoMezclaDidi(categoriasCarrito);
+  const [metodoElegido, setMetodoElegido] = useState(false);
+  const faltaElegirMetodo = esDidi && !metodoElegido && !(cortesia && totalesCarrito.total === 0);
 
   const [metodos, setMetodos] = useState<{ valor: MetodoPago; etiqueta: string; icono: string }[]>([]);
   const [metodoActivo, setMetodoActivo] = useState<MetodoPago>(MetodoPago.EFECTIVO);
@@ -119,6 +128,7 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
   }
 
   function elegirMetodo(metodo: MetodoPago) {
+    setMetodoElegido(true);
     setMetodoActivo(metodo);
     // En efectivo el cajero teclea con cuánto le pagan; en los demás métodos el importe es
     // siempre el total exacto, así que no hay nada que teclear.
@@ -167,7 +177,11 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
       const venta = await confirmarVenta(
         db,
         { items, pagos: pagosFinales, totales: t, turnoId: turno.id, usuarioId: usuario.id, nombreCliente },
-        cortesia ? { cortesia: { motivo: motivoCortesia(cortesia.nombre, items, extrasCobrados), autorizadoPorId: cortesia.id } } : {},
+        {
+          ...(cortesia ? { cortesia: { motivo: motivoCortesia(cortesia.nombre, items, extrasCobrados), autorizadoPorId: cortesia.id } } : {}),
+          // Cobrado desde el grupo DIDI: canal de plataforma + marca DiDi (corte y reportes).
+          ...(esDidi ? { canalOrigen: CanalOrigen.PLATAFORMA_DELIVERY, tipo: TipoPedido.DOMICILIO, plataforma: "DIDI" as const, notas: "DiDi (cobrado en el POS)" } : {}),
+        },
       );
       limpiar();
       // Empuje inmediato al ERP. Antes la venta solo se encolaba y esperaba hasta 45 s al
@@ -246,11 +260,26 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
           <View style={estilos.filaTotal}><Text style={[estilos.totalGrande, estilos.totalNaranja]}>{cortesia ? "A cobrar" : "Total"}</Text><Text style={[estilos.totalGrande, estilos.totalNaranja, { fontSize: 28 }]}>${aPagar.toFixed(2)}</Text></View>
         </View>
 
-        <Text style={estilos.subtitulo}>Método de pago</Text>
+        {esDidi && (
+          <View style={[estilos.totalesBox, { borderColor: "#FF7A00", borderWidth: 1, marginBottom: 10 }]}>
+            <Text style={{ color: "#FF7A00", fontWeight: "800" }}>🛵 Pedido DiDi</Text>
+            <Text style={{ color: colores.textoSecundario, fontSize: 12, marginTop: 2 }}>
+              Se registra como venta de DiDi Food y sale aparte en el corte.
+            </Text>
+          </View>
+        )}
+        {mezclaDidi && (
+          <View style={[estilos.totalesBox, { borderColor: colores.amber, borderWidth: 1, marginBottom: 10 }]}>
+            <Text style={{ color: colores.amber, fontWeight: "700", fontSize: 13 }}>
+              El carrito mezcla productos de DIDI con otros del mostrador: se cobra como venta de mostrador. Si es un pedido de DiDi, vacía el carrito y vuelve a armarlo solo con el grupo DIDI.
+            </Text>
+          </View>
+        )}
+        <Text style={estilos.subtitulo}>{esDidi ? "¿Cómo pagó el cliente?" : "Método de pago"}</Text>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
           {(!cortesia || t.total > 0) && metodos.map((m) => (
-            <TouchableOpacity key={m.valor} onPress={() => elegirMetodo(m.valor)} style={[estilos.botonChip, metodoActivo === m.valor && estilos.botonChipActivo]}>
-              <Text style={[estilos.botonChipTexto, metodoActivo === m.valor && { color: "#fff" }]}>{m.icono} {m.etiqueta.toUpperCase()}</Text>
+            <TouchableOpacity key={m.valor} onPress={() => elegirMetodo(m.valor)} style={[estilos.botonChip, metodoActivo === m.valor && !faltaElegirMetodo && estilos.botonChipActivo]}>
+              <Text style={[estilos.botonChipTexto, metodoActivo === m.valor && !faltaElegirMetodo && { color: "#fff" }]}>{m.icono} {m.etiqueta.toUpperCase()}</Text>
             </TouchableOpacity>
           ))}
           {/* Sin el permiso no se ofrece: el PIN de supervisor ya es obligatorio para la cortesía,
@@ -379,11 +408,11 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
               demasiado tarde. */}
           <TouchableOpacity
             onPress={confirmar}
-            disabled={procesando || restante > 0}
-            style={[estilos.botonAccion, { flex: 2, backgroundColor: restante > 0 ? colores.gray200 : colores.green }]}
+            disabled={procesando || restante > 0 || faltaElegirMetodo}
+            style={[estilos.botonAccion, { flex: 2, backgroundColor: restante > 0 || faltaElegirMetodo ? colores.gray200 : colores.green }]}
           >
-            <Text style={{ color: restante > 0 ? colores.texto : "#fff", fontWeight: "800", fontSize: 17 }}>
-              {procesando ? "Procesando…" : cortesia && t.total === 0 ? "Confirmar cortesía" : `Confirmar pago $${aPagar.toFixed(2)}`}
+            <Text style={{ color: restante > 0 || faltaElegirMetodo ? colores.texto : "#fff", fontWeight: "800", fontSize: 17 }}>
+              {procesando ? "Procesando…" : faltaElegirMetodo ? "Elige el método de pago" : cortesia && t.total === 0 ? "Confirmar cortesía" : `Confirmar pago $${aPagar.toFixed(2)}`}
             </Text>
           </TouchableOpacity>
         </View>

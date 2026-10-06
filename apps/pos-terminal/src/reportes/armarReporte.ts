@@ -14,6 +14,8 @@ export interface DatosReporte {
   cantidadVentas: number;
   ticketPromedio: number;
   porMetodo: { metodo: string; total: number; cantidad: number }[];
+  /** Mostrador y plataformas por separado (opcional: un reporte armado sin él no lo muestra). */
+  porOrigen?: { origen: string; total: number; cantidad: number; porMetodo: { metodo: string; total: number; cantidad: number }[] }[];
   topProductos: { nombre: string; cantidad: number; total: number }[];
   ventas: { folioLocal: number; createdAt: string; total: number; cajero: string; metodos: string; productos: string }[];
 }
@@ -77,6 +79,16 @@ export function filasResumen(datos: DatosReporte): (string | number)[][] {
     [],
     ["Método de pago", "Operaciones", "Total"],
     ...datos.porMetodo.map((m) => [m.metodo, m.cantidad, m.total]),
+    ...(datos.porOrigen && datos.porOrigen.length > 0
+      ? [
+          [],
+          ["Origen", "Método de pago", "Operaciones", "Total"],
+          ...datos.porOrigen.flatMap((o) => [
+            [o.origen, "Total", o.cantidad, o.total],
+            ...o.porMetodo.map((m) => [o.origen, m.metodo, m.cantidad, m.total]),
+          ]),
+        ]
+      : []),
     [],
     ["Producto", "Unidades", "Importe"],
     ...datos.topProductos.map((p) => [p.nombre, p.cantidad, p.total]),
@@ -100,6 +112,12 @@ export function escaparHtml(texto: string): string {
 export function htmlReporte(datos: DatosReporte): string {
   const filaMetodo = datos.porMetodo
     .map((m) => `<tr><td>${escaparHtml(m.metodo)}</td><td class="num">${m.cantidad}</td><td class="num">${formatearDinero(m.total)}</td></tr>`)
+    .join("");
+  const filaOrigen = (datos.porOrigen ?? [])
+    .flatMap((o) => [
+      `<tr><td><b>${escaparHtml(o.origen)}</b></td><td><b>Total</b></td><td class="num">${o.cantidad}</td><td class="num"><b>${formatearDinero(o.total)}</b></td></tr>`,
+      ...o.porMetodo.map((m) => `<tr><td></td><td>${escaparHtml(m.metodo)}</td><td class="num">${m.cantidad}</td><td class="num">${formatearDinero(m.total)}</td></tr>`),
+    ])
     .join("");
   const filaProducto = datos.topProductos
     .map((p) => `<tr><td>${escaparHtml(p.nombre)}</td><td class="num">${p.cantidad}</td><td class="num">${formatearDinero(p.total)}</td></tr>`)
@@ -149,6 +167,10 @@ export function htmlReporte(datos: DatosReporte): string {
   <h2>Por método de pago</h2>
   <table><thead><tr><th>Método</th><th class="num">Operaciones</th><th class="num">Total</th></tr></thead>
   <tbody>${filaMetodo || `<tr><td colspan="3">Sin pagos en el rango.</td></tr>`}</tbody></table>
+
+  ${filaOrigen ? `<h2>Por origen (mostrador / plataformas)</h2>
+  <table><thead><tr><th>Origen</th><th>Método</th><th class="num">Operaciones</th><th class="num">Total</th></tr></thead>
+  <tbody>${filaOrigen}</tbody></table>` : ""}
 
   <h2>Productos más vendidos</h2>
   <table><thead><tr><th>Producto</th><th class="num">Unidades</th><th class="num">Importe</th></tr></thead>

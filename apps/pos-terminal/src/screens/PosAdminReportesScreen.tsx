@@ -1,3 +1,4 @@
+import { etiquetaOrigen } from "../caja/origenVenta";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -132,6 +133,12 @@ export function PosAdminReportesScreen({ onCerrar }: { onCerrar: () => void }) {
         metodo: etiquetaMetodoPago[m.metodo as keyof typeof etiquetaMetodoPago] ?? m.metodo,
         total: m.total,
         cantidad: m.cantidad,
+      })),
+      porOrigen: (resumen?.totalPorOrigen ?? []).map((o) => ({
+        origen: etiquetaOrigen(o.origen),
+        total: o.total,
+        cantidad: o.cantidad,
+        porMetodo: o.porMetodo.map((m) => ({ metodo: etiquetaMetodoPago[m.metodo as keyof typeof etiquetaMetodoPago] ?? m.metodo, total: m.total, cantidad: m.cantidad })),
       })),
       topProductos,
       ventas,
@@ -293,6 +300,25 @@ export function PosAdminReportesScreen({ onCerrar }: { onCerrar: () => void }) {
                   }))}
                 />
               </View>
+
+              {/* Solo cuando hay ventas de alguna plataforma: si todo es mostrador no aporta nada. */}
+              {(resumen?.totalPorOrigen ?? []).some((o) => o.origen !== "MOSTRADOR") && (
+                <View style={estilos.tarjeta}>
+                  <Text style={estilos.subtitulo}>Por origen</Text>
+                  {(resumen?.totalPorOrigen ?? []).map((o) => (
+                    <View key={o.origen} style={{ marginBottom: 8 }}>
+                      <Text style={{ color: colores.texto, fontWeight: "800" }}>
+                        {etiquetaOrigen(o.origen)} · {o.cantidad} venta{o.cantidad === 1 ? "" : "s"} · ${o.total.toFixed(2)}
+                      </Text>
+                      {o.porMetodo.map((m) => (
+                        <Text key={m.metodo} style={{ color: colores.textoSecundario, fontSize: 13 }}>
+                          {"   "}{etiquetaMetodoPago[m.metodo as keyof typeof etiquetaMetodoPago] ?? m.metodo}: ${m.total.toFixed(2)} ({m.cantidad})
+                        </Text>
+                      ))}
+                    </View>
+                  ))}
+                </View>
+              )}
 
               <View style={estilos.tarjeta}>
                 <Text style={estilos.subtitulo}>Productos más vendidos</Text>

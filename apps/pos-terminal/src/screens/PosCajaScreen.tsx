@@ -3,6 +3,9 @@ import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View 
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
+import { etiquetaMetodoPago } from "../db/metodosPagoRepo";
+import { etiquetaOrigen } from "../caja/origenVenta";
+import { ventasPorOrigenDelTurno, type OrigenVentas } from "../db/reportesRepo";
 import { abrirTurno, cerrarTurno, efectivoDelTurno, fijarTipoCambioTurno, listarMovimientosCaja, reasignarTurno, registrarMovimientoCaja, turnoAbierto, type MovimientoCajaLocal, type TurnoLocal } from "../db/turnosRepo";
 import { listarVentasRecientes, type VentaResumen } from "../db/ventasHistorialRepo";
 import { BILLETES_MXN, BILLETES_USD, MONEDAS_MXN, calcularDiferencia, construirDesglose, round2, type Conteo } from "../caja/denominaciones";
@@ -44,6 +47,7 @@ export function PosCajaScreen() {
   const [montoMovimiento, setMontoMovimiento] = useState("");
   const [motivoMovimiento, setMotivoMovimiento] = useState("");
   const [mensaje, setMensaje] = useState<string | null>(null);
+  const [porOrigen, setPorOrigen] = useState<OrigenVentas[]>([]);
 
   async function cargar() {
     const db = await abrirBaseDeDatos();
@@ -52,6 +56,7 @@ export function PosCajaScreen() {
     if (t) {
       setMovimientos(await listarMovimientosCaja(db, t.id));
       setVentasEnEfectivo(await efectivoDelTurno(db, t.id));
+      setPorOrigen(await ventasPorOrigenDelTurno(db, t.id));
     }
     setVentas(await listarVentasRecientes(db, 20));
     setCajeros(await listarUsuariosLocales(db));
@@ -318,6 +323,29 @@ export function PosCajaScreen() {
               multiline
               style={[estilos.input, { marginTop: 14, minHeight: 60, textAlignVertical: "top" }]}
             />
+
+            {/* Ventas del turno por origen: lo cobrado como DiDi sale aparte del mostrador, con su
+                desglose por método de pago (efectivo, tarjeta…). Informativo: el efectivo
+                esperado de abajo ya cuenta todo el efectivo, venga de donde venga. */}
+            {porOrigen.some((o) => o.origen !== "MOSTRADOR") && (
+              <View style={[estilos.resumenCorte, { marginTop: 14 }]}>
+                <Text style={[estilos.etiquetaResumen, { fontWeight: "800", marginBottom: 6 }]}>Ventas del turno por origen</Text>
+                {porOrigen.map((o) => (
+                  <View key={o.origen} style={{ marginBottom: 6 }}>
+                    <View style={estilos.filaResumen}>
+                      <Text style={[estilos.etiquetaResumen, { fontWeight: "700" }]}>{etiquetaOrigen(o.origen)} ({o.cantidad})</Text>
+                      <Text style={estilos.valorResumen}>${o.total.toFixed(2)}</Text>
+                    </View>
+                    {o.porMetodo.map((m) => (
+                      <View key={m.metodo} style={estilos.filaResumen}>
+                        <Text style={estilos.etiquetaResumen}>{"   "}{etiquetaMetodoPago[m.metodo as keyof typeof etiquetaMetodoPago] ?? m.metodo}</Text>
+                        <Text style={estilos.etiquetaResumen}>${m.total.toFixed(2)}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ))}
+              </View>
+            )}
 
             <View style={estilos.resumenCorte}>
               <View style={estilos.filaResumen}>
