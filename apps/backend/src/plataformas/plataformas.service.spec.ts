@@ -19,6 +19,26 @@ function crearAdaptadorMock(codigo: string, overrides: Record<string, any> = {})
   };
 }
 
+/** Filtro mínimo estilo Prisma: igualdad, null, {in}, {not}, {gte}, OR y `relacion: {...}`. */
+function coincide(fila: any, where: any, relaciones: Record<string, (f: any) => any> = {}): boolean {
+  if (!where) return true;
+  return Object.entries(where).every(([campo, cond]: [string, any]) => {
+    if (campo === "OR") return (cond as any[]).some((w) => coincide(fila, w, relaciones));
+    if (relaciones[campo]) return coincide(relaciones[campo](fila), cond, relaciones);
+    const valor = fila[campo] ?? null;
+    if (cond === null) return valor === null;
+    if (cond instanceof Date) return valor?.getTime?.() === cond.getTime();
+    if (typeof cond === "object") {
+      if ("in" in cond) return cond.in.includes(valor);
+      if ("not" in cond) return valor !== cond.not;
+      if ("gte" in cond) return valor >= cond.gte;
+      if ("lt" in cond) return valor !== null && valor < cond.lt;
+      return true;
+    }
+    return valor === cond;
+  });
+}
+
 function crearPrismaFake() {
   const configs = new Map<string, any>();
   const webhookEvents: any[] = [];
@@ -26,39 +46,17 @@ function crearPrismaFake() {
   let contadorConfig = 0;
   let contadorOrden = 0;
 
-  const buscarPorClaveCompuesta = (empresaId: string, sucursalId: string | null, plataforma: string) =>
-    Array.from(configs.values()).find((c) => c.empresaId === empresaId && c.sucursalId === sucursalId && c.plataforma === plataforma) ?? null;
-
   const plataformaConfig = {
-    findMany: jest.fn(async ({ where }: any) =>
-      Array.from(configs.values()).filter(
-        (c) => c.empresaId === where.empresaId && ("sucursalId" in where ? c.sucursalId === where.sucursalId : true),
-      ),
-    ),
+    findMany: jest.fn(async ({ where }: any) => Array.from(configs.values()).filter((c) => coincide(c, where))),
+    findFirst: jest.fn(async ({ where }: any) => Array.from(configs.values()).find((c) => coincide(c, where)) ?? null),
     findUnique: jest.fn(async ({ where }: any) => {
       if (where.id) return configs.get(where.id) ?? null;
       if (where.webhookSlug) return Array.from(configs.values()).find((c) => c.webhookSlug === where.webhookSlug) ?? null;
-      if (where.empresaId_sucursalId_plataforma) {
-        const { empresaId, sucursalId, plataforma } = where.empresaId_sucursalId_plataforma;
-        return buscarPorClaveCompuesta(empresaId, sucursalId, plataforma);
-      }
       return null;
     }),
-    findUniqueOrThrow: jest.fn(async ({ where }: any) => {
-      const encontrado = where.id ? configs.get(where.id) : undefined;
-      if (!encontrado) throw new Error("PlataformaConfig no encontrada (fake)");
-      return encontrado;
-    }),
-    upsert: jest.fn(async ({ where, update, create }: any) => {
-      const { empresaId, sucursalId, plataforma } = where.empresaId_sucursalId_plataforma;
-      const existente = buscarPorClaveCompuesta(empresaId, sucursalId, plataforma);
-      if (existente) {
-        const actualizado = { ...existente, ...update, updatedAt: new Date() };
-        configs.set(existente.id, actualizado);
-        return actualizado;
-      }
+    create: jest.fn(async ({ data }: any) => {
       const id = `config-${++contadorConfig}`;
-      const nuevo = { id, webhookSlug: `slug-${id}`, createdAt: new Date(), updatedAt: new Date(), ...create };
+      const nuevo = { id, webhookSlug: `slug-${id}`, activo: false, credencialesCifradas: null, createdAt: new Date(), updatedAt: new Date(), ...data };
       configs.set(id, nuevo);
       return nuevo;
     }),
@@ -81,43 +79,45 @@ function crearPrismaFake() {
         error.code = "P2002";
         throw error;
       }
-      const evento = { id: `evt-${webhookEvents.length + 1}`, createdAt: new Date(), ...data };
+      const evento = { id: `evt-${webhookEvents.length + 1}`, procesadoOk: true, createdAt: new Date(), ...data };
       webhookEvents.push(evento);
       return evento;
     }),
+    findMany: jest.fn(async ({ where }: any) =>
+      webhookEvents
+        .filter((e) => coincide(e, where, { plataformaConfig: (f) => configs.get(f.plataformaConfigId) }))
+        .map((e) => ({ ...e, plataformaConfig: configs.get(e.plataformaConfigId) })),
+    ),
   };
 
+  const conConfig = (o: any) => ({ ...o, plataformaConfig: configs.get(o.plataformaConfigId) });
   const plataformaOrdenSync = {
-    upsert: jest.fn(async ({ where, create, update }: any) => {
-      const { plataformaConfigId, ordenExternaId } = where.plataformaConfigId_ordenExternaId;
-      const clave = `${plataformaConfigId}:${ordenExternaId}`;
-      const existente = ordenSyncs.get(clave);
-      if (existente) {
-        const actualizado = { ...existente, ...update, updatedAt: new Date() };
-        ordenSyncs.set(clave, actualizado);
-        return actualizado;
+    create: jest.fn(async ({ data }: any) => {
+      const clave = `${data.plataformaConfigId}:${data.ordenExternaId}`;
+      if (ordenSyncs.has(clave)) {
+        const error: any = new Error("Unique constraint");
+        error.code = "P2002";
+        throw error;
       }
-      const nuevo = { id: `orden-${++contadorOrden}`, createdAt: new Date(), updatedAt: new Date(), ...create };
+      const nuevo = {
+        id: `orden-${++contadorOrden}`, pedidoId: null, motivoError: null, confirmacion: null, simulado: false,
+        ultimoIntentoError: null, aceptadaEn: null, estadoExterno: null, reclamadoPor: null, reclamadoEn: null, createdAt: new Date(), updatedAt: new Date(), ...data,
+      };
       ordenSyncs.set(clave, nuevo);
       return nuevo;
     }),
-    count: jest.fn(async ({ where }: any) =>
-      Array.from(ordenSyncs.values()).filter((o) => {
-        if (o.plataformaConfigId !== where.plataformaConfigId) return false;
-        if (where.estado && o.estado !== where.estado) return false;
-        return true;
-      }).length,
-    ),
-    findUnique: jest.fn(async ({ where }: any) => Array.from(ordenSyncs.values()).find((o) => o.id === where.id) ?? null),
-    findMany: jest.fn(async ({ where }: any) =>
-      Array.from(ordenSyncs.values())
-        .filter((o) => {
-          if (where.plataformaConfigId?.in && !where.plataformaConfigId.in.includes(o.plataformaConfigId)) return false;
-          if (where.estado && o.estado !== where.estado) return false;
-          return true;
-        })
-        .map((o) => ({ ...o, plataformaConfig: configs.get(o.plataformaConfigId) })),
-    ),
+    count: jest.fn(async ({ where }: any) => Array.from(ordenSyncs.values()).filter((o) => coincide(o, where)).length),
+    findUnique: jest.fn(async ({ where, include }: any) => {
+      let fila: any;
+      if (where.id) fila = Array.from(ordenSyncs.values()).find((o) => o.id === where.id);
+      else if (where.plataformaConfigId_ordenExternaId) {
+        const { plataformaConfigId, ordenExternaId } = where.plataformaConfigId_ordenExternaId;
+        fila = ordenSyncs.get(`${plataformaConfigId}:${ordenExternaId}`);
+      }
+      if (!fila) return null;
+      return include?.plataformaConfig ? conConfig(fila) : fila;
+    }),
+    findMany: jest.fn(async ({ where }: any) => Array.from(ordenSyncs.values()).filter((o) => coincide(o, where)).map(conConfig)),
     update: jest.fn(async ({ where, data }: any) => {
       const entrada = Array.from(ordenSyncs.entries()).find(([, o]) => o.id === where.id);
       if (!entrada) throw new Error("PlataformaOrdenSync no encontrada (fake)");
@@ -125,6 +125,15 @@ function crearPrismaFake() {
       const actualizado = { ...existente, ...data, updatedAt: new Date() };
       ordenSyncs.set(clave, actualizado);
       return actualizado;
+    }),
+    updateMany: jest.fn(async ({ where, data }: any) => {
+      let count = 0;
+      for (const [clave, o] of ordenSyncs.entries()) {
+        if (!coincide(o, where)) continue;
+        ordenSyncs.set(clave, { ...o, ...data, updatedAt: new Date() });
+        count++;
+      }
+      return { count };
     }),
   };
 
@@ -462,6 +471,7 @@ describe("PlataformasService — pedidos entrantes (bandeja de aceptación manua
 
     const pedido = await service.aceptarPedido(orden.id, {
       sucursalId: "sucursal-1",
+      confirmarManual: true,
       items: [{ productoId: "producto-croissant", cantidad: 3 }],
     } as any);
 
@@ -478,6 +488,7 @@ describe("PlataformasService — pedidos entrantes (bandeja de aceptación manua
 
     await service.aceptarPedido(orden.id, {
       sucursalId: "sucursal-1",
+      confirmarManual: true,
       items: [{ productoId: "producto-croissant", cantidad: 3 }],
       pedidoId: "0192f0a1-0000-7000-8000-000000000001",
       turnoId: "turno-1",
@@ -499,6 +510,7 @@ describe("PlataformasService — pedidos entrantes (bandeja de aceptación manua
 
     await service.aceptarPedido(orden.id, {
       sucursalId: "sucursal-1",
+      confirmarManual: true,
       items: [{ productoId: "producto-croissant", cantidad: 3 }],
       turnoId: "turno-solo-en-la-tablet",
     } as any);
@@ -510,6 +522,7 @@ describe("PlataformasService — pedidos entrantes (bandeja de aceptación manua
     const { service, orden, prisma } = await conPedidoEntrante();
     const pedido = await service.aceptarPedido(orden.id, {
       sucursalId: "sucursal-1",
+      confirmarManual: true,
       items: [{ productoId: "producto-croissant", cantidad: 3 }],
     } as any);
 
@@ -520,7 +533,7 @@ describe("PlataformasService — pedidos entrantes (bandeja de aceptación manua
 
   it("aceptarPedido es idempotente ante un doble clic (no crea un segundo Pedido)", async () => {
     const { service, orden, pedidos } = await conPedidoEntrante();
-    const dto = { sucursalId: "sucursal-1", items: [{ productoId: "producto-croissant", cantidad: 3 }] } as any;
+    const dto = { sucursalId: "sucursal-1", confirmarManual: true, items: [{ productoId: "producto-croissant", cantidad: 3 }] } as any;
 
     const primero = await service.aceptarPedido(orden.id, dto);
     const segundo = await service.aceptarPedido(orden.id, dto);
@@ -531,24 +544,169 @@ describe("PlataformasService — pedidos entrantes (bandeja de aceptación manua
 
   it("aceptarPedido rechaza (400) si el pedido ya fue rechazado antes", async () => {
     const { service, orden } = await conPedidoEntrante();
-    await service.rechazarPedido(orden.id, "Sin insumos suficientes");
+    await service.rechazarPedido(orden.id, "Sin insumos suficientes", undefined, true);
 
     await expect(
-      service.aceptarPedido(orden.id, { sucursalId: "sucursal-1", items: [{ productoId: "x", cantidad: 1 }] } as any),
+      service.aceptarPedido(orden.id, { sucursalId: "sucursal-1", confirmarManual: true, items: [{ productoId: "x", cantidad: 1 }] } as any),
     ).rejects.toThrow(/ya se marcó/);
   });
 
   it("rechazarPedido marca la orden como IGNORADA con el motivo dado", async () => {
     const { service, orden } = await conPedidoEntrante();
-    const resultado = await service.rechazarPedido(orden.id, "Producto agotado");
+    const resultado = await service.rechazarPedido(orden.id, "Producto agotado", undefined, true);
     expect(resultado.estado).toBe(EstadoSincronizacionOrdenPlataforma.IGNORADA);
     expect(resultado.motivoError).toBe("Producto agotado");
   });
 
   it("rechazarPedido rechaza (400) si el pedido ya fue aceptado antes", async () => {
     const { service, orden } = await conPedidoEntrante();
-    await service.aceptarPedido(orden.id, { sucursalId: "sucursal-1", items: [{ productoId: "x", cantidad: 1 }] } as any);
+    await service.aceptarPedido(orden.id, { sucursalId: "sucursal-1", confirmarManual: true, items: [{ productoId: "x", cantidad: 1 }] } as any);
 
-    await expect(service.rechazarPedido(orden.id, "cambié de opinión")).rejects.toThrow(/ya se marcó/);
+    await expect(service.rechazarPedido(orden.id, "cambié de opinión", undefined, true)).rejects.toThrow(/ya se marcó/);
+  });
+});
+
+describe("PlataformasService — confirmación en la plataforma, concurrencia y estados", () => {
+  async function preparar(overridesAdaptador: Record<string, any> = {}, dtoConfig: any = DTO_BASE) {
+    const c = crearServicio();
+    Object.assign(c.adaptadorDidi, overridesAdaptador);
+    const guardado = await c.service.guardarConfig("didi", dtoConfig, USUARIO_ADMIN);
+    const webhookSlug = (c.prisma._configs.get(guardado.id as string) as any).webhookSlug;
+    const llegaWebhook = async (orden: any, eventoExternoId = `evt-${Math.random()}`) => {
+      c.adaptadorDidi.procesarWebhook.mockResolvedValueOnce({ eventoExternoId, orden });
+      await c.service.manejarWebhook("didi", webhookSlug, { headers: {}, query: {}, body: {} });
+    };
+    await llegaWebhook({
+      ordenExternaId: "orden-1", tipoEvento: "order.created", estadoExterno: "CREATED", clienteNombre: "Ana", total: 100,
+      items: [{ nombreExterno: "Latte", cantidad: 1 }], payloadSanitizado: { items: [{ nombreExterno: "Latte", cantidad: 1 }] },
+    });
+    const orden = () => Array.from(c.prisma._ordenSyncs.values())[0] as any;
+    return { ...c, guardado, webhookSlug, llegaWebhook, orden };
+  }
+  const DTO_ACEPTAR = { sucursalId: "sucursal-1", items: [{ productoId: "p-latte", cantidad: 1 }] } as any;
+
+  it("si la plataforma confirma por API, se acepta sin confirmación manual y queda CONFIRMADA", async () => {
+    const aceptarOrden = jest.fn(async () => ({ ok: true, detalle: "ok" }));
+    const { service, orden, pedidos } = await preparar({ aceptarOrden });
+    await service.aceptarPedido(orden().id, DTO_ACEPTAR, "empresa-1");
+    expect(aceptarOrden).toHaveBeenCalledWith(expect.anything(), "orden-1", "");
+    expect(pedidos.crear).toHaveBeenCalledTimes(1);
+    expect(orden().estado).toBe(EstadoSincronizacionOrdenPlataforma.SINCRONIZADA);
+    expect(orden().confirmacion).toBe("CONFIRMADA");
+    expect(orden().aceptadaEn).toBeInstanceOf(Date);
+  });
+
+  it("si la plataforma falla, NO se marca aceptado: 502, sigue pendiente, sin pedido y con el error visible", async () => {
+    const aceptarOrden = jest.fn(async () => ({ ok: false, detalle: "Plataforma rechazó las credenciales (401)." }));
+    const { service, orden, pedidos } = await preparar({ aceptarOrden });
+    await expect(service.aceptarPedido(orden().id, DTO_ACEPTAR, "empresa-1")).rejects.toMatchObject({ status: 502 });
+    expect(pedidos.crear).not.toHaveBeenCalled();
+    expect(orden().estado).toBe(EstadoSincronizacionOrdenPlataforma.RECIBIDA);
+    expect(orden().pedidoId).toBeNull();
+    expect(orden().reclamadoPor).toBeNull();
+    expect(orden().ultimoIntentoError).toMatch(/401/);
+  });
+
+  it("sin API de aceptación exige confirmación manual (409) y no deja el pedido reclamado", async () => {
+    const { service, orden, pedidos } = await preparar();
+    await expect(service.aceptarPedido(orden().id, DTO_ACEPTAR, "empresa-1")).rejects.toMatchObject({ status: 409 });
+    expect(pedidos.crear).not.toHaveBeenCalled();
+    expect(orden().pedidoId).toBeNull();
+    expect(orden().reclamadoPor).toBeNull();
+    await service.aceptarPedido(orden().id, { ...DTO_ACEPTAR, confirmarManual: true }, "empresa-1");
+    expect(orden().confirmacion).toBe("MANUAL");
+  });
+
+  it("dos terminales aceptando a la vez crean UN solo pedido", async () => {
+    let soltar!: () => void;
+    const bloqueo = new Promise<void>((r) => (soltar = r));
+    const aceptarOrden = jest.fn(async () => {
+      await bloqueo;
+      return { ok: true, detalle: "ok" };
+    });
+    const { service, orden, pedidos } = await preparar({ aceptarOrden });
+    const a = service.aceptarPedido(orden().id, { ...DTO_ACEPTAR, pedidoId: "pedido-A" }, "empresa-1");
+    const b = service.aceptarPedido(orden().id, { ...DTO_ACEPTAR, pedidoId: "pedido-B" }, "empresa-1").catch((e) => e);
+    await new Promise((r) => setTimeout(r, 0));
+    soltar();
+    await a;
+    const resultadoB = await b;
+    expect(resultadoB.status).toBe(409);
+    expect(pedidos.crear).toHaveBeenCalledTimes(1);
+    expect(aceptarOrden).toHaveBeenCalledTimes(1);
+    expect(orden().pedidoId).toBe("pedido-A");
+  });
+
+  it("un reclamo de una terminal caída caduca a los 2 minutos", async () => {
+    const { service, orden, prisma } = await preparar();
+    const fila = orden();
+    prisma._ordenSyncs.set(`${fila.plataformaConfigId}:${fila.ordenExternaId}`, { ...fila, reclamadoPor: "otro", reclamadoEn: new Date() });
+    await expect(service.aceptarPedido(fila.id, { ...DTO_ACEPTAR, confirmarManual: true }, "empresa-1")).rejects.toMatchObject({ status: 409 });
+    prisma._ordenSyncs.set(`${fila.plataformaConfigId}:${fila.ordenExternaId}`, { ...fila, reclamadoPor: "otro", reclamadoEn: new Date(Date.now() - 3 * 60_000) });
+    await service.aceptarPedido(fila.id, { ...DTO_ACEPTAR, confirmarManual: true }, "empresa-1");
+    expect(orden().estado).toBe(EstadoSincronizacionOrdenPlataforma.SINCRONIZADA);
+  });
+
+  it("una cancelación de la plataforma antes de aceptar la pasa a CANCELADA y ya no se puede aceptar", async () => {
+    const { service, orden, llegaWebhook } = await preparar();
+    await llegaWebhook({ ordenExternaId: "orden-1", tipoEvento: "orders.cancel", estadoExterno: "CANCELED", cancelada: true, payloadSanitizado: {} });
+    expect(orden().estado).toBe(EstadoSincronizacionOrdenPlataforma.CANCELADA);
+    await expect(service.aceptarPedido(orden().id, { ...DTO_ACEPTAR, confirmarManual: true }, "empresa-1")).rejects.toThrow(/canceló/);
+  });
+
+  it("una cancelación después de aceptar conserva SINCRONIZADA y solo marca el estado externo", async () => {
+    const { service, orden, llegaWebhook } = await preparar();
+    await service.aceptarPedido(orden().id, { ...DTO_ACEPTAR, confirmarManual: true }, "empresa-1");
+    await llegaWebhook({ ordenExternaId: "orden-1", tipoEvento: "orders.cancel", estadoExterno: "CANCELED", cancelada: true, payloadSanitizado: {} });
+    expect(orden().estado).toBe(EstadoSincronizacionOrdenPlataforma.SINCRONIZADA);
+    expect(orden().estadoExterno).toBe("CANCELED");
+  });
+
+  it("con la integración desactivada no entra el pedido y queda como error de sincronización", async () => {
+    const { service, prisma, llegaWebhook } = await preparar({}, { ...DTO_BASE, activo: false });
+    await llegaWebhook({ ordenExternaId: "orden-2", tipoEvento: "order.created", estadoExterno: "CREATED", payloadSanitizado: {} });
+    expect(Array.from(prisma._ordenSyncs.values()).some((o: any) => o.ordenExternaId === "orden-2")).toBe(false);
+    const errores = await service.listarEventosConError("empresa-1");
+    expect(errores.some((e) => /desactivada/.test(e.motivo))).toBe(true);
+  });
+
+  it("una firma inválida queda registrada como error (sin el payload)", async () => {
+    const { service, adaptadorDidi, webhookSlug } = await preparar();
+    adaptadorDidi.procesarWebhook.mockRejectedValueOnce(new Error("Firma de webhook de DiDi inválida — rechazado"));
+    await service.manejarWebhook("didi", webhookSlug, { headers: {}, query: {}, body: { secreto: "x" } });
+    const errores = await service.listarEventosConError("empresa-1");
+    expect(errores[0].motivo).toMatch(/Firma/);
+    expect(JSON.stringify(errores)).not.toContain("secreto");
+  });
+
+  it("los filtros de la bandeja separan pendientes, historial y plataforma", async () => {
+    const { service, orden } = await preparar();
+    await service.aceptarPedido(orden().id, { ...DTO_ACEPTAR, confirmarManual: true }, "empresa-1");
+    expect(await service.listarPedidosEntrantes("empresa-1")).toHaveLength(0);
+    expect(await service.listarPedidosEntrantes("empresa-1", { estado: "SINCRONIZADA" })).toHaveLength(1);
+    expect(await service.listarPedidosEntrantes("empresa-1", { estado: "TODOS", plataforma: "uber" })).toHaveLength(0);
+  });
+
+  it("no deja tocar pedidos de otra empresa", async () => {
+    const { service, orden } = await preparar();
+    await expect(service.aceptarPedido(orden().id, { ...DTO_ACEPTAR, confirmarManual: true }, "empresa-OTRA")).rejects.toMatchObject({ status: 404 });
+    await expect(service.probarConexion(orden().plataformaConfigId, "empresa-OTRA")).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("simulación: crea un pedido de prueba en Pruebas y aceptarlo nunca llama a la plataforma", async () => {
+    const aceptarOrden = jest.fn(async () => ({ ok: true, detalle: "ok" }));
+    const { service, pedidos } = await preparar({ aceptarOrden });
+    const simulado = await service.simularPedido("empresa-1", "didi", null);
+    expect(simulado.simulado).toBe(true);
+    expect(simulado.ordenExternaId).toMatch(/^SIM-/);
+    await service.aceptarPedido(simulado.id, DTO_ACEPTAR, "empresa-1");
+    expect(aceptarOrden).not.toHaveBeenCalled();
+    expect((await service.obtenerPedidoEntrante(simulado.id)).confirmacion).toBe("SIMULADA");
+    expect((pedidos.crear as jest.Mock).mock.calls[0][0].notasGenerales).toMatch(/SIMULACIÓN/);
+  });
+
+  it("simulación: se niega con la integración en Producción", async () => {
+    const { service } = await preparar({}, { ...DTO_BASE, ambiente: AmbientePlataforma.PRODUCCION });
+    await expect(service.simularPedido("empresa-1", "didi", null)).rejects.toMatchObject({ status: 403 });
   });
 });

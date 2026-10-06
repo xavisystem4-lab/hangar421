@@ -196,6 +196,19 @@ export enum EstadoSincronizacionOrdenPlataforma {
   SINCRONIZADA = "SINCRONIZADA",
   ERROR = "ERROR",
   IGNORADA = "IGNORADA",
+  /** La plataforma canceló la orden (cliente, repartidor o expiración) antes de aceptarla. */
+  CANCELADA = "CANCELADA",
+}
+
+/** Cómo quedó confirmada en la plataforma una aceptación/rechazo hecho desde el POS. */
+export enum ConfirmacionPlataforma {
+  /** La API de la plataforma respondió OK. */
+  CONFIRMADA = "CONFIRMADA",
+  /** La integración no tiene (o no tiene configurada) la acción en la API: el cajero confirmó
+   *  a mano que ya lo hizo en la tablet/portal de la plataforma. */
+  MANUAL = "MANUAL",
+  /** Pedido de prueba creado en modo simulación: nunca toca la plataforma. */
+  SIMULADA = "SIMULADA",
 }
 
 /** Entidades sincronizables reconocidas por el endpoint /sync. */

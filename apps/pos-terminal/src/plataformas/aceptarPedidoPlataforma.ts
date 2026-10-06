@@ -20,7 +20,9 @@ import { ventaDesdePedidoErp, type MapeoItem, type PedidoEntrante } from "./vent
  *    /sync/push, el ERP reconoce el id: no crea otro pedido, solo le aplica el cobro.
  * 4. Intenta imprimir el ticket (best-effort, como cualquier venta).
  *
- * Reintentar tras un fallo de red es seguro: el ERP es idempotente por orden aceptada.
+ * Reintentar tras un fallo de red es seguro: el ERP es idempotente por orden aceptada, y no la
+ * marca aceptada hasta que la plataforma lo confirma (o el cajero confirma que lo hizo en la
+ * tablet de la plataforma, `confirmarManual`).
  */
 export async function aceptarPedidoPlataforma(
   db: SQLiteDatabase,
@@ -28,6 +30,8 @@ export async function aceptarPedidoPlataforma(
   mapeo: MapeoItem[],
   usuarioId: string,
   nombresLocales: Record<string, string>,
+  /** El cajero ya lo aceptó en la tablet de la plataforma (integración sin confirmación por API). */
+  confirmarManual = false,
 ): Promise<VentaConfirmada> {
   const turno = await turnoAbierto(db);
   if (!turno) throw new Error("No hay un turno de caja abierto — abre caja antes de aceptar pedidos de plataforma.");
@@ -42,6 +46,7 @@ export async function aceptarPedidoPlataforma(
     turnoId: turno.id,
     meseroId: usuarioId,
     dispositivoId,
+    confirmarManual,
   });
 
   // Si el ERP ya tenía aceptada esta orden (reintento tras un corte de red), devuelve el pedido

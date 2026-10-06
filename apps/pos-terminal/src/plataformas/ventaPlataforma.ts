@@ -13,13 +13,27 @@ export interface PedidoEntrante {
   plataforma: string;
   nombreVisible: string;
   ordenExternaId: string;
+  /** RECIBIDA (por aceptar) | SINCRONIZADA (aceptado) | IGNORADA (rechazado) | CANCELADA (por la plataforma) */
   estado: string;
   clienteNombre: string | null;
   totalExterno: number | string | null;
-  items: { nombreExterno: string; cantidad: number; precioUnitario?: number; notas?: string }[];
+  items: { nombreExterno: string; cantidad: number; precioUnitario?: number; notas?: string; modificadores?: string[] }[];
   motivoError: string | null;
   pedidoId: string | null;
   createdAt: string;
+  // Opcionales: un ERP anterior no los manda.
+  folioCorto?: string | null;
+  estadoExterno?: string | null;
+  notas?: string | null;
+  entrega?: { tipo?: string | null; repartidor?: string | null; horaEstimada?: string | null; codigoEntrega?: string | null } | null;
+  montos?: { subtotal?: number | null; envio?: number | null; propina?: number | null; descuento?: number | null } | null;
+  ultimoIntentoError?: string | null;
+  /** CONFIRMADA | MANUAL | SIMULADA */
+  confirmacion?: string | null;
+  simulado?: boolean;
+  puedeConfirmarEnPlataforma?: boolean;
+  aceptadaEn?: string | null;
+  updatedAt?: string;
 }
 
 /** Lo que el cajero eligió para cada item de la plataforma: el producto real y la cantidad. */

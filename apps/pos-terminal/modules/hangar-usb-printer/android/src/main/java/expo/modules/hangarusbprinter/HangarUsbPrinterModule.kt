@@ -1,6 +1,7 @@
 package expo.modules.hangarusbprinter
 
 import android.content.Context
+import android.media.RingtoneManager
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
@@ -28,6 +29,18 @@ class HangarUsbPrinterModule : Module() {
 
     override fun definition() = ModuleDefinition {
         Name("HangarUsbPrinter")
+
+        // Sonido de aviso (pedido de delivery nuevo): el tono de notificación del sistema. Vive
+        // aquí para no sumar otra dependencia nativa solo por un sonido; no toca la impresora.
+        Function("sonarAviso") {
+            try {
+                val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                RingtoneManager.getRingtone(context, uri)?.play()
+                true
+            } catch (e: Exception) {
+                false
+            }
+        }
 
         AsyncFunction("isAvailable") {
             impresora().buscarImpresora(config()) != null
