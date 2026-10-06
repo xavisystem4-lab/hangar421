@@ -44,6 +44,24 @@ export interface ConfigImpresoraUsb {
   productId: number | null;
 }
 
+/**
+ * Expo envuelve los errores nativos como "Call to function 'HangarUsbPrinter.x' has been
+ * rejected. → Caused by: <motivo>". El cajero solo necesita el motivo.
+ */
+export function mensajeImpresora(e: unknown): string {
+  const texto = String((e as any)?.message ?? e ?? "");
+  return texto.replace(/^Call to function '[^']*' has been rejected\.?\s*(→\s*)?(Caused by:\s*)?/s, "").trim() || "Error de la impresora";
+}
+
+/** Ejecuta una llamada nativa y deja el error con el motivo limpio. */
+async function llamar<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    throw new Error(mensajeImpresora(e));
+  }
+}
+
 function exigir(): NativoImpresoraUsb {
   if (!nativo) throw new Error("Esta versión de la app no incluye el módulo de impresora USB.");
   return nativo;
@@ -57,21 +75,21 @@ export const impresoraUsb = {
     return nativo ? nativo.isAvailable().catch(() => false) : false;
   },
   async listarDispositivos(): Promise<DispositivoUsb[]> {
-    return JSON.parse(await exigir().listarDispositivos());
+    return JSON.parse(await llamar(() => exigir().listarDispositivos()));
   },
   async solicitarPermiso(vendorId: number, productId: number): Promise<boolean> {
-    return exigir().solicitarPermiso(vendorId, productId);
+    return llamar(() => exigir().solicitarPermiso(vendorId, productId));
   },
   async obtenerConfig(): Promise<ConfigImpresoraUsb> {
-    return JSON.parse(await exigir().obtenerConfig());
+    return JSON.parse(await llamar(() => exigir().obtenerConfig()));
   },
   async guardarConfig(config: ConfigImpresoraUsb): Promise<void> {
-    await exigir().guardarConfig(JSON.stringify(config));
+    await llamar(() => exigir().guardarConfig(JSON.stringify(config)));
   },
   async imprimirTicket(ticket: object, anchoMM: 58 | 80): Promise<void> {
-    await exigir().imprimirTicket(JSON.stringify(ticket), anchoMM);
+    await llamar(() => exigir().imprimirTicket(JSON.stringify(ticket), anchoMM));
   },
   async imprimirPrueba(anchoMM: 58 | 80): Promise<void> {
-    await exigir().imprimirPrueba(anchoMM);
+    await llamar(() => exigir().imprimirPrueba(anchoMM));
   },
 };

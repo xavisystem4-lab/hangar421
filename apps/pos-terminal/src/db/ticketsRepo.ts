@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from "expo-sqlite";
 import type { TicketPayload } from "../printing/PrinterAdapter";
 import { obtenerDatosFiscales } from "./configFiscalRepo";
 import { obtenerOCrearSucursalIdLocal } from "./dispositivoLocal";
-import { ivaIncluido } from "../printing/formatoTicket";
+import { ivaIncluido, propinaDeReferencia } from "../printing/formatoTicket";
 
 export async function marcarTicketPendiente(db: SQLiteDatabase, ventaId: string): Promise<void> {
   await db.runAsync("UPDATE ventas SET ticket_pendiente_impresion = 1 WHERE id = ?", ventaId);
@@ -53,6 +53,9 @@ export async function construirTicketPayload(db: SQLiteDatabase, ventaId: string
       ? Math.round(p.monto_usd * p.tipo_cambio * 100) / 100
       : p.monto_recibido ?? p.monto;
   const pagado = pagos.reduce((s, p) => s + entregado(p), 0);
+  // La propina va anotada en el pago (PosCobroScreen); se suma a lo que debía pagar el cliente.
+  const propina = Math.round(pagos.reduce((s, p) => s + propinaDeReferencia(p.referencia), 0) * 100) / 100;
+  const debiaPagar = venta.total + propina;
   const etiquetaPago = (p: any): string => {
     if (p.metodo === "OTRO" && p.referencia) return p.referencia;
     if (p.metodo === "EFECTIVO_USD" && p.monto_usd != null) return `Dólares US$${Number(p.monto_usd).toFixed(2)} × $${Number(p.tipo_cambio).toFixed(2)}`;
@@ -94,7 +97,8 @@ export async function construirTicketPayload(db: SQLiteDatabase, ventaId: string
     // dice de verdad quién pagó, así que se imprime esa en vez de "Otro".
     // En dólares sale "Dólares US$20.00 × $18.50" con su equivalente en pesos.
     pagos: pagos.map((p) => ({ metodo: etiquetaPago(p), monto: entregado(p) })),
-    cambio: pagado > venta.total ? Math.round((pagado - venta.total) * 100) / 100 : 0,
+    propina: propina > 0 ? propina : undefined,
+    cambio: pagado > debiaPagar ? Math.round((pagado - debiaPagar) * 100) / 100 : 0,
     anchoMM: datosFiscales.anchoImpresoraMM,
   };
 }
