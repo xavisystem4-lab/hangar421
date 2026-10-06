@@ -27,7 +27,15 @@ async function bootstrap() {
       },
     }),
   );
-  app.use(urlencoded({ extended: true, limit: "10mb" }));
+  app.use(
+    urlencoded({
+      extended: true,
+      limit: "10mb",
+      verify: (req: any, _res, buf) => {
+        if (typeof req.url === "string" && req.url.includes("/plataformas/webhooks/")) req.rawBody = buf;
+      },
+    }),
+  );
 
   // Solo en el backend embebido del POS Windows (modo standalone) — nunca en cloud.
   if (config.get<string>("AUTO_BOOTSTRAP") === "true") {

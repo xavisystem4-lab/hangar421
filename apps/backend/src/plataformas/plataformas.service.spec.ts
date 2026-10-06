@@ -710,3 +710,40 @@ describe("PlataformasService — confirmación en la plataforma, concurrencia y 
     await expect(service.simularPedido("empresa-1", "didi", null)).rejects.toMatchObject({ status: 403 });
   });
 });
+
+describe("PlataformasService — webhook de una sola URL para varias tiendas (DiDi)", () => {
+  it("enruta el evento a la sucursal cuyo id de tienda coincide y responde en el formato de la plataforma", async () => {
+    const c = crearServicio();
+    Object.assign(c.adaptadorDidi, {
+      tiendaDelWebhook: jest.fn(() => "BJ-01"),
+      respuestaWebhook: jest.fn((ok: boolean) => ({ errno: ok ? 0 : 1, errmsg: ok ? "ok" : "error" })),
+    });
+    const empresa = await c.service.guardarConfig("didi", DTO_BASE as any, USUARIO_ADMIN);
+    const sucursal = await c.service.guardarConfig("didi", { ...DTO_BASE, identificadorTienda: "BJ-01", sucursalId: "sucursal-bj" } as any, USUARIO_ADMIN);
+    const slug = (c.prisma._configs.get(empresa.id as string) as any).webhookSlug;
+    c.adaptadorDidi.procesarWebhook.mockResolvedValueOnce({
+      eventoExternoId: "orderNew:1:1",
+      orden: { ordenExternaId: "1152921547153933576", tipoEvento: "orderNew", estadoExterno: "orderNew", payloadSanitizado: {} },
+    });
+    const r = await c.service.manejarWebhook("didi", slug, { headers: {}, query: {}, body: {} });
+    expect(r).toEqual({ errno: 0, errmsg: "ok" });
+    const orden = Array.from(c.prisma._ordenSyncs.values())[0] as any;
+    expect(orden.plataformaConfigId).toBe(sucursal.id);
+    expect(orden.ordenExternaId).toBe("1152921547153933576");
+  });
+
+  it("si la tienda no está configurada en ninguna sucursal, no crea el pedido y lo deja como error", async () => {
+    const c = crearServicio();
+    Object.assign(c.adaptadorDidi, { tiendaDelWebhook: jest.fn(() => "OTRA-TIENDA") });
+    const empresa = await c.service.guardarConfig("didi", DTO_BASE as any, USUARIO_ADMIN);
+    const slug = (c.prisma._configs.get(empresa.id as string) as any).webhookSlug;
+    c.adaptadorDidi.procesarWebhook.mockResolvedValueOnce({
+      eventoExternoId: "orderNew:2:1",
+      orden: { ordenExternaId: "2", tipoEvento: "orderNew", estadoExterno: "orderNew", payloadSanitizado: {} },
+    });
+    await c.service.manejarWebhook("didi", slug, { headers: {}, query: {}, body: {} });
+    expect(c.prisma._ordenSyncs.size).toBe(0);
+    const errores = await c.service.listarEventosConError("empresa-1");
+    expect(errores[0].motivo).toMatch(/OTRA-TIENDA/);
+  });
+});

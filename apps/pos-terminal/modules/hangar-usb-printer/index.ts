@@ -17,6 +17,7 @@ interface NativoImpresoraUsb {
   imprimirTicket(json: string, anchoMM: number): Promise<boolean>;
   imprimirPrueba(anchoMM: number): Promise<boolean>;
   sonarAviso?(): boolean;
+  abrirInstalador?(contentUri: string): "ok" | "permiso";
 }
 
 const nativo = requireOptionalNativeModule<NativoImpresoraUsb>("HangarUsbPrinter");
@@ -103,4 +104,11 @@ export function sonarAviso(): boolean {
   } catch {
     return false;
   }
+}
+
+/** Abre el instalador de Android con un .apk descargado (content://). "permiso" = se abrió el
+ *  ajuste para permitir instalar apps desde el POS; null = APK viejo sin la función nativa. */
+export function abrirInstalador(contentUri: string): "ok" | "permiso" | null {
+  if (!nativo?.abrirInstalador) return null;
+  return nativo.abrirInstalador(contentUri);
 }

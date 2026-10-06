@@ -1,6 +1,10 @@
 package expo.modules.hangarusbprinter
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import android.media.RingtoneManager
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.functions.Coroutine
@@ -39,6 +43,24 @@ class HangarUsbPrinterModule : Module() {
                 true
             } catch (e: Exception) {
                 false
+            }
+        }
+
+        // Instalador de actualizaciones: abre el instalador de Android con el .apk ya descargado
+        // (content:// de expo-file-system). Si Android 8+ todavía no permite que esta app instale
+        // apps, abre el ajuste para permitirlo y devuelve "permiso"; al volver se reintenta.
+        Function("abrirInstalador") { contentUri: String ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
+                val ajustes = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(ajustes)
+                "permiso"
+            } else {
+                val instalar = Intent(Intent.ACTION_VIEW)
+                    .setDataAndType(Uri.parse(contentUri), "application/vnd.android.package-archive")
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(instalar)
+                "ok"
             }
         }
 
