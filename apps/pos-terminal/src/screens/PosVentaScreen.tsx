@@ -9,6 +9,7 @@ import { abrirBaseDeDatos } from "../db/database";
 import { coincideBusqueda } from "../db/busqueda";
 import { listarCategorias, listarProductos, modificadoresDeProducto, type CategoriaLocal, type ModificadorLocal, type ProductoLocal } from "../db/catalogoRepo";
 import { ModalModificadores } from "../components/ModalModificadores";
+import { ModalNombreCliente } from "../components/ModalNombreCliente";
 
 /** Catálogo + carrito — lee/escribe SQLite local, nunca la red. El catálogo de HANGAR 421 se
  *  siembra en la base local en el primer arranque (ver db/catalogoHangar.ts), así que la
@@ -16,7 +17,8 @@ import { ModalModificadores } from "../components/ModalModificadores";
  *  se puede editar desde Admin → Catálogo, y si se enlaza el ERP el catálogo real lo reemplaza
  *  (ver catalogoSyncRepo.upsertCatalogo). */
 export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
-  const { items, agregarItem, quitarItem, cambiarCantidad, totales } = useCarritoStore();
+  const { items, agregarItem, quitarItem, cambiarCantidad, totales, nombreCliente, nombrePreguntado, fijarNombreCliente, marcarNombrePreguntado } = useCarritoStore();
+  const [pidiendoNombre, setPidiendoNombre] = useState(false);
   const colores = usarColores();
   const estilos = crearEstilos(colores);
   const [categorias, setCategorias] = useState<CategoriaLocal[]>([]);
@@ -83,6 +85,13 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
   useEffect(() => {
     cargar();
   }, []);
+
+  // Pedido nuevo = primer producto en un carrito vacío: ahí se pregunta (una sola vez por pedido)
+  // si se le pone nombre. Al cobrar o vaciar el carrito se reinicia y el siguiente pedido vuelve
+  // a preguntar.
+  useEffect(() => {
+    if (items.length > 0 && !nombrePreguntado) setPidiendoNombre(true);
+  }, [items.length, nombrePreguntado]);
 
   const t = totales();
   const buscando = busqueda.trim().length > 0;
@@ -215,6 +224,13 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
       </ScrollView>
 
       <View style={estilos.carrito}>
+        {/* Nombre del pedido: sale en el ticket y la comanda. Tocarlo lo cambia o lo quita. */}
+        <TouchableOpacity onPress={() => setPidiendoNombre(true)} style={estilos.filaNombre} accessibilityLabel="Nombre del pedido">
+          <Text style={{ color: nombreCliente ? colores.texto : colores.textoSecundario, fontWeight: nombreCliente ? "700" : "400" }} numberOfLines={1}>
+            {nombreCliente ? `👤 ${nombreCliente}` : "👤 Poner nombre al pedido"}
+          </Text>
+          <Text style={{ color: colores.textoSecundario }}>{nombreCliente ? "✎" : "+"}</Text>
+        </TouchableOpacity>
         <ScrollView style={{ maxHeight: 160 }}>
           {items.map((item) => (
             <View key={item.id} style={estilos.filaItem}>
@@ -273,6 +289,14 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
         </View>
       </View>
 
+      {pidiendoNombre && (
+        <ModalNombreCliente
+          inicial={nombreCliente}
+          onGuardar={(nombre) => { fijarNombreCliente(nombre); setPidiendoNombre(false); }}
+          onOmitir={() => { fijarNombreCliente(null); marcarNombrePreguntado(); setPidiendoNombre(false); }}
+        />
+      )}
+
       {personalizando && (
         <ModalModificadores
           producto={personalizando.producto}
@@ -324,6 +348,7 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     modificadoresItem: { fontSize: 11, color: colores.textoSecundario, marginTop: 1 },
     ayuda: { color: colores.textoSecundario, fontSize: 13, padding: 8 },
     carrito: { backgroundColor: colores.superficie, borderTopWidth: 1, borderTopColor: colores.borde, padding: 12 },
+    filaNombre: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 40, paddingBottom: 6, marginBottom: 4, borderBottomWidth: 1, borderBottomColor: colores.borde },
     filaItem: { flexDirection: "row", alignItems: "center", paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colores.borde },
     controlesCantidad: { flexDirection: "row", alignItems: "center", gap: 4, marginHorizontal: 8 },
     botonCantidad: { width: 26, height: 26, borderRadius: 6, backgroundColor: colores.gray50, alignItems: "center", justifyContent: "center" },

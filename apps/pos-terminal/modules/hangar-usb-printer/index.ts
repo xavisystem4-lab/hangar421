@@ -15,6 +15,7 @@ interface NativoImpresoraUsb {
   obtenerConfig(): Promise<string>;
   guardarConfig(json: string): Promise<void>;
   imprimirTicket(json: string, anchoMM: number): Promise<boolean>;
+  imprimirComanda?(json: string, anchoMM: number): Promise<boolean>;
   imprimirPrueba(anchoMM: number): Promise<boolean>;
   sonarAviso?(): boolean;
   abrirInstalador?(contentUri: string): "ok" | "permiso";
@@ -90,6 +91,12 @@ export const impresoraUsb = {
   },
   async imprimirTicket(ticket: object, anchoMM: 58 | 80): Promise<void> {
     await llamar(() => exigir().imprimirTicket(JSON.stringify(ticket), anchoMM));
+  },
+  /** Comanda de preparación. Un APK viejo sin la función nativa avisa en vez de fallar mudo. */
+  async imprimirComanda(comanda: object, anchoMM: 58 | 80): Promise<void> {
+    const n = exigir();
+    if (!n.imprimirComanda) throw new Error("Esta versión de la app no sabe imprimir comandas: actualiza el POS.");
+    await llamar(() => n.imprimirComanda!(JSON.stringify(comanda), anchoMM));
   },
   async imprimirPrueba(anchoMM: 58 | 80): Promise<void> {
     await llamar(() => exigir().imprimirPrueba(anchoMM));

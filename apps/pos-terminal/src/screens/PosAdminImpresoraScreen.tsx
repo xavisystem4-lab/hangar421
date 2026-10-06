@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
+import { guardarConfig } from "../db/configLocalRepo";
+import { CLAVE_COMANDA_ACTIVA, comandaActiva } from "../printing/imprimirComanda";
 import { guardarDatosFiscales, obtenerDatosFiscales } from "../db/configFiscalRepo";
 import { impresoraUsb, type ConfigImpresoraUsb, type DispositivoUsb } from "../../modules/hangar-usb-printer";
 
@@ -30,6 +32,7 @@ export function PosAdminImpresoraScreen({ onCerrar }: { onCerrar: () => void }) 
   const [dispositivos, setDispositivos] = useState<DispositivoUsb[]>([]);
   const [config, setConfig] = useState<ConfigImpresoraUsb | null>(null);
   const [anchoMM, setAnchoMM] = useState<58 | 80>(80);
+  const [comanda, setComanda] = useState(true);
   const [trabajando, setTrabajando] = useState<string | null>(null);
 
   async function cargar() {
@@ -42,6 +45,7 @@ export function PosAdminImpresoraScreen({ onCerrar }: { onCerrar: () => void }) 
     setDispositivos(lista);
     setConfig(cfg);
     setAnchoMM(fiscales.anchoImpresoraMM);
+    setComanda(await abrirBaseDeDatos().then(comandaActiva));
   }
 
   useEffect(() => {
@@ -77,6 +81,12 @@ export function PosAdminImpresoraScreen({ onCerrar }: { onCerrar: () => void }) 
     setConfig(nueva);
     await impresoraUsb.guardarConfig(nueva).catch((e) => Alert.alert("Impresora", e?.message ?? String(e)));
     cargar().catch(() => undefined);
+  }
+
+  async function cambiarComanda(activa: boolean) {
+    setComanda(activa);
+    const db = await abrirBaseDeDatos();
+    await guardarConfig(db, CLAVE_COMANDA_ACTIVA, activa ? "1" : "0");
   }
 
   async function cambiarAncho(ancho: 58 | 80) {
@@ -192,6 +202,7 @@ export function PosAdminImpresoraScreen({ onCerrar }: { onCerrar: () => void }) 
             <Interruptor estilos={estilos} etiqueta="Quitar acentos (si ningún código funciona)" valor={config.quitarAcentos} onCambio={(v) => cambiarConfig({ quitarAcentos: v })} />
             <Interruptor estilos={estilos} etiqueta="Imprimir logotipo" valor={config.imprimirLogo} onCambio={(v) => cambiarConfig({ imprimirLogo: v })} />
             <Interruptor estilos={estilos} etiqueta="Cortar papel al terminar" valor={config.cortarPapel} onCambio={(v) => cambiarConfig({ cortarPapel: v })} />
+            <Interruptor estilos={estilos} etiqueta="Imprimir comanda de preparación al cobrar" valor={comanda} onCambio={cambiarComanda} />
             <Interruptor estilos={estilos} etiqueta="Abrir cajón de dinero con cada ticket" valor={config.abrirCajon} onCambio={(v) => cambiarConfig({ abrirCajon: v })} />
           </View>
         </>

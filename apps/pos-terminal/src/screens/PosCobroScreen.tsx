@@ -10,6 +10,7 @@ import { sincronizarPronto } from "../sync/syncEngine";
 import { turnoAbierto } from "../db/turnosRepo";
 import { listarMetodosPago, etiquetaMetodoPago } from "../db/metodosPagoRepo";
 import { imprimirTicket } from "../printing/imprimirTicket";
+import { comandaActiva, imprimirComanda } from "../printing/imprimirComanda";
 import { ModalAutorizacion } from "../components/ModalAutorizacion";
 import type { Autorizador } from "../auth/autorizacion";
 import { extrasCobrables, motivoCortesia, totalesConCortesia } from "../caja/cortesia";
@@ -39,7 +40,7 @@ const TECLAS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "borrar"]
  *  sola. La impresión (Fase 2e) queda deliberadamente FUERA de esta pantalla — nunca bloquea ni
  *  puede hacer fallar una venta ya confirmada. */
 export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; onCobrado: (ventaId: string, folio: number, total: number) => void }) {
-  const { items, totales, limpiar } = useCarritoStore();
+  const { items, totales, limpiar, nombreCliente } = useCarritoStore();
   const { usuario } = useAuthLocalStore();
   const colores = usarColores();
   const estilos = crearEstilos(colores);
@@ -165,7 +166,7 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
       if (!turno) throw new Error("No hay un turno de caja abierto — abre caja antes de cobrar.");
       const venta = await confirmarVenta(
         db,
-        { items, pagos: pagosFinales, totales: t, turnoId: turno.id, usuarioId: usuario.id },
+        { items, pagos: pagosFinales, totales: t, turnoId: turno.id, usuarioId: usuario.id, nombreCliente },
         cortesia ? { cortesia: { motivo: motivoCortesia(cortesia.nombre, items, extrasCobrados), autorizadoPorId: cortesia.id } } : {},
       );
       limpiar();
@@ -179,6 +180,12 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
       // porque muchos clientes no quieren ticket: imprimirlo siempre gasta papel. Si luego
       // cambian de opinión, se reimprime desde la pestaña Ventas.
       const terminar = () => onCobrado(venta.id, venta.folioLocal, venta.total);
+      // La comanda de preparación sale sola al cobrar (cocina/barra no esperan al ticket del
+      // cliente) y va primero. Si falla no estorba: se avisa y se puede reimprimir.
+      comandaActiva(db)
+        .then((activa) => (activa ? imprimirComanda(db, venta.id) : null))
+        .then((r) => { if (r && !r.impreso) Alert.alert("No se imprimió la comanda", r.motivo ?? "Revisa la impresora en Admin → Impresora."); })
+        .catch(() => undefined);
       Alert.alert(
         `Venta #${venta.folioLocal} cobrada`,
         "¿Quieres imprimir el ticket?",

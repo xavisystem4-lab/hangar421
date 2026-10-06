@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { normalizarNombreCliente } from "../caja/nombreCliente";
 import { calcularTotalesPedido, uuid7, type TotalesPedido } from "@hangar421/shared";
 
 export interface SeleccionModificador {
@@ -20,6 +21,14 @@ export interface ItemCarrito {
 
 interface CarritoState {
   items: ItemCarrito[];
+  /** Nombre del pedido ("Ana"): sale en el ticket y en la comanda para saber a quién se le
+   *  entrega. null = sin nombre. */
+  nombreCliente: string | null;
+  /** Ya se le preguntó al cajero por el nombre en ESTE pedido: no se vuelve a preguntar aunque
+   *  haya dicho que no (se reinicia al limpiar el carrito). */
+  nombrePreguntado: boolean;
+  fijarNombreCliente: (nombre: string | null) => void;
+  marcarNombrePreguntado: () => void;
   agregarItem: (item: Omit<ItemCarrito, "id">) => void;
   quitarItem: (itemId: string) => void;
   cambiarCantidad: (itemId: string, delta: number) => void;
@@ -31,14 +40,18 @@ interface CarritoState {
  *  contador, sin concepto de mesa (Decisión #4 del plan: mesas es opcional y llega después). */
 export const useCarritoStore = create<CarritoState>((set, get) => ({
   items: [],
+  nombreCliente: null,
+  nombrePreguntado: false,
 
+  fijarNombreCliente: (nombre) => set({ nombreCliente: normalizarNombreCliente(nombre), nombrePreguntado: true }),
+  marcarNombrePreguntado: () => set({ nombrePreguntado: true }),
   agregarItem: (item) => set((s) => ({ items: [...s.items, { ...item, modificadores: item.modificadores ?? [], id: uuid7() }] })),
   quitarItem: (itemId) => set((s) => ({ items: s.items.filter((i) => i.id !== itemId) })),
   cambiarCantidad: (itemId, delta) =>
     set((s) => ({
       items: s.items.map((i) => (i.id === itemId ? { ...i, cantidad: Math.max(1, i.cantidad + delta) } : i)).filter((i) => i.cantidad > 0),
     })),
-  limpiar: () => set({ items: [] }),
+  limpiar: () => set({ items: [], nombreCliente: null, nombrePreguntado: false }),
 
   totales: () => {
     const { items } = get();

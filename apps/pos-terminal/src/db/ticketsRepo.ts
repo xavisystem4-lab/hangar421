@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from "expo-sqlite";
-import type { TicketPayload } from "../printing/PrinterAdapter";
+import type { ComandaPayload, TicketPayload } from "../printing/PrinterAdapter";
 import { obtenerDatosFiscales } from "./configFiscalRepo";
 import { obtenerOCrearSucursalIdLocal } from "./dispositivoLocal";
 import { ivaIncluido, propinaDeReferencia } from "../printing/formatoTicket";
@@ -99,6 +99,41 @@ export async function construirTicketPayload(db: SQLiteDatabase, ventaId: string
     pagos: pagos.map((p) => ({ metodo: etiquetaPago(p), monto: entregado(p) })),
     propina: propina > 0 ? propina : undefined,
     cambio: pagado > debiaPagar ? Math.round((pagado - debiaPagar) * 100) / 100 : 0,
+    anchoMM: datosFiscales.anchoImpresoraMM,
+    nombreCliente: venta.nombre_cliente || undefined,
+  };
+}
+
+/** Comanda de preparación de una venta: lo mismo que el ticket pero sin precios ni pagos, con el
+ *  nombre del cliente en grande. Se lee de los snapshots, así que reimprimirla meses después
+ *  muestra lo que se pidió entonces. */
+export async function construirComandaPayload(db: SQLiteDatabase, ventaId: string): Promise<ComandaPayload> {
+  const venta = await db.getFirstAsync<any>("SELECT * FROM ventas WHERE id = ?", ventaId);
+  if (!venta) throw new Error("Venta no encontrada");
+  const items = await db.getAllAsync<any>("SELECT id, nombre_snapshot, cantidad, notas FROM venta_items WHERE venta_id = ?", ventaId);
+  const modificadores = items.length
+    ? await db.getAllAsync<any>(
+        `SELECT venta_item_id, nombre_snapshot FROM venta_item_modificadores
+         WHERE venta_item_id IN (${items.map(() => "?").join(",")})`,
+        ...items.map((i) => i.id),
+      )
+    : [];
+  const datosFiscales = await obtenerDatosFiscales(db);
+  return {
+    folio: venta.folio_local,
+    fecha: venta.created_at,
+    items: items.map((i) => {
+      const suyos = modificadores.filter((m) => m.venta_item_id === i.id).map((m) => m.nombre_snapshot as string);
+      return {
+        cantidad: i.cantidad,
+        nombre: i.nombre_snapshot,
+        modificadores: suyos.length > 0 ? suyos : undefined,
+        notas: i.notas || undefined,
+      };
+    }),
+    nombreCliente: venta.nombre_cliente || undefined,
+    notas: venta.notas || undefined,
+    nombreSucursal: datosFiscales.nombreSucursalLocal || undefined,
     anchoMM: datosFiscales.anchoImpresoraMM,
   };
 }

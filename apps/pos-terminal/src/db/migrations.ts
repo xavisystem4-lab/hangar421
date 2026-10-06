@@ -549,6 +549,15 @@ export const MIGRACIONES: Migracion[] = [
       `);
     },
   },
+  {
+    version: 13,
+    nombre: "nombre_cliente_en_ventas",
+    up: async (db) => {
+      // Nombre que se le pone al pedido para identificar a quién se le entrega: sale en el
+      // ticket y en la comanda de preparación (también al reimprimir). Opcional.
+      await db.execAsync(`ALTER TABLE ventas ADD COLUMN nombre_cliente TEXT;`);
+    },
+  },
 ];
 
 /** Corre, en orden, toda migración con `version` mayor a la ya aplicada — cada una dentro de su
