@@ -159,9 +159,25 @@ function esErrorYaExiste(e: unknown): boolean {
  *  que dividir por ";" es seguro aquí. Cada bloque suele llevar un comentario `-- CreateX` en
  *  su primera línea (no solo statements que empiezan con "--" sin más) — se limpian todas las
  *  líneas de comentario del bloque, no solo la primera, antes de descartar bloques vacíos. */
-function dividirEnStatements(sql: string): string[] {
-  return sql
-    .split(/;\s*\n/g)
+export function dividirEnStatements(sql: string): string[] {
+  // Los bloques `DO $$ … $$` (migraciones de datos, p. ej. 20261006120000_menu_benito_juarez_y_didi)
+  // llevan ";" de fin de línea por dentro: no se parten, viajan como un solo statement.
+  const bloques: string[] = [];
+  let actual = "";
+  let dentroDolar = false;
+  for (const linea of sql.split("\n")) {
+    actual += linea + "\n";
+    if (!linea.trim().startsWith("--")) {
+      const dolares = (linea.match(/\$\$/g) ?? []).length;
+      if (dolares % 2 === 1) dentroDolar = !dentroDolar;
+    }
+    if (!dentroDolar && /;\s*$/.test(linea)) {
+      bloques.push(actual.replace(/;\s*$/, ""));
+      actual = "";
+    }
+  }
+  bloques.push(actual);
+  return bloques
     .map((bloque) =>
       bloque
         .split("\n")

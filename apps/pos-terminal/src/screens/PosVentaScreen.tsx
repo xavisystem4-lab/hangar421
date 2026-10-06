@@ -111,10 +111,19 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
    *  "Pistache" galleta 80 / rol 155). Mientras se ve una sola categoría el nombre basta; en
    *  "Todas" y en los resultados de búsqueda hace falta el contexto o no se distinguen. */
   function etiquetaContexto(p: ProductoLocal): string | null {
-    if (p.subcategoria) return p.subcategoria;
-    if (buscando || !categoriaActiva) return nombrePorCategoria.get(p.categoriaId) ?? null;
-    return null;
+    const categoria = buscando || !categoriaActiva ? nombrePorCategoria.get(p.categoriaId) ?? null : null;
+    // DIDI repite nombres del menú con su subcategoría ("Latte" · Bebidas calientes a $49): fuera
+    // de su pestaña hay que decir también de qué grupo es o se confunde con el del mostrador.
+    if (p.subcategoria) return categoria && categoria !== p.subcategoria ? `${categoria} · ${p.subcategoria}` : p.subcategoria;
+    return categoria;
   }
+
+  /** Solo los grupos con algo en venta: en una sucursal donde todo un grupo está en standby
+   *  (p. ej. DIDI, que solo vende Benito Juárez) el botón no aparece vacío. */
+  const categoriasConProductos = useMemo(() => {
+    const conProductos = new Set(productos.map((p) => p.categoriaId));
+    return categorias.filter((c) => conProductos.has(c.id));
+  }, [categorias, productos]);
 
   const sinCatalogo = categorias.length === 0 && productos.length === 0;
 
@@ -126,7 +135,7 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
             <TouchableOpacity onPress={() => setCategoriaActiva(null)} style={[estilos.chip, !categoriaActiva && estilos.chipActivo]}>
               <Text style={{ color: !categoriaActiva ? "#fff" : colores.texto, fontWeight: "700" }}>Todas</Text>
             </TouchableOpacity>
-            {categorias.map((c) => (
+            {categoriasConProductos.map((c) => (
               <TouchableOpacity key={c.id} onPress={() => setCategoriaActiva(c.id)} style={[estilos.chip, categoriaActiva === c.id && estilos.chipActivo]}>
                 <Text style={{ color: categoriaActiva === c.id ? "#fff" : colores.texto, fontWeight: "700" }}>{c.nombre}</Text>
               </TouchableOpacity>
