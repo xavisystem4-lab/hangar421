@@ -16,6 +16,7 @@ interface NativoImpresoraUsb {
   guardarConfig(json: string): Promise<void>;
   imprimirTicket(json: string, anchoMM: number): Promise<boolean>;
   imprimirPrueba(anchoMM: number): Promise<boolean>;
+  sonarAviso?(): boolean;
 }
 
 const nativo = requireOptionalNativeModule<NativoImpresoraUsb>("HangarUsbPrinter");
@@ -93,3 +94,13 @@ export const impresoraUsb = {
     await llamar(() => exigir().imprimirPrueba(anchoMM));
   },
 };
+
+/** Tono de notificación del sistema (aviso de pedido de delivery). No hace nada en un APK viejo
+ *  que no trae la función nativa, ni fuera de Android. */
+export function sonarAviso(): boolean {
+  try {
+    return nativo?.sonarAviso?.() ?? false;
+  } catch {
+    return false;
+  }
+}

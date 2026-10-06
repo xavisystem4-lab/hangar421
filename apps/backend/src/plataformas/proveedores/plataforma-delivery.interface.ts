@@ -27,6 +27,35 @@ export interface ItemOrdenExterna {
   cantidad: number;
   precioUnitario?: number;
   notas?: string;
+  /** Opciones elegidas por el cliente ("Leche de avena", "Extra shot") tal como las nombra la
+   *  plataforma — solo para mostrarlas; el cajero las traslada a la nota del item al aceptar. */
+  modificadores?: string[];
+}
+
+/** Datos de entrega que la plataforma comparte con el comercio. Solo lo que la API autoriza;
+ *  nunca se guardan teléfonos completos ni direcciones exactas del cliente (ver cada adaptador). */
+export interface EntregaOrdenExterna {
+  /** "DELIVERY" (reparte la plataforma), "PICKUP" (el cliente recoge), u otro valor de la API. */
+  tipo?: string | null;
+  repartidor?: string | null;
+  /** ISO 8601 — hora estimada de recolección/entrega que reporta la plataforma. */
+  horaEstimada?: string | null;
+  /** Código de entrega para el repartidor (Rappi handoff, Uber display id…). */
+  codigoEntrega?: string | null;
+}
+
+export interface MontosOrdenExterna {
+  subtotal?: number | null;
+  envio?: number | null;
+  propina?: number | null;
+  descuento?: number | null;
+}
+
+/** Resultado de aceptar/rechazar una orden en la API de la plataforma. */
+export interface ResultadoAccionPlataforma {
+  /** true = la plataforma respondió OK. false = falló (el detalle dice qué hacer). */
+  ok: boolean;
+  detalle: string;
 }
 
 export interface OrdenExternaEntrante {
@@ -43,6 +72,14 @@ export interface OrdenExternaEntrante {
    *  aceptar el pedido (ver PlataformasService.aceptarPedido), porque no hay forma automática de
    *  saber que "Latte grande" en DiDi es el mismo producto que "Café Latte (G)" en el catálogo. */
   items?: ItemOrdenExterna[];
+  /** Folio corto que el comercio ve en la tablet de la plataforma (display id). */
+  folioCorto?: string | null;
+  notas?: string | null;
+  entrega?: EntregaOrdenExterna | null;
+  montos?: MontosOrdenExterna | null;
+  /** true = este evento CANCELA la orden (cliente, repartidor, expiración del tiempo para
+   *  aceptar). El servicio la pasa a CANCELADA si aún no se aceptó. */
+  cancelada?: boolean;
   /** Payload no sensible, para guardar en PlataformaWebhookEvent/PlataformaOrdenSync — el
    *  adaptador es responsable de no incluir aquí datos que no deban persistirse. */
   payloadSanitizado: Record<string, unknown>;
@@ -85,6 +122,23 @@ export interface PlataformaDeliveryAdapter {
    *  provocar una tormenta de reintentos del proveedor). */
   procesarWebhook(
     credenciales: CredencialesPlataforma,
-    peticion: { headers: Record<string, string>; query: Record<string, string>; body: unknown },
+    peticion: PeticionWebhook,
   ): Promise<WebhookProcesadoPlataforma>;
+
+  /** Acepta la orden en la plataforma. Opcional: si el adaptador no lo implementa (o devuelve
+   *  `null` porque falta configuración del backend), la aceptación solo puede registrarse como
+   *  MANUAL — el cajero confirma que ya la aceptó en la tablet/portal de la plataforma. */
+  aceptarOrden?(credenciales: CredencialesPlataforma, ordenExternaId: string): Promise<ResultadoAccionPlataforma | null>;
+
+  /** Rechaza la orden en la plataforma. Mismo contrato que `aceptarOrden`. */
+  rechazarOrden?(credenciales: CredencialesPlataforma, ordenExternaId: string, motivo: string): Promise<ResultadoAccionPlataforma | null>;
+}
+
+export interface PeticionWebhook {
+  headers: Record<string, string>;
+  query: Record<string, string>;
+  body: unknown;
+  /** Body EXACTO como llegó (antes de parsear el JSON). Las firmas HMAC de Uber y Rappi se
+   *  calculan sobre estos bytes: re-serializar el JSON cambia espacios/orden y la firma no cuadra. */
+  rawBody?: string;
 }

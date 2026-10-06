@@ -30,6 +30,7 @@ import { PosAdminInventarioScreen } from "./PosAdminInventarioScreen";
 import { PosAdminSincronizacionScreen } from "./PosAdminSincronizacionScreen";
 import { PosAdminImpresoraScreen } from "./PosAdminImpresoraScreen";
 import { PosAdminPlataformasScreen } from "./PosAdminPlataformasScreen";
+import { useAvisosDelivery } from "../plataformas/useAvisosDelivery";
 import { ReciboEnPantallaScreen } from "./ReciboEnPantallaScreen";
 
 type Pantalla = "venta" | "cobro" | "caja" | "consultar" | "admin";
@@ -75,6 +76,7 @@ export function PosNavigator() {
     ...(seccionesAdmin.length > 0 ? [{ id: "admin" as Pantalla, etiqueta: "Admin" }] : []),
   ];
   const seccionInicial = seccionesAdmin[0]?.id ?? "catalogo";
+  const puedeDelivery = puede(PERMISOS_TERMINAL.ADMIN_PLATAFORMAS);
 
   const [pantalla, setPantalla] = useState<Pantalla>("venta");
   const [pantallaAdmin, setPantallaAdmin] = useState<PantallaAdmin>(seccionInicial);
@@ -91,6 +93,15 @@ export function PosNavigator() {
   // Qué acción sensible está esperando el PIN de un gerente: cambiar de sucursal o renombrarla.
   // Ambas afectan a dónde acaban las ventas o a cómo se identifica la sucursal en el ERP.
   const [autorizando, setAutorizando] = useState<"cambiar" | "renombrar" | null>(null);
+
+  // Pedidos de DiDi / Uber Eats / Rappi: se revisan en segundo plano en cualquier pantalla y
+  // avisan con banner, vibración y sonido (ver plataformas/useAvisosDelivery.ts).
+  const delivery = useAvisosDelivery(puedeDelivery && !mostrarConexion);
+  function abrirDelivery() {
+    delivery.descartarAviso();
+    setPantallaAdmin("plataformas");
+    setPantalla("admin");
+  }
 
   // Indicador de sucursal activa: se recarga al volver de la pantalla de conexión, que es el
   // único sitio donde puede cambiar. Se lee de la base local, no del ERP, para que siga
@@ -299,6 +310,11 @@ export function PosNavigator() {
           </TouchableOpacity>
         </View>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          {puedeDelivery && delivery.pendientes > 0 && (
+            <TouchableOpacity onPress={abrirDelivery} style={estilos.chipDelivery} accessibilityLabel="Pedidos de delivery por aceptar">
+              <Text style={estilos.chipDeliveryTexto}>🛵 {delivery.pendientes}</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity onPress={tocarIndicadorSync}>
             <Text style={estilos.indicadorSync}>{ETIQUETA_SYNC[sync.estado]}</Text>
           </TouchableOpacity>
@@ -340,6 +356,16 @@ export function PosNavigator() {
               <Text style={{ color: colores.red, fontWeight: "700" }}>Entendido</Text>
             </TouchableOpacity>
           </View>
+        </View>
+      )}
+
+      {puedeDelivery && delivery.aviso && (
+        <View style={estilos.avisoDelivery} accessibilityRole="alert">
+          <TouchableOpacity onPress={abrirDelivery} style={{ flex: 1 }}>
+            <Text style={estilos.avisoDeliveryTexto}>🛵 {delivery.aviso}</Text>
+            <Text style={estilos.avisoDeliverySub}>{delivery.pendientes} por aceptar · tocar para revisar</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={delivery.descartarAviso}><Text style={estilos.avisoDeliveryTexto}>✕</Text></TouchableOpacity>
         </View>
       )}
 
@@ -439,6 +465,11 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     botonHeader: { width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
     botonHeaderTexto: { fontSize: 15 },
     avisoFolio: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: colores.green, padding: 10, paddingHorizontal: 16 },
+    avisoDelivery: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#FF6A13", padding: 12, paddingHorizontal: 16 },
+    avisoDeliveryTexto: { color: "#fff", fontWeight: "800", fontSize: 15 },
+    avisoDeliverySub: { color: "#fff", fontSize: 12, marginTop: 2 },
+    chipDelivery: { backgroundColor: "#FF6A13", borderRadius: 14, paddingVertical: 4, paddingHorizontal: 10 },
+    chipDeliveryTexto: { color: "#fff", fontWeight: "800" },
     avisoFolioTexto: { color: "#fff", fontWeight: "700", fontSize: 13 },
     avisoFolioCerrar: { color: "#fff", fontSize: 16 },
     avisoTurno: { backgroundColor: colores.red + "18", borderBottomWidth: 2, borderBottomColor: colores.red, padding: 12, paddingHorizontal: 16 },

@@ -1,15 +1,23 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { createHmac, timingSafeEqual } from "crypto";
+import { createHmac } from "crypto";
 import { fetchConReintentos } from "../../common/http/fetch-con-reintentos";
 import {
   CredencialesPlataforma,
   PlataformaDeliveryAdapter,
   ResultadoPruebaConexionPlataforma,
+  PeticionWebhook,
   WebhookProcesadoPlataforma,
 } from "./plataforma-delivery.interface";
+import { cuerpoParaFirma, firmasIguales, mensajeErrorHttp, mensajeErrorRed } from "./http-plataforma";
 
 /**
+ * DiDi Food. Su documentación de órdenes (endpoints de aceptar/rechazar, firma del webhook,
+ * tiempos) NO es pública: el portal developer.didi-food.com exige registrar la empresa,
+ * certificarse y crear una app para verla (consultado el 06-oct-2026). Por eso este adaptador
+ * NO implementa `aceptarOrden`/`rechazarOrden`: desde el POS solo se puede registrar la
+ * aceptación como MANUAL (el cajero confirma que ya la aceptó en la tablet de DiDi).
+ *
  * Adaptador de DiDi Food. NO se verificó contra documentación oficial de DiDi (a diferencia de
  * `mercadopago.adapter.ts`) porque este PR no tiene acceso a credenciales/documentación de
  * partner — cada punto marcado TODO(real-api) debe confirmarse antes de habilitar producción.
@@ -50,25 +58,29 @@ export class DidiAdapter implements PlataformaDeliveryAdapter {
     // valida que el host configurado responda con las credenciales dadas.
     const baseUrl = this.config.get<string>("DIDI_API_BASE_URL");
     if (!baseUrl) {
-      return { ok: false, detalle: "DIDI_API_BASE_URL no está configurado en el backend" };
+      return {
+        ok: false,
+        detalle:
+          "La API de DiDi Food no está habilitada en el servidor: se obtiene registrándose y certificándose en el portal de desarrolladores de DiDi Food (developer.didi-food.com). Mientras tanto, acepta los pedidos en la tablet de DiDi.",
+      };
     }
     try {
       const res = await fetchConReintentos(`${baseUrl}/ping`, {
         headers: { Authorization: `Bearer ${credenciales.extra.apiKey}`, "Content-Type": "application/json" },
       });
       if (!res.ok) {
-        return { ok: false, detalle: `DiDi respondió ${res.status}` };
+        return { ok: false, detalle: mensajeErrorHttp("DiDi Food", res.status) };
       }
       return { ok: true, detalle: "Conexión con DiDi verificada" };
     } catch (e: any) {
       this.logger.error(`Error al probar conexión con DiDi: ${e.message}`);
-      return { ok: false, detalle: e.message ?? "No se pudo conectar con DiDi" };
+      return { ok: false, detalle: mensajeErrorRed("DiDi Food", e) };
     }
   }
 
   async procesarWebhook(
     credenciales: CredencialesPlataforma,
-    peticion: { headers: Record<string, string>; query: Record<string, string>; body: unknown },
+    peticion: PeticionWebhook,
   ): Promise<WebhookProcesadoPlataforma> {
     this.verificarFirma(credenciales, peticion);
 
@@ -100,6 +112,7 @@ export class DidiAdapter implements PlataformaDeliveryAdapter {
       orden: {
         ordenExternaId: String(ordenExternaId),
         tipoEvento: body.event_type ?? body.eventType ?? "desconocido",
+        cancelada: /cancel/i.test(String(body.event_type ?? body.eventType ?? body.status ?? "")),
         estadoExterno: body.status ?? "desconocido",
         clienteNombre: body.customer?.name ?? body.customerName ?? null,
         total: body.total !== undefined ? Number(body.total) : null,
@@ -116,16 +129,13 @@ export class DidiAdapter implements PlataformaDeliveryAdapter {
    *  confirmación de que DiDi lo implemente igual. */
   private verificarFirma(
     credenciales: CredencialesPlataforma,
-    peticion: { headers: Record<string, string>; body: unknown },
+    peticion: PeticionWebhook,
   ) {
     const firmaRecibida = peticion.headers["x-didi-signature"];
     if (!firmaRecibida) throw new Error("Webhook de DiDi sin firma (x-didi-signature) — rechazado");
 
-    const cuerpo = typeof peticion.body === "string" ? peticion.body : JSON.stringify(peticion.body ?? {});
-    const esperada = createHmac("sha256", credenciales.extra.clientSecret).update(cuerpo).digest("hex");
-    const a = Buffer.from(esperada);
-    const b = Buffer.from(firmaRecibida);
-    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+    const esperada = createHmac("sha256", credenciales.extra.clientSecret).update(cuerpoParaFirma(peticion)).digest("hex");
+    if (!firmasIguales(esperada, firmaRecibida)) {
       throw new Error("Firma de webhook de DiDi inválida — rechazado");
     }
   }

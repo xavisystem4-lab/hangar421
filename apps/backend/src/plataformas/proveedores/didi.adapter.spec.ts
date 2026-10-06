@@ -95,11 +95,18 @@ describe("DidiAdapter — verificación de firma de webhook (privado, vía proce
 describe("DidiAdapter — probarConexion", () => {
   afterEach(() => jest.restoreAllMocks());
 
-  it("devuelve ok:false si no hay DIDI_API_BASE_URL configurado", async () => {
+  it("sin API habilitada explica cómo obtenerla y que se acepte en la tablet de DiDi", async () => {
     const adapter = new DidiAdapter({ get: () => undefined } as any);
     const resultado = await adapter.probarConexion(credenciales());
     expect(resultado.ok).toBe(false);
-    expect(resultado.detalle).toMatch(/DIDI_API_BASE_URL/);
+    expect(resultado.detalle).toMatch(/developer\.didi-food\.com/);
+    expect(resultado.detalle).toMatch(/tablet de DiDi/);
+  });
+
+  it("no implementa aceptar/rechazar por API (documentación no pública): se confirma a mano", () => {
+    const adapter = new DidiAdapter({ get: () => undefined } as any) as any;
+    expect(adapter.aceptarOrden).toBeUndefined();
+    expect(adapter.rechazarOrden).toBeUndefined();
   });
 
   it("devuelve ok:true si el host responde 2xx", async () => {

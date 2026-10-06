@@ -17,7 +17,16 @@ async function bootstrap() {
   // base64 dentro del JSON, ver AdminTicket.tsx `subirLogotipo`) fallaba con cualquier imagen
   // de más de ~75KB, que es casi cualquier logo real (probado y reproducido: una imagen de
   // prueba de unos bytes sí pasaba, un logo de verdad no).
-  app.use(json({ limit: "10mb" }));
+  // `verify` guarda el body crudo SOLO de los webhooks de plataformas: Uber y Rappi firman los
+  // bytes exactos que mandaron, y re-serializar el JSON ya parseado cambia la firma.
+  app.use(
+    json({
+      limit: "10mb",
+      verify: (req: any, _res, buf) => {
+        if (typeof req.url === "string" && req.url.includes("/plataformas/webhooks/")) req.rawBody = buf;
+      },
+    }),
+  );
   app.use(urlencoded({ extended: true, limit: "10mb" }));
 
   // Solo en el backend embebido del POS Windows (modo standalone) — nunca en cloud.

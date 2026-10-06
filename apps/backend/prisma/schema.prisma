@@ -214,6 +214,7 @@ enum EstadoSincronizacionOrdenPlataforma {
   SINCRONIZADA
   ERROR
   IGNORADA
+  CANCELADA
 }
 
 // ---------------------------------------------------------------------------
@@ -1000,6 +1001,7 @@ model PlataformaWebhookEvent {
 
   @@unique([plataformaConfigId, eventoExternoId])
   @@index([plataformaConfigId, createdAt])
+  @@index([plataformaConfigId, procesadoOk], map: "plataforma_webhook_events_procesadoOk_idx")
   @@map("plataforma_webhook_events")
 }
 
@@ -1022,6 +1024,20 @@ model PlataformaOrdenSync {
   clienteNombre      String?
   totalExterno       Decimal?                            @db.Decimal(10, 2)
   payloadSanitizado  Json?
+  // Último estado que reportó la plataforma (ej. "CREATED", "CANCELED") — informativo.
+  estadoExterno      String?
+  // CONFIRMADA | MANUAL | SIMULADA (ver ConfirmacionPlataforma en @hangar421/shared). null = la
+  // plataforma todavía no confirmó nada desde el POS.
+  confirmacion       String?
+  aceptadaEn         DateTime?
+  // Último error al aceptar/rechazar contra la plataforma — se muestra en la bandeja.
+  ultimoIntentoError String?
+  // Pedido de prueba (modo simulación): nunca se manda a la plataforma.
+  simulado           Boolean                             @default(false)
+  // Reclamo atómico al aceptar: evita que dos terminales creen dos pedidos. Caduca a los 2 min
+  // por si la terminal se cayó a media operación.
+  reclamadoPor       String?
+  reclamadoEn        DateTime?
   createdAt          DateTime                            @default(now())
   updatedAt          DateTime                            @updatedAt
 

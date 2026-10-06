@@ -78,10 +78,36 @@ export class AceptarPedidoEntranteDto {
   @ApiPropertyOptional() @IsOptional() @IsString() turnoId?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() meseroId?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() dispositivoId?: string;
+
+  /** El cajero declara que YA aceptó el pedido en la tablet/portal de la plataforma. Solo se usa
+   *  cuando la integración no puede confirmarlo por API (ver PlataformasService.confirmarEnPlataforma). */
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() confirmarManual?: boolean;
 }
 
 export class RechazarPedidoEntranteDto {
-  @ApiProperty() @IsString() motivo!: string;
+  @ApiProperty() @IsString() @MaxLength(300) motivo!: string;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() confirmarManual?: boolean;
+}
+
+export class SimularPedidoDto {
+  @ApiProperty() @IsString() plataforma!: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() sucursalId?: string;
+}
+
+export interface FiltrosPedidosEntrantes {
+  /** Un EstadoSincronizacionOrdenPlataforma o "TODOS". Default RECIBIDA (pendientes). */
+  estado?: string;
+  plataforma?: string;
+  sucursalId?: string;
+  desde?: Date;
+  limite?: number;
+}
+
+export interface EventoPlataformaDto {
+  id: string;
+  plataforma: string;
+  motivo: string;
+  createdAt: Date;
 }
 
 /** Forma de la respuesta de listar/obtener pedidos entrantes — no es un DTO de entrada. */
@@ -90,11 +116,24 @@ export interface PedidoEntranteDto {
   plataforma: string;
   nombreVisible: string;
   ordenExternaId: string;
+  folioCorto: string | null;
   estado: string;
+  estadoExterno: string | null;
   clienteNombre: string | null;
   totalExterno: number | null;
-  items: { nombreExterno: string; cantidad: number; precioUnitario?: number; notas?: string }[];
+  items: { nombreExterno: string; cantidad: number; precioUnitario?: number; notas?: string; modificadores?: string[] }[];
+  notas: string | null;
+  entrega: { tipo?: string | null; repartidor?: string | null; horaEstimada?: string | null; codigoEntrega?: string | null } | null;
+  montos: { subtotal?: number | null; envio?: number | null; propina?: number | null; descuento?: number | null } | null;
   motivoError: string | null;
+  ultimoIntentoError: string | null;
+  /** CONFIRMADA | MANUAL | SIMULADA | null */
+  confirmacion: string | null;
+  simulado: boolean;
+  /** true = aceptar se confirma por la API de la plataforma; false = requiere confirmación manual. */
+  puedeConfirmarEnPlataforma: boolean;
   pedidoId: string | null;
+  aceptadaEn: Date | null;
   createdAt: Date;
+  updatedAt: Date;
 }

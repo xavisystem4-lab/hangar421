@@ -309,13 +309,13 @@ export function AdminPlataformas() {
 
     setProcesandoPedido(true);
     try {
-      await apiFetch(`/plataformas/pedidos/${pedidoRevisando.id}/aceptar`, {
-        method: "POST",
-        body: JSON.stringify({
-          sucursalId,
-          items: mapeoItems.map((it) => ({ productoId: it.productoId, cantidad: it.cantidad, notas: it.notas || undefined })),
-        }),
-      });
+      const cuerpo = {
+        sucursalId,
+        items: mapeoItems.map((it) => ({ productoId: it.productoId, cantidad: it.cantidad, notas: it.notas || undefined })),
+      };
+      await conConfirmacionManual((confirmarManual) =>
+        apiFetch(`/plataformas/pedidos/${pedidoRevisando.id}/aceptar`, { method: "POST", body: JSON.stringify({ ...cuerpo, confirmarManual }) }),
+      );
       setMensaje({ tipo: "exito", texto: "Pedido aceptado — ya se mandó a cocina como un pedido normal." });
       setPedidoRevisando(null);
       await Promise.all([cargarPedidosEntrantes(), cargar()]);
@@ -336,10 +336,9 @@ export function AdminPlataformas() {
 
     setProcesandoPedido(true);
     try {
-      await apiFetch(`/plataformas/pedidos/${pedidoRevisando.id}/rechazar`, {
-        method: "POST",
-        body: JSON.stringify({ motivo: motivoRechazo.trim() }),
-      });
+      await conConfirmacionManual((confirmarManual) =>
+        apiFetch(`/plataformas/pedidos/${pedidoRevisando.id}/rechazar`, { method: "POST", body: JSON.stringify({ motivo: motivoRechazo.trim(), confirmarManual }) }),
+      );
       setMensaje({ tipo: "exito", texto: "Pedido rechazado." });
       setPedidoRevisando(null);
       await cargarPedidosEntrantes();
@@ -570,4 +569,16 @@ export function AdminPlataformas() {
       </div>
     </div>
   );
+}
+
+/** Si la plataforma no puede confirmar por API, el backend responde 409 pidiendo confirmar que
+ *  ya se hizo en la tablet de la plataforma: se le pregunta al usuario y se reintenta. */
+async function conConfirmacionManual<T>(llamar: (confirmarManual: boolean) => Promise<T>): Promise<T> {
+  try {
+    return await llamar(false);
+  } catch (e: any) {
+    if (!/confirma aquí/.test(String(e?.message ?? ""))) throw e;
+    if (!confirm(`${e.message}\n\n¿Ya lo hiciste en la tablet de la plataforma?`)) throw new Error("Operación cancelada: hazlo primero en la tablet de la plataforma.");
+    return llamar(true);
+  }
 }
