@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Headers, HttpCode, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { Request } from "express";
 import { EstadoSincronizacionOrdenPlataforma, RolUsuario } from "@hangar421/shared";
@@ -148,7 +148,9 @@ export class PlataformasController {
   // PlataformaConfig para resolver, sin adivinar, con qué cuenta/credenciales verificar esa firma
   // (mismo patrón que pagos.controller.ts -> webhooks/:configId).
 
+  // 200 y no el 201 por defecto de Nest: Uber exige 200 y DiDi espera {"errno":0} con 200.
   @Public()
+  @HttpCode(200)
   @Post("webhooks/:plataforma/:webhookSlug")
   async webhook(
     @Param("plataforma") plataforma: string,

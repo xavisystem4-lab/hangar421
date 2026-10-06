@@ -40,22 +40,25 @@ const ORDEN_PLATAFORMAS: CodigoPlataforma[] = ["didi", "uber", "rappi"];
 // plataforma por su nombre y un color de acento, sin imitar su identidad gráfica.
 const INFO_PLATAFORMA: Record<CodigoPlataforma, {
   icono: string; nombre: string; acento: string; campoPrincipal: "apiKey" | "clientId"; etiquetaCampoPrincipal: string;
-  autorizacion: string; pideSecretoWebhook: boolean; confirmaPorApi: string;
+  autorizacion: string; pideSecretoWebhook: boolean; confirmaPorApi: string; etiquetaSecreto: string; etiquetaTienda: string;
 }> = {
   didi: {
-    icono: "🛵", nombre: "DiDi Food", acento: "#FF7A00", campoPrincipal: "apiKey", etiquetaCampoPrincipal: "App ID / API Key",
-    autorizacion: "App ID y llave secreta del portal de desarrolladores de DiDi Food (requiere registro y certificación de DiDi).",
+    icono: "🛵", nombre: "DiDi Food", acento: "#FF7A00", campoPrincipal: "apiKey", etiquetaCampoPrincipal: "App ID (numérico)",
+    etiquetaSecreto: "App Secret", etiquetaTienda: "app_shop_id (id con el que la tienda se vinculó a tu app de DiDi)",
+    autorizacion: "App ID y App Secret de tu app en el portal de desarrolladores de DiDi Food (requiere NDA y certificación). El token de cada tienda lo pide y renueva el servidor.",
     pideSecretoWebhook: false,
-    confirmaPorApi: "Aceptar/rechazar se confirma a mano: hazlo en la tablet de DiDi y confírmalo aquí.",
+    confirmaPorApi: "Aceptar y rechazar se confirman en DiDi por API. DiDi cancela solo si no aceptas en 5 min. Una sola URL de webhook sirve para todas las sucursales: cada una se identifica por su app_shop_id.",
   },
   uber: {
     icono: "🚗", nombre: "Uber Eats", acento: "#06C167", campoPrincipal: "clientId", etiquetaCampoPrincipal: "Client ID",
+    etiquetaSecreto: "Client Secret", etiquetaTienda: "Id de tienda (store_id)",
     autorizacion: "OAuth2 (client credentials) de una app aprobada por Uber para las Marketplace APIs; la tienda debe autorizarla.",
     pideSecretoWebhook: false,
     confirmaPorApi: "Aceptar y rechazar se confirman en Uber por API. Uber cancela solo si no respondes en ~11 min.",
   },
   rappi: {
     icono: "🐰", nombre: "Rappi", acento: "#FF441F", campoPrincipal: "clientId", etiquetaCampoPrincipal: "Client ID",
+    etiquetaSecreto: "Client Secret", etiquetaTienda: "Id de tienda (store_id)",
     autorizacion: "Client ID/Secret que entrega el equipo de integraciones de Rappi (TAM), más el secreto del webhook.",
     pideSecretoWebhook: true,
     confirmaPorApi: "Aceptar se confirma en Rappi por API; rechazar, a mano en su tablet. Rappi cancela si no respondes en ~4 min.",
@@ -260,7 +263,7 @@ export function PosAdminPlataformasScreen({ onCerrar }: { onCerrar: () => void }
     const faltan = [
       !formulario.identificadorTienda.trim() && "el id de tienda",
       !formulario.campoPrincipal.trim() && info.etiquetaCampoPrincipal,
-      !formulario.clientSecret.trim() && "el Client Secret",
+      !formulario.clientSecret.trim() && `el ${info.etiquetaSecreto}`,
       info.pideSecretoWebhook && !formulario.secretoWebhook.trim() && "el secreto del webhook",
     ].filter(Boolean);
     if (faltan.length > 0) {
@@ -546,11 +549,11 @@ export function PosAdminPlataformasScreen({ onCerrar }: { onCerrar: () => void }
                       </TouchableOpacity>
                     ))}
                   </View>
-                  <Text style={[estilos.etiqueta, { marginTop: 10 }]}>Id de tienda / restaurante</Text>
+                  <Text style={[estilos.etiqueta, { marginTop: 10 }]}>{info.etiquetaTienda}</Text>
                   <TextInput style={estilos.input} autoCapitalize="none" value={formulario.identificadorTienda} onChangeText={(v) => setFormulario((f) => ({ ...f, identificadorTienda: v }))} />
                   <Text style={estilos.etiqueta}>{info.etiquetaCampoPrincipal}</Text>
                   <TextInput style={estilos.input} autoCapitalize="none" autoCorrect={false} value={formulario.campoPrincipal} onChangeText={(v) => setFormulario((f) => ({ ...f, campoPrincipal: v }))} />
-                  <Text style={estilos.etiqueta}>Client Secret</Text>
+                  <Text style={estilos.etiqueta}>{info.etiquetaSecreto}</Text>
                   <TextInput style={estilos.input} autoCapitalize="none" autoCorrect={false} secureTextEntry value={formulario.clientSecret} onChangeText={(v) => setFormulario((f) => ({ ...f, clientSecret: v }))} />
                   {info.pideSecretoWebhook && (
                     <>

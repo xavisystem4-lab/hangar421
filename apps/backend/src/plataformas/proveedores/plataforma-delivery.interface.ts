@@ -130,6 +130,14 @@ export interface PlataformaDeliveryAdapter {
    *  MANUAL — el cajero confirma que ya la aceptó en la tablet/portal de la plataforma. */
   aceptarOrden?(credenciales: CredencialesPlataforma, ordenExternaId: string): Promise<ResultadoAccionPlataforma | null>;
 
+  /** Plataformas que mandan TODAS sus tiendas a una sola URL (DiDi): id de tienda del evento,
+   *  para enrutarlo a la configuración de la sucursal que tenga ese id. */
+  tiendaDelWebhook?(peticion: PeticionWebhook): string | null;
+
+  /** Cuerpo de respuesta que la plataforma espera (DiDi: {"errno":0,"errmsg":"ok"}). Default:
+   *  {ok:true}. `exito = false` solo cuando NO se pudo guardar el evento (para que reintente). */
+  respuestaWebhook?(exito: boolean): unknown;
+
   /** Rechaza la orden en la plataforma. Mismo contrato que `aceptarOrden`. */
   rechazarOrden?(credenciales: CredencialesPlataforma, ordenExternaId: string, motivo: string): Promise<ResultadoAccionPlataforma | null>;
 }

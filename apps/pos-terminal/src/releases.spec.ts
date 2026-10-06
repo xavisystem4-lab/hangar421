@@ -78,3 +78,19 @@ describe("versionDeTag", () => {
     expect(versionDeTag("pos-terminal-v0.1.3")).toBe("0.1.3");
   });
 });
+
+import { progresoDescarga } from "./releases";
+
+describe("progresoDescarga", () => {
+  it("calcula fracción y texto en MB con porcentaje", () => {
+    const p = progresoDescarga(5 * 1024 * 1024, 20 * 1024 * 1024);
+    expect(p.fraccion).toBe(0.25);
+    expect(p.texto).toBe("5.0 / 20.0 MB · 25%");
+  });
+  it("sin tamaño total la barra es indeterminada", () => {
+    expect(progresoDescarga(1024 * 1024, 0)).toEqual({ fraccion: null, texto: "1.0 MB" });
+  });
+  it("nunca pasa de 100%", () => {
+    expect(progresoDescarga(30, 20).fraccion).toBe(1);
+  });
+});

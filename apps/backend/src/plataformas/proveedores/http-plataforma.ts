@@ -76,3 +76,40 @@ export function numeroONull(valor: unknown): number | null {
   const n = Number(valor);
   return Number.isFinite(n) ? n : null;
 }
+
+/**
+ * JSON.parse sin perder precisión en ids de 64 bits: DiDi manda `order_id`, `app_id` y `shop_id`
+ * como números de 19 dígitos y `JSON.parse` los redondea (5764607801871631353 →
+ * 5764607801871631000). Aquí todo entero de 16+ dígitos que esté como VALOR (después de `:` o
+ * dentro de un arreglo) se convierte en texto antes de parsear. Sin dependencias.
+ */
+export function parsearJsonConEnterosLargos(raw: string): any {
+  let resultado = "";
+  let enTexto = false;
+  let escapado = false;
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i];
+    if (enTexto) {
+      resultado += c;
+      if (escapado) escapado = false;
+      else if (c === "\\") escapado = true;
+      else if (c === '"') enTexto = false;
+      continue;
+    }
+    if (c === '"') {
+      enTexto = true;
+      resultado += c;
+      continue;
+    }
+    if (c === "-" || (c >= "0" && c <= "9")) {
+      let j = i;
+      while (j < raw.length && /[-+0-9.eE]/.test(raw[j])) j++;
+      const numero = raw.slice(i, j);
+      resultado += /^-?\d{16,}$/.test(numero) ? `"${numero}"` : numero;
+      i = j - 1;
+      continue;
+    }
+    resultado += c;
+  }
+  return JSON.parse(resultado);
+}

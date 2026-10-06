@@ -177,31 +177,47 @@ export class PlataformasService {
    *  muestre como "errores de sincronización". La idempotencia la da el índice único de
    *  PlataformaWebhookEvent(plataformaConfigId, eventoExternoId): un reenvío choca (P2002) y se
    *  descarta sin reprocesar. */
-  async manejarWebhook(plataforma: string, webhookSlug: string, peticion: PeticionWebhook): Promise<{ ok: true }> {
-    const config = await this.prisma.plataformaConfig.findUnique({ where: { webhookSlug } });
-    if (!config || config.plataforma !== plataforma) {
+  async manejarWebhook(plataforma: string, webhookSlug: string, peticion: PeticionWebhook): Promise<unknown> {
+    const configSlug = await this.prisma.plataformaConfig.findUnique({ where: { webhookSlug } });
+    if (!configSlug || configSlug.plataforma !== plataforma) {
       this.logger.warn(`Webhook recibido para ${plataforma} sin configuración correspondiente`);
       return { ok: true };
     }
-    const credenciales = this.credencialesDe(config);
+    const adaptador = this.registry.obtener(configSlug.plataforma);
+    const responder = (exito = true) => adaptador.respuestaWebhook?.(exito) ?? { ok: true };
+    const credenciales = this.credencialesDe(configSlug);
     if (!credenciales) {
-      await this.registrarEventoFallido(config.id, "Llegó un webhook pero la integración no tiene credenciales guardadas.");
-      return { ok: true };
+      await this.registrarEventoFallido(configSlug.id, "Llegó un webhook pero la integración no tiene credenciales guardadas.");
+      return responder();
     }
-    const adaptador = this.registry.obtener(config.plataforma);
 
     let procesado;
     try {
       procesado = await adaptador.procesarWebhook(credenciales, peticion);
     } catch (e: any) {
-      this.logger.warn(`Webhook de ${plataforma} (config ${config.id}) rechazado: ${e.message}`);
-      await this.registrarEventoFallido(config.id, e.message ?? "Webhook rechazado");
-      return { ok: true };
+      this.logger.warn(`Webhook de ${plataforma} (config ${configSlug.id}) rechazado: ${e.message}`);
+      await this.registrarEventoFallido(configSlug.id, e.message ?? "Webhook rechazado");
+      return responder();
+    }
+
+    // DiDi manda todas las tiendas de la app a una sola URL: el evento se guarda en la
+    // configuración de la sucursal cuyo id de tienda coincide (si existe), no en la de la URL.
+    let config = configSlug;
+    const tienda = adaptador.tiendaDelWebhook?.(peticion);
+    if (tienda && tienda !== configSlug.identificadorTienda) {
+      const deLaTienda = await this.prisma.plataformaConfig.findFirst({
+        where: { empresaId: configSlug.empresaId, plataforma: configSlug.plataforma, identificadorTienda: tienda },
+      });
+      if (deLaTienda) config = deLaTienda;
+      else {
+        await this.registrarEventoFallido(configSlug.id, `Evento de la tienda "${tienda}", que no está configurada en ninguna sucursal (Admin → Delivery).`);
+        return responder();
+      }
     }
 
     if (!config.activo && procesado.orden && !procesado.orden.cancelada) {
       await this.registrarEventoFallido(config.id, `Pedido ${procesado.orden.ordenExternaId} ignorado: la integración está desactivada en el POS.`);
-      return { ok: true };
+      return responder();
     }
 
     try {
@@ -216,10 +232,11 @@ export class PlataformasService {
     } catch (e: any) {
       if (e?.code === "P2002") {
         this.logger.log(`Webhook de ${plataforma} duplicado (evento ${procesado.eventoExternoId}) — ignorado`);
-        return { ok: true };
+        return responder();
       }
       this.logger.error(`Error al registrar evento de webhook de ${plataforma}: ${e.message}`);
-      return { ok: true };
+      // No se guardó: que la plataforma lo reintente (las que lo soportan, como DiDi).
+      return responder(false);
     }
 
     const orden = procesado.orden;
@@ -269,7 +286,7 @@ export class PlataformasService {
     }
 
     await this.prisma.plataformaConfig.update({ where: { id: config.id }, data: { ultimaSincronizacion: new Date() } });
-    return { ok: true };
+    return responder();
   }
 
   // -------------------------------------------------------------------------------------------

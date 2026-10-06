@@ -42,3 +42,12 @@ export function elegirReleaseMasNuevo<T extends { tag_name: string; draft: boole
     esVersionMasNueva(versionDeTag(actual.tag_name), versionDeTag(mejor.tag_name)) ? actual : mejor,
   );
 }
+
+/** Avance de la descarga del .apk para la barra de progreso: fracción 0..1 y texto "12.3 / 45.6 MB".
+ *  Si el servidor no informa el tamaño (total <= 0) la fracción queda en null (barra indeterminada). */
+export function progresoDescarga(escritos: number, total: number): { fraccion: number | null; texto: string } {
+  const mb = (b: number) => (b / (1024 * 1024)).toFixed(1);
+  if (!total || total <= 0) return { fraccion: null, texto: `${mb(escritos)} MB` };
+  const fraccion = Math.min(1, Math.max(0, escritos / total));
+  return { fraccion, texto: `${mb(escritos)} / ${mb(total)} MB · ${Math.round(fraccion * 100)}%` };
+}
