@@ -77,6 +77,8 @@ function crearServicio() {
     fijarDisponibilidad: jest.fn(),
     altaProductoDesdeTerminal: jest.fn(() => Promise.resolve({ id: "x", creado: true })),
     fijarModificadoresDeProducto: jest.fn(() => Promise.resolve({ id: "x", modificadores: 0 })),
+    editarModificadorDesdeTerminal: jest.fn((_datos: any) => Promise.resolve({ id: "x", opciones: 1, quitadas: 0 })),
+    editarDatosProducto: jest.fn((..._args: any[]) => Promise.resolve({ id: "x", cambios: 1 })),
     crearModificadorDesdeTerminal: jest.fn((_datos: any) => Promise.resolve({ id: "x", creado: true })),
   };
   const solicitudes = { crear: jest.fn(() => Promise.resolve({})) };
@@ -211,6 +213,20 @@ describe("SyncService.push — PRODUCTO dado de alta en la terminal", () => {
     expect(catalogo.altaProductoDesdeTerminal).not.toHaveBeenCalled();
   });
 
+  it("UPDATE con solo nombre/categoría edita los datos y NO vacía los modificadores", async () => {
+    const { push, catalogo } = crearServicio();
+    await push([alta({ operacion: SyncOperacion.UPDATE, payload: { nombre: "Latte Vainilla", categoriaId: "cat-1" } })]);
+    expect(catalogo.editarDatosProducto).toHaveBeenCalledWith("emp-1", "producto-nuevo-1", { nombre: "Latte Vainilla", categoriaId: "cat-1" });
+    expect(catalogo.fijarModificadoresDeProducto).not.toHaveBeenCalled();
+  });
+
+  it("UPDATE con nombre y modificadores hace las dos cosas", async () => {
+    const { push, catalogo } = crearServicio();
+    await push([alta({ operacion: SyncOperacion.UPDATE, payload: { nombre: "X", modificadorIds: [] } })]);
+    expect(catalogo.editarDatosProducto).toHaveBeenCalled();
+    expect(catalogo.fijarModificadoresDeProducto).toHaveBeenCalledWith("emp-1", "producto-nuevo-1", []);
+  });
+
   it("rechaza una categoría o un modificador de otra empresa sin tocar nada", async () => {
     const { push, catalogo } = crearServicio();
     const resp = await push([
@@ -252,6 +268,13 @@ describe("SyncService.push — alta de modificadores desde la terminal", () => {
       id: "mod-nuevo-1", empresaId: "emp-1", nombre: "Jarabe", tipo: "MULTIPLE", obligatorio: false,
       opciones: [{ id: "op-1", nombre: "Vainilla", precioExtra: 10, orden: 1 }],
     }));
+  });
+
+  it("UPDATE enruta a la edición con la empresa del token", async () => {
+    const { push, catalogo } = crearServicio();
+    await push([nuevo({ id: "mod-1", operacion: SyncOperacion.UPDATE })]);
+    expect(catalogo.editarModificadorDesdeTerminal).toHaveBeenCalledWith(expect.objectContaining({ id: "mod-1", empresaId: "emp-1", nombre: "Jarabe" }));
+    expect(catalogo.crearModificadorDesdeTerminal).not.toHaveBeenCalled();
   });
 
   it("rechaza un id que ya pertenece a otra empresa sin tocar nada", async () => {

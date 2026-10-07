@@ -17,6 +17,11 @@ describe("validarNuevoModificador", () => {
     });
   });
 
+  it("conserva el id de las opciones que ya existían (edición) y deja sin id las nuevas", () => {
+    const r = validarNuevoModificador(base({ opciones: [{ id: "op-1", nombre: "Entera", precio: "" }, { nombre: "Almendra", precio: "12" }] }));
+    expect(r.ok && r.valor.opciones).toEqual([{ id: "op-1", nombre: "Entera", precioExtra: 0 }, { nombre: "Almendra", precioExtra: 12 }]);
+  });
+
   it("ignora las filas totalmente vacías", () => {
     const r = validarNuevoModificador(base({ opciones: [{ nombre: "Entera", precio: "" }, { nombre: "", precio: "" }, { nombre: "  ", precio: " " }] }));
     expect(r.ok && r.valor.opciones).toEqual([{ nombre: "Entera", precioExtra: 0 }]);

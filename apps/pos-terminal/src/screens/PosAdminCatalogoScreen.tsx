@@ -14,12 +14,14 @@ import {
   contarCambiosSoloLocales,
   fijarModificadoresDeProducto,
   crearModificadorLocal,
+  editarModificadorLocal,
 } from "../db/catalogoAdminRepo";
 import type { ModificadorNuevo } from "../caja/nuevoModificador";
 import { ModalModificadoresProducto } from "../components/ModalModificadoresProducto";
 import { sincronizarPronto } from "../sync/syncEngine";
 
-/** Administración de catálogo. Dar de alta un producto (con los modificadores que debe preguntar)
+/** Administración de catálogo. Editar un producto es completo: nombre, precio, categoría y
+ *  modificadores (incluso las opciones y precios de cada grupo). Dar de alta un producto (con los modificadores que debe preguntar)
  *  y cambiar precio/disponibilidad/modificadores sí viajan al ERP (ver catalogoAdminRepo.ts);
  *  crear una categoría nueva sigue siendo local-only. */
 export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
@@ -44,7 +46,7 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
   const [nombreProducto, setNombreProducto] = useState("");
   const [precioProducto, setPrecioProducto] = useState("");
   const [productoEditando, setProductoEditando] = useState<string | null>(null);
-  const [productoBorrador, setProductoBorrador] = useState({ nombre: "", precio: "" });
+  const [productoBorrador, setProductoBorrador] = useState({ nombre: "", precio: "", categoriaId: "" });
 
   async function cargar() {
     const db = await abrirBaseDeDatos();
@@ -119,13 +121,22 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
     return id;
   }
 
+  /** Guarda los cambios de un grupo (opciones, precios) y lo manda al ERP; afecta a todos los productos que lo usan. */
+  async function editarModificador(id: string, cambios: ModificadorNuevo): Promise<void> {
+    const db = await abrirBaseDeDatos();
+    await editarModificadorLocal(db, id, cambios, usuario?.id);
+    sincronizarPronto();
+    await cargar();
+  }
+
   const nombresMods = (ids: string[]) => ids.map((id) => modificadores.find((m) => m.id === id)?.nombre).filter(Boolean).join(", ");
 
   async function guardarProducto(id: string) {
     if (!productoBorrador.nombre.trim() || !usuario) return;
     const db = await abrirBaseDeDatos();
-    await editarProducto(db, id, { nombre: productoBorrador.nombre.trim(), precioBase: Number(productoBorrador.precio) || 0 }, usuario.id);
+    await editarProducto(db, id, { nombre: productoBorrador.nombre.trim(), precioBase: Number(productoBorrador.precio) || 0, categoriaId: productoBorrador.categoriaId || undefined }, usuario.id);
     setProductoEditando(null);
+    sincronizarPronto();
     cargar();
   }
 
@@ -211,11 +222,29 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
           {productos.filter((p) => p.categoriaId === cat.id).map((p) => (
             <View key={p.id} style={estilos.filaProducto}>
               {productoEditando === p.id ? (
-                <>
-                  <TextInput value={productoBorrador.nombre} onChangeText={(v) => setProductoBorrador((b) => ({ ...b, nombre: v }))} style={[estilos.input, { flex: 1, marginBottom: 0 }]} />
-                  <TextInput value={productoBorrador.precio} onChangeText={(v) => setProductoBorrador((b) => ({ ...b, precio: v }))} keyboardType="decimal-pad" style={[estilos.input, { width: 80, marginBottom: 0 }]} />
-                  <TouchableOpacity onPress={() => guardarProducto(p.id)}><Text style={{ color: colores.green, fontSize: 12, fontWeight: "700" }}>Guardar</Text></TouchableOpacity>
-                </>
+                // Edición completa: nombre, precio, categoría y modificadores. Todo viaja al ERP.
+                <View style={{ flex: 1 }}>
+                  <TextInput value={productoBorrador.nombre} onChangeText={(v) => setProductoBorrador((b) => ({ ...b, nombre: v }))} placeholder="Nombre" placeholderTextColor={colores.textoSecundario} style={estilos.input} />
+                  <TextInput value={productoBorrador.precio} onChangeText={(v) => setProductoBorrador((b) => ({ ...b, precio: v }))} keyboardType="decimal-pad" placeholder="Precio" placeholderTextColor={colores.textoSecundario} style={estilos.input} />
+                  <Text style={estilos.etiquetaEdicion}>Categoría</Text>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                    {categorias.map((c) => (
+                      <TouchableOpacity key={c.id} onPress={() => setProductoBorrador((b) => ({ ...b, categoriaId: c.id }))} style={[estilos.chip, productoBorrador.categoriaId === c.id && estilos.chipActivo]}>
+                        <Text style={{ color: productoBorrador.categoriaId === c.id ? "#fff" : colores.texto, fontSize: 12 }}>{c.nombre}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <TouchableOpacity onPress={() => setEligiendoMods({ productoId: p.id, nombre: p.nombre })} style={estilos.botonMods} accessibilityLabel={`Modificadores de ${p.nombre}`}>
+                    <Text style={{ color: colores.texto, fontWeight: "700" }}>⚙ Modificadores</Text>
+                    <Text style={{ color: (modsPorProducto.get(p.id)?.length ?? 0) > 0 ? colores.navyTexto : colores.textoSecundario, fontSize: 12, flex: 1, textAlign: "right" }} numberOfLines={2}>
+                      {(modsPorProducto.get(p.id)?.length ?? 0) > 0 ? nombresMods(modsPorProducto.get(p.id) ?? []) : "Ninguno"}
+                    </Text>
+                  </TouchableOpacity>
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    <TouchableOpacity onPress={() => setProductoEditando(null)} style={[estilos.botonChico, { backgroundColor: colores.gray50, flex: 1, alignItems: "center" }]}><Text style={{ color: colores.texto, fontWeight: "700" }}>Cancelar</Text></TouchableOpacity>
+                    <TouchableOpacity onPress={() => guardarProducto(p.id)} style={[estilos.botonChico, { backgroundColor: colores.green, flex: 1, alignItems: "center" }]} accessibilityLabel="Guardar producto"><Text style={{ color: "#fff", fontWeight: "700" }}>Guardar</Text></TouchableOpacity>
+                  </View>
+                </View>
               ) : (
                 <>
                   <Text style={{ color: p.activo ? colores.texto : colores.textoSecundario, flex: 1 }} numberOfLines={1}>
@@ -231,7 +260,7 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
                   <TouchableOpacity onPress={() => alternarDisponibilidad(p)} style={[estilos.pildoraEstado, p.activo ? estilos.pildoraEnVenta : estilos.pildoraStandby]}>
                     <Text style={{ color: p.activo ? colores.green : colores.amber, fontSize: 12, fontWeight: "700" }}>{p.activo ? "● En venta" : "⏸ Standby"}</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => { setProductoEditando(p.id); setProductoBorrador({ nombre: p.nombre, precio: String(p.precioBase) }); }}>
+                  <TouchableOpacity onPress={() => { setProductoEditando(p.id); setProductoBorrador({ nombre: p.nombre, precio: String(p.precioBase), categoriaId: p.categoriaId }); }}>
                     <Text style={{ color: colores.navyTexto, fontSize: 12, marginLeft: 10 }}>Editar</Text>
                   </TouchableOpacity>
                 </>
@@ -249,6 +278,7 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
           onCancelar={() => setEligiendoMods(null)}
           onGuardar={guardarModificadores}
           onCrearModificador={crearModificador}
+          onEditarModificador={editarModificador}
         />
       )}
     </ScrollView>
@@ -273,6 +303,7 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     botonPrincipal: { backgroundColor: colores.green, borderRadius: 10, padding: 14, alignItems: "center", marginTop: 4 },
     botonMods: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 44, paddingHorizontal: 10, borderWidth: 1, borderColor: colores.borde, borderRadius: 8, marginBottom: 8 },
     botonModsFila: { marginLeft: 8, paddingHorizontal: 8, minHeight: 32, justifyContent: "center", borderRadius: 8, backgroundColor: colores.gray50 },
+    etiquetaEdicion: { fontSize: 12, fontWeight: "700", color: colores.textoSecundario, marginBottom: 6 },
     notaAlta: { fontSize: 11, color: colores.textoSecundario, marginTop: 8, lineHeight: 15 },
     botonPrincipalTexto: { color: "#fff", fontWeight: "700" },
     pildoraEstado: { marginLeft: 10, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, minHeight: 32, justifyContent: "center" },

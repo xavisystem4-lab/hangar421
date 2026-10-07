@@ -1,4 +1,4 @@
-/** Alta de un grupo de modificadores desde la terminal (Admin → Catálogo): "Tamaño", "Tipo de
+/** Alta y edición de un grupo de modificadores desde la terminal (Admin → Catálogo): "Tamaño", "Tipo de
  *  leche", "Extras", "Jarabe"… con sus opciones y precio extra. Lógica pura para probarla con Jest
  *  (nuevoModificador.spec.ts); el guardado vive en db/catalogoAdminRepo.ts. */
 
@@ -9,14 +9,15 @@ export interface BorradorModificador {
   nombre: string;
   tipo: TipoModificador;
   obligatorio: boolean;
-  opciones: { nombre: string; precio: string }[];
+  /** `id` solo en las opciones que ya existían (edición): sin id, la opción es nueva. */
+  opciones: { id?: string; nombre: string; precio: string }[];
 }
 
 export interface ModificadorNuevo {
   nombre: string;
   tipo: TipoModificador;
   obligatorio: boolean;
-  opciones: { nombre: string; precioExtra: number }[];
+  opciones: { id?: string; nombre: string; precioExtra: number }[];
 }
 
 export type ResultadoValidacion = { ok: true; valor: ModificadorNuevo } | { ok: false; error: string };
@@ -24,7 +25,7 @@ export type ResultadoValidacion = { ok: true; valor: ModificadorNuevo } | { ok: 
 const redondear = (n: number) => Math.round(n * 100) / 100;
 
 /** Valida el borrador. Las filas totalmente vacías se ignoran (la pantalla siempre deja una en
- *  blanco al final); el precio vacío vale $0. `nombresExistentes` evita crear un grupo repetido. */
+ *  blanco al final); el precio vacío vale $0. `nombresExistentes` evita un grupo repetido (al editar, sin incluir el propio). */
 export function validarNuevoModificador(borrador: BorradorModificador, nombresExistentes: string[] = []): ResultadoValidacion {
   const nombre = borrador.nombre.trim().replace(/\s+/g, " ");
   if (!nombre) return { ok: false, error: "Escribe el nombre del modificador (por ejemplo: Tipo de leche)." };
@@ -44,7 +45,7 @@ export function validarNuevoModificador(borrador: BorradorModificador, nombresEx
     const clave = nombreOpcion.toLowerCase();
     if (vistos.has(clave)) return { ok: false, error: `La opción "${nombreOpcion}" está repetida.` };
     vistos.add(clave);
-    opciones.push({ nombre: nombreOpcion, precioExtra: redondear(precio) });
+    opciones.push({ ...(fila.id ? { id: fila.id } : {}), nombre: nombreOpcion, precioExtra: redondear(precio) });
   }
   if (opciones.length === 0) return { ok: false, error: "Agrega al menos una opción (por ejemplo: Avena +$10)." };
 

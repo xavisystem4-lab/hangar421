@@ -1,26 +1,36 @@
 import { useState } from "react";
 import { KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
+import type { ModificadorLocal } from "../db/catalogoRepo";
 import { validarNuevoModificador, type ModificadorNuevo, type TipoModificador } from "../caja/nuevoModificador";
 
-/** Crear un grupo de modificadores desde el alta de producto (Tamaño, Tipo de leche, Extras,
- *  Jarabe…): nombre, si se elige una opción o varias, si es obligatorio y sus opciones con precio
- *  extra. Solo recoge y valida; guardar y sincronizar lo hace quien lo abre (onCrear). */
-export function ModalNuevoModificador({
+/** Crear o editar un grupo de modificadores (Tamaño, Tipo de leche, Extras, Jarabe…): nombre, si se
+ *  elige una opción o varias, si es obligatorio y sus opciones con precio extra (agregar, quitar,
+ *  cambiar precio). Con `inicial` abre en modo edición. Solo recoge y valida; guardar y sincronizar
+ *  lo hace quien lo abre (onGuardar). */
+export function ModalModificador({
+  inicial,
   nombresExistentes,
-  onCrear,
+  onGuardar,
   onCancelar,
 }: {
+  inicial?: ModificadorLocal;
+  /** Nombres de los OTROS grupos (al editar, sin incluir el propio). */
   nombresExistentes: string[];
-  onCrear: (modificador: ModificadorNuevo) => Promise<void> | void;
+  onGuardar: (modificador: ModificadorNuevo) => Promise<void> | void;
   onCancelar: () => void;
 }) {
   const colores = usarColores();
   const estilos = crearEstilos(colores);
-  const [nombre, setNombre] = useState("");
-  const [tipo, setTipo] = useState<TipoModificador>("SELECCION_UNICA");
-  const [obligatorio, setObligatorio] = useState(false);
-  const [opciones, setOpciones] = useState([{ nombre: "", precio: "" }]);
+  const editando = !!inicial;
+  const [nombre, setNombre] = useState(inicial?.nombre ?? "");
+  const [tipo, setTipo] = useState<TipoModificador>(inicial?.tipo ?? "SELECCION_UNICA");
+  const [obligatorio, setObligatorio] = useState(inicial?.obligatorio ?? false);
+  const [opciones, setOpciones] = useState<{ id?: string; nombre: string; precio: string }[]>(
+    inicial && inicial.opciones.length > 0
+      ? inicial.opciones.map((o) => ({ id: o.id, nombre: o.nombre, precio: o.precioExtra > 0 ? String(o.precioExtra) : "" }))
+      : [{ nombre: "", precio: "" }],
+  );
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
 
@@ -33,7 +43,7 @@ export function ModalNuevoModificador({
     if (!r.ok) { setError(r.error); return; }
     setGuardando(true);
     try {
-      await onCrear(r.valor);
+      await onGuardar(r.valor);
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo guardar el modificador.");
       setGuardando(false);
@@ -44,8 +54,12 @@ export function ModalNuevoModificador({
     <Modal visible transparent animationType="fade" onRequestClose={onCancelar}>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={estilos.fondo}>
         <View style={estilos.tarjeta}>
-          <Text style={estilos.titulo}>Nuevo modificador</Text>
-          <Text style={estilos.ayuda}>Por ejemplo: "Tipo de leche" con Entera, Avena +$10, Almendra +$10.</Text>
+          <Text style={estilos.titulo}>{editando ? "Editar modificador" : "Nuevo modificador"}</Text>
+          <Text style={estilos.ayuda}>
+            {editando
+              ? "El cambio se aplica a TODOS los productos que usan este modificador. Quita opciones con ✕, agrega con + y cambia el precio extra."
+              : 'Por ejemplo: "Tipo de leche" con Entera, Avena +$10, Almendra +$10.'}
+          </Text>
 
           <ScrollView style={{ maxHeight: 420 }} keyboardShouldPersistTaps="handled">
             <TextInput
@@ -106,8 +120,8 @@ export function ModalNuevoModificador({
             <TouchableOpacity onPress={onCancelar} style={[estilos.boton, { backgroundColor: colores.gray50 }]}>
               <Text style={{ color: colores.texto, fontWeight: "700" }}>Cancelar</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={crear} disabled={guardando} style={[estilos.boton, { backgroundColor: colores.green, opacity: guardando ? 0.6 : 1 }]} accessibilityLabel="Crear modificador">
-              <Text style={{ color: "#fff", fontWeight: "700" }}>Crear modificador</Text>
+            <TouchableOpacity onPress={crear} disabled={guardando} style={[estilos.boton, { backgroundColor: colores.green, opacity: guardando ? 0.6 : 1 }]} accessibilityLabel={editando ? "Guardar modificador" : "Crear modificador"}>
+              <Text style={{ color: "#fff", fontWeight: "700" }}>{editando ? "Guardar cambios" : "Crear modificador"}</Text>
             </TouchableOpacity>
           </View>
         </View>

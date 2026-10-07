@@ -12,6 +12,35 @@ export interface ConfigurarMonederoDto {
   sucursalId?: string | null;
 }
 
+/** Clave de "la misma empleada": empresa aparte, primer nombre sin acentos ni mayúsculas. Cada
+ *  empleada tiene un usuario por sucursal, pero su crédito es uno solo. */
+export function claveEmpleada(nombre: string): string {
+  const primero = (nombre ?? "").trim().split(/\s+/)[0] ?? "";
+  return primero.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+interface MonederoConUsuario {
+  usuarioId: string;
+  sucursalId: string | null;
+  usuario: { nombre: string; createdAt: Date; sucursales?: { sucursalId: string }[] };
+}
+
+/** Un monedero por empleada: el de su sucursal; si no, el del usuario más antiguo. Misma regla
+ *  que la migración 20261007190000, por si alguien da de alta otro a mano. */
+export function unicosPorNombre<T extends MonederoConUsuario>(monederos: T[]): T[] {
+  const enSuSucursal = (m: T) => !!m.sucursalId && (m.usuario.sucursales ?? []).some((s) => s.sucursalId === m.sucursalId);
+  const orden = (a: T, b: T) =>
+    Number(enSuSucursal(b)) - Number(enSuSucursal(a)) ||
+    a.usuario.createdAt.getTime() - b.usuario.createdAt.getTime() ||
+    a.usuarioId.localeCompare(b.usuarioId);
+  const elegidos = new Map<string, T>();
+  for (const m of [...monederos].sort(orden)) {
+    const clave = claveEmpleada(m.usuario.nombre);
+    if (!elegidos.has(clave)) elegidos.set(clave, m);
+  }
+  return monederos.filter((m) => elegidos.get(claveEmpleada(m.usuario.nombre)) === m);
+}
+
 /** El periodo más largo entre reinicios es una semana: nada anterior a esto puede afectar un saldo. */
 const DIAS_DE_MOVIMIENTOS = 8;
 
@@ -26,11 +55,17 @@ export class MonederoService {
 
   /** Monederos de la empresa con sus consumos recientes: lo que la terminal guarda para calcular saldos sin red. */
   async paraTerminal(empresaId: string) {
-    const monederos = await this.prisma.monederoEmpleado.findMany({
+    const todos = await this.prisma.monederoEmpleado.findMany({
       where: { empresaId, activo: true, usuario: { activo: true, eliminado: false } },
-      include: { usuario: { select: { nombre: true } }, sucursal: { select: { nombre: true } } },
+      include: {
+        usuario: { select: { nombre: true, createdAt: true, sucursales: { where: { activo: true }, select: { sucursalId: true } } } },
+        sucursal: { select: { nombre: true } },
+      },
       orderBy: { usuario: { nombre: "asc" } },
     });
+    // Una sola por nombre aunque alguien haya dado de alta otra a mano: si no, el cajero vería
+    // "Diana" dos veces y el crédito se podría gastar dos veces.
+    const monederos = unicosPorNombre(todos);
     const desde = new Date(Date.now() - DIAS_DE_MOVIMIENTOS * 24 * 60 * 60 * 1000);
     const movimientos = await this.prisma.movimientoMonedero.findMany({
       where: { usuarioId: { in: monederos.map((m) => m.usuarioId) }, createdAt: { gte: desde } },
@@ -71,11 +106,23 @@ export class MonederoService {
     const limite = dto.limite ?? MONEDERO_LIMITE_DEFAULT;
     if (!(Number(limite) > 0)) throw new BadRequestException("El límite del monedero debe ser mayor que 0");
 
-    const usuario = await this.prisma.usuario.findUnique({ where: { id: usuarioId }, select: { empresaId: true } });
+    const usuario = await this.prisma.usuario.findUnique({ where: { id: usuarioId }, select: { empresaId: true, nombre: true } });
     if (!usuario || usuario.empresaId !== empresaId) throw new NotFoundException("Usuario no encontrado");
     if (dto.sucursalId) {
       const sucursal = await this.prisma.sucursal.findUnique({ where: { id: dto.sucursalId }, select: { empresaId: true } });
       if (!sucursal || sucursal.empresaId !== empresaId) throw new BadRequestException("Sucursal inválida");
+    }
+
+    // Activar un segundo monedero con el mismo nombre duplicaría el crédito de la empleada.
+    if (dto.activo !== false) {
+      const activos = await this.prisma.monederoEmpleado.findMany({
+        where: { empresaId, activo: true, usuarioId: { not: usuarioId } },
+        include: { usuario: { select: { nombre: true } } },
+      });
+      const repetido = activos.find((m) => claveEmpleada(m.usuario.nombre) === claveEmpleada(usuario.nombre ?? ""));
+      if (repetido) {
+        throw new BadRequestException(`Ya hay un monedero activo para "${repetido.usuario.nombre}". El crédito es uno solo por empleada: apaga ese primero.`);
+      }
     }
 
     const datos = {

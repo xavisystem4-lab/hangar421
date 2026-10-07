@@ -3,7 +3,7 @@ import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "rea
 import { usarColores } from "../store/temaStore";
 import type { ModificadorLocal } from "../db/catalogoRepo";
 import type { ModificadorNuevo } from "../caja/nuevoModificador";
-import { ModalNuevoModificador } from "./ModalNuevoModificador";
+import { ModalModificador } from "./ModalModificador";
 
 /** Elegir qué modificadores pregunta un producto (Admin → Catálogo): al darlo de alta o después.
  *  Además de elegir los que ya existen, se puede crear uno nuevo ahí mismo (onCrearModificador
@@ -17,6 +17,7 @@ export function ModalModificadoresProducto({
   onCancelar,
   onGuardar,
   onCrearModificador,
+  onEditarModificador,
 }: {
   titulo: string;
   modificadores: ModificadorLocal[];
@@ -24,17 +25,26 @@ export function ModalModificadoresProducto({
   onCancelar: () => void;
   onGuardar: (modificadorIds: string[]) => void;
   onCrearModificador: (modificador: ModificadorNuevo) => Promise<string>;
+  /** Guarda los cambios de un grupo existente (nombre, opciones, precios). El padre recarga la lista. */
+  onEditarModificador: (id: string, modificador: ModificadorNuevo) => Promise<void>;
 }) {
   const colores = usarColores();
   const estilos = crearEstilos(colores);
   const [seleccion, setSeleccion] = useState<string[]>(seleccionInicial.filter((id) => modificadores.some((m) => m.id === id)));
 
   const [creando, setCreando] = useState(false);
+  const [editando, setEditando] = useState<ModificadorLocal | null>(null);
 
   async function crearYMarcar(nuevo: ModificadorNuevo) {
     const id = await onCrearModificador(nuevo);
     setSeleccion((s) => (s.includes(id) ? s : [...s, id]));
     setCreando(false);
+  }
+
+  async function guardarEdicion(nuevo: ModificadorNuevo) {
+    if (!editando) return;
+    await onEditarModificador(editando.id, nuevo);
+    setEditando(null);
   }
 
   function alternar(id: string) {
@@ -47,7 +57,7 @@ export function ModalModificadoresProducto({
         <View style={estilos.tarjeta}>
           <Text style={estilos.titulo}>{titulo}</Text>
           <Text style={estilos.ayuda}>
-            Marca lo que se debe preguntar al venderlo (tamaño, tipo de leche, jarabes…). Se pregunta en el orden en que lo marques.
+            Marca lo que se debe preguntar al venderlo (tamaño, tipo de leche, jarabes…). Con ✎ Editar cambias las opciones y precios de un modificador (aplica a todos los productos que lo usan). Se pregunta en el orden en que lo marques.
             Sin nada marcado, el producto se agrega directo al carrito.
           </Text>
 
@@ -72,6 +82,9 @@ export function ModalModificadoresProducto({
                       {m.opciones.map((o) => (o.precioExtra > 0 ? `${o.nombre} +$${o.precioExtra}` : o.nombre)).join(" · ") || "Sin opciones"}
                     </Text>
                   </View>
+                  <TouchableOpacity onPress={() => setEditando(m)} style={estilos.editar} accessibilityLabel={`Editar modificador ${m.nombre}`} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                    <Text style={{ color: colores.navyTexto, fontWeight: "700", fontSize: 12 }}>✎ Editar</Text>
+                  </TouchableOpacity>
                 </TouchableOpacity>
               );
             })}
@@ -91,7 +104,15 @@ export function ModalModificadoresProducto({
           </View>
         </View>
       </View>
-      {creando && <ModalNuevoModificador nombresExistentes={modificadores.map((m) => m.nombre)} onCrear={crearYMarcar} onCancelar={() => setCreando(false)} />}
+      {creando && <ModalModificador nombresExistentes={modificadores.map((m) => m.nombre)} onGuardar={crearYMarcar} onCancelar={() => setCreando(false)} />}
+      {editando && (
+        <ModalModificador
+          inicial={editando}
+          nombresExistentes={modificadores.filter((m) => m.id !== editando.id).map((m) => m.nombre)}
+          onGuardar={guardarEdicion}
+          onCancelar={() => setEditando(null)}
+        />
+      )}
     </Modal>
   );
 }
@@ -109,6 +130,7 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     nombre: { fontSize: 15, fontWeight: "700", color: colores.texto },
     detalle: { fontSize: 12, fontWeight: "400", color: colores.textoSecundario },
     opciones: { fontSize: 12, color: colores.textoSecundario, marginTop: 2 },
+    editar: { minHeight: 36, paddingHorizontal: 8, justifyContent: "center", borderRadius: 8, backgroundColor: colores.gray50 },
     crear: { minHeight: 44, borderRadius: 10, borderWidth: 1, borderStyle: "dashed", borderColor: colores.navy, alignItems: "center", justifyContent: "center", marginTop: 10 },
     botones: { flexDirection: "row", gap: 10, marginTop: 12 },
     boton: { flex: 1, minHeight: 48, borderRadius: 10, alignItems: "center", justifyContent: "center" },

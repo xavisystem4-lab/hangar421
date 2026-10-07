@@ -71,11 +71,27 @@ interface MesaRemota { id: string; nombre: string; estado: string; orden?: numbe
 
 /** Un modificador del ERP con sus opciones, por id (idempotente). */
 async function upsertModificador(db: SQLiteDatabase, m: ModificadorRemoto, ahora: string): Promise<void> {
+  // Un grupo editado aquí y todavía sin subir no se pisa con la versión vieja del ERP: ganaría la
+  // copia anterior y la edición se perdería (el push de después ya mandaría la lista correcta).
+  const pendiente = await db.getFirstAsync<{ total: number }>(
+    "SELECT COUNT(*) AS total FROM sync_outbox WHERE entidad = 'MODIFICADOR' AND entidad_id = ? AND estado IN ('PENDING','SYNCING','ERROR')",
+    m.id,
+  );
+  if ((pendiente?.total ?? 0) > 0) return;
   await db.runAsync(
     `INSERT INTO modificadores (id, nombre, tipo, obligatorio, activo, origen, synced_at) VALUES (?, ?, ?, ?, 1, 'ERP', ?)
      ON CONFLICT(id) DO UPDATE SET nombre = excluded.nombre, tipo = excluded.tipo, obligatorio = excluded.obligatorio, activo = 1, origen = 'ERP', synced_at = excluded.synced_at`,
     m.id, m.nombre, m.tipo, m.obligatorio ? 1 : 0, ahora,
   );
+  // El ERP manda la lista COMPLETA de opciones vigentes: las que ya no vienen se quitaron del
+  // grupo (en otra tablet o en el CRM). Las ventas guardan el nombre y el precio, así que borrar la
+  // opción local no rompe el historial.
+  if (Array.isArray(m.opciones) && m.opciones.length > 0) {
+    await db.runAsync(
+      `DELETE FROM opciones_modificador WHERE modificador_id = ? AND id NOT IN (${m.opciones.map(() => "?").join(",")})`,
+      m.id, ...m.opciones.map((o) => o.id),
+    );
+  }
   for (const o of m.opciones ?? []) {
     await db.runAsync(
       `INSERT INTO opciones_modificador (id, modificador_id, nombre, precio_extra, orden) VALUES (?, ?, ?, ?, ?)
