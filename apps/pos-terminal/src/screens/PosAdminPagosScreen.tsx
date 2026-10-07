@@ -12,6 +12,7 @@ const ICONO: Record<MetodoPago, string> = {
   [MetodoPago.TRANSFERENCIA]: "🏦",
   [MetodoPago.QR]: "▦",
   [MetodoPago.OTRO]: "•",
+  [MetodoPago.EN_LINEA]: "📱",
 };
 
 const DESCRIPCION: Record<MetodoPago, string> = {
@@ -21,6 +22,7 @@ const DESCRIPCION: Record<MetodoPago, string> = {
   [MetodoPago.TRANSFERENCIA]: "Para pagos por app bancaria o SPEI.",
   [MetodoPago.QR]: "Requiere un proveedor configurado.",
   [MetodoPago.OTRO]: "Vales, cortesías, cualquier caso que no encaje arriba.",
+  [MetodoPago.EN_LINEA]: "El cliente ya pagó en la app de DiDi. Solo aparece al cobrar el grupo DIDI.",
 };
 
 /** Métodos de pago habilitados — los mismos que ofrece la pantalla de cobro.

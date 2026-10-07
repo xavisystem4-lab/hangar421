@@ -81,6 +81,10 @@ export enum MetodoPago {
   /** Billetes en dólares. `monto` es lo que cubre de la venta en PESOS; los dólares recibidos y
    *  el tipo de cambio van en `montoUsd` / `tipoCambio`, y el cambio se da en pesos. */
   EFECTIVO_USD = "EFECTIVO_USD",
+  /** El cliente ya pagó en línea, en la app de la plataforma (DiDi Food…). No entra al cajón:
+   *  el corte lo muestra aparte y no lo suma al efectivo esperado. En el APK solo se ofrece al
+   *  cobrar una venta del grupo DIDI. */
+  EN_LINEA = "EN_LINEA",
 }
 
 export enum TipoMovimientoInventario {

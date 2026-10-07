@@ -31,6 +31,7 @@ const ETIQUETA_METODO: Record<string, string> = {
   TRANSFERENCIA: "Transferencia",
   QR: "Pago QR",
   OTRO: "Otro",
+  EN_LINEA: "Pagado en línea",
 };
 
 export function etiquetaMetodoPago(metodo: string): string {

@@ -96,7 +96,7 @@ describe("ventaPlataforma", () => {
       notas: "Pedido de DiDi Food #A123 — Cliente: María López",
     });
     expect(venta.totales).toEqual({ subtotal: 175, descuentoTotal: 0, impuesto: 0, total: 175 });
-    expect(venta.pagos).toEqual([{ metodo: "OTRO", monto: 175, referencia: "DiDi Food #A123" }]);
+    expect(venta.pagos).toEqual([{ metodo: "EN_LINEA", monto: 175, referencia: "DiDi Food #A123" }]);
     expect(venta.items.map((i) => [i.productoId, i.nombreProducto, i.cantidad, i.precioUnitario])).toEqual([
       ["p-latte-vainilla", "Latte Vainilla", 2, 65],
       ["p-croissant", "Croissant de mantequilla", 1, 45],

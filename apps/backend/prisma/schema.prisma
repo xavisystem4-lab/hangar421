@@ -93,6 +93,7 @@ enum MetodoPago {
   QR
   OTRO
   EFECTIVO_USD
+  EN_LINEA
 }
 
 enum EstadoConexionTerminal {

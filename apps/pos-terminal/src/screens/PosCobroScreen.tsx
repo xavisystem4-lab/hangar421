@@ -24,6 +24,7 @@ const ICONO: Record<MetodoPago, string> = {
   [MetodoPago.TRANSFERENCIA]: "🏦",
   [MetodoPago.QR]: "▦",
   [MetodoPago.OTRO]: "•",
+  [MetodoPago.EN_LINEA]: "📱",
 };
 
 // Orden de calculadora/cajero: 1-2-3 arriba y la fila final punto-cero-borrar, con el
@@ -85,6 +86,12 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
       if (habilitados[0]) setMetodoActivo(habilitados[0].tipo);
     })();
   }, []);
+
+  // En una venta de DiDi se ofrece además "Pagado en línea" (el cliente ya pagó en la app): no es
+  // un método configurable del dispositivo, solo tiene sentido para el grupo DIDI.
+  const metodosDelCobro = esDidi
+    ? [...metodos, { valor: MetodoPago.EN_LINEA, etiqueta: etiquetaMetodoPago[MetodoPago.EN_LINEA], icono: ICONO[MetodoPago.EN_LINEA] }]
+    : metodos;
 
   // Pesos por dólar del turno abierto (se pregunta al abrir caja). Sin él no se cobra en dólares.
   const [tipoCambio, setTipoCambio] = useState<number | null>(null);
@@ -277,7 +284,7 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
         )}
         <Text style={estilos.subtitulo}>{esDidi ? "¿Cómo pagó el cliente?" : "Método de pago"}</Text>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-          {(!cortesia || t.total > 0) && metodos.map((m) => (
+          {(!cortesia || t.total > 0) && metodosDelCobro.map((m) => (
             <TouchableOpacity key={m.valor} onPress={() => elegirMetodo(m.valor)} style={[estilos.botonChip, metodoActivo === m.valor && !faltaElegirMetodo && estilos.botonChipActivo]}>
               <Text style={[estilos.botonChipTexto, metodoActivo === m.valor && !faltaElegirMetodo && { color: "#fff" }]}>{m.icono} {m.etiqueta.toUpperCase()}</Text>
             </TouchableOpacity>
@@ -327,12 +334,14 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
             <Text style={estilos.etiquetaMonto}>
               {metodoActivo === MetodoPago.TARJETA
                 ? `Cobra $${t.total.toFixed(2)} en la terminal del banco y confirma aquí.`
-                : `Registra el pago de $${t.total.toFixed(2)} y confirma aquí.`}
+                : metodoActivo === MetodoPago.EN_LINEA
+                  ? `El cliente ya pagó $${t.total.toFixed(2)} en la app de DiDi. No entra dinero al cajón.`
+                  : `Registra el pago de $${t.total.toFixed(2)} y confirma aquí.`}
             </Text>
             <TextInput
               value={referencia}
               onChangeText={setReferencia}
-              placeholder={metodoActivo === MetodoPago.TARJETA ? "Autorización o últimos 4 dígitos (opcional)" : "Referencia (opcional)"}
+              placeholder={metodoActivo === MetodoPago.TARJETA ? "Autorización o últimos 4 dígitos (opcional)" : metodoActivo === MetodoPago.EN_LINEA ? "Número de pedido DiDi (opcional)" : "Referencia (opcional)"}
               placeholderTextColor={colores.textoSecundario}
               maxLength={40}
               style={estilos.inputReferencia}
