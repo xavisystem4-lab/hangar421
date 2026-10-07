@@ -8,6 +8,7 @@ import { obtenerConfig, guardarConfig } from "../db/configLocalRepo";
 import { upsertCatalogo, upsertMesas, upsertModificadores, repararProductosLocalesEnOutbox } from "../db/catalogoSyncRepo";
 import { guardarPromocionesRemotas } from "../db/promocionesRepo";
 import { upsertInventario, upsertRecetas } from "../db/inventarioRepo";
+import { aplicarSeccionesDelErp } from "../db/seccionesRepo";
 import { asegurarSesionEnSucursalActiva } from "./terminalErp";
 
 const CLAVE_EMPRESA_ERP = "empresa_id_erp";
@@ -124,6 +125,17 @@ export const refrescarInventario = unaALaVez(async function refrescarInventario(
         : undefined,
     });
   }
+
+  // Secciones del conteo físico, aparte y best-effort: un ERP que todavía no tiene el endpoint
+  // no debe dejar a la tablet sin existencias.
+  await erpFetch<{ secciones: any[]; asignaciones: any[] }>(`/inventario/secciones?sucursalId=${sucursalId}`)
+    .then((r) =>
+      aplicarSeccionesDelErp(db, sucursalId, {
+        secciones: r.secciones.map((s) => ({ id: s.id, nombre: s.nombre, orden: s.orden ?? 0, activo: !!s.activo })),
+        asignaciones: r.asignaciones.map((a) => ({ insumoId: a.insumoId, seccionId: a.seccionId ?? null })),
+      }),
+    )
+    .catch(() => undefined);
 });
 
 /** Deltas operativos vía /sync/pull (mesas, por ahora — PEDIDO/INVENTARIO_SUCURSAL quedan fuera

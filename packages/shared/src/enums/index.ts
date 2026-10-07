@@ -260,6 +260,11 @@ export enum SyncEntidad {
    *  primero en la tablet. Viaja con el MISMO id (uuid7). CREATE es idempotente por id; UPDATE
    *  trae solo lo que cambió (datos, unidad con o sin conversión, mínimos de la sucursal, baja). */
   INSUMO = "INSUMO",
+  /** Sección física de la sucursal para el conteo de inventario ("Exhibidor", "Refrigerador 1"…):
+   *  alta, renombre o baja. Upsert por id (lo genera la terminal). Usado por apps/pos-terminal. */
+  SECCION_INVENTARIO = "SECCION_INVENTARIO",
+  /** En qué sección de la sucursal se guarda un insumo (`seccionId: null` = sin sección). */
+  INSUMO_SECCION = "INSUMO_SECCION",
 }
 
 export enum EstadoSolicitudProducto {
