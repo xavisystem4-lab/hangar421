@@ -77,6 +77,7 @@ function crearServicio() {
     fijarDisponibilidad: jest.fn(),
     altaProductoDesdeTerminal: jest.fn(() => Promise.resolve({ id: "x", creado: true })),
     fijarModificadoresDeProducto: jest.fn(() => Promise.resolve({ id: "x", modificadores: 0 })),
+    crearModificadorDesdeTerminal: jest.fn((_datos: any) => Promise.resolve({ id: "x", creado: true })),
   };
   const solicitudes = { crear: jest.fn(() => Promise.resolve({})) };
 
@@ -231,6 +232,33 @@ describe("SyncService.push — PRODUCTO dado de alta en la terminal", () => {
     catalogo.altaProductoDesdeTerminal.mockImplementationOnce(() => Promise.reject(new Error("La categoría del producto no existe en el ERP")));
     const resp = await push([alta()]);
     expect(resp.resultados[0]).toMatchObject({ estado: SyncStatus.ERROR, error: "La categoría del producto no existe en el ERP" });
+  });
+});
+
+describe("SyncService.push — alta de modificadores desde la terminal", () => {
+  const nuevo = (extra: any = {}) => ({
+    id: "mod-nuevo-1", entidad: SyncEntidad.MODIFICADOR, operacion: SyncOperacion.CREATE,
+    idempotencyKey: `k-${Math.random()}`, dispositivoId: "dev-1", sucursalId: "suc-1", usuarioId: "user-1",
+    createdAtLocal: new Date().toISOString(),
+    payload: { empresaId: "emp-2", nombre: "Jarabe", tipo: "MULTIPLE", obligatorio: false, opciones: [{ id: "op-1", nombre: "Vainilla", precioExtra: 10, orden: 1 }] },
+    ...extra,
+  });
+
+  it("CREATE enruta al alta con la empresa del token, ignorando la del payload", async () => {
+    const { push, catalogo } = crearServicio();
+    const resp = await push([nuevo()]);
+    expect(resp.resultados[0].estado).toBe(SyncStatus.SYNCED);
+    expect(catalogo.crearModificadorDesdeTerminal).toHaveBeenCalledWith(expect.objectContaining({
+      id: "mod-nuevo-1", empresaId: "emp-1", nombre: "Jarabe", tipo: "MULTIPLE", obligatorio: false,
+      opciones: [{ id: "op-1", nombre: "Vainilla", precioExtra: 10, orden: 1 }],
+    }));
+  });
+
+  it("rechaza un id que ya pertenece a otra empresa sin tocar nada", async () => {
+    const { push, catalogo } = crearServicio();
+    const resp = await push([nuevo({ id: "mod-ajeno" })]);
+    expect(resp.resultados[0].error).toBe("El modificador pertenece a otra empresa");
+    expect(catalogo.crearModificadorDesdeTerminal).not.toHaveBeenCalled();
   });
 });
 

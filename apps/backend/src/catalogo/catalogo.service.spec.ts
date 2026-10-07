@@ -14,6 +14,8 @@ function crearPrismaFalso() {
   const cliente: any = {
     categoriaProducto: { findUnique: jest.fn(({ where: { id } }: any) => Promise.resolve(categorias[id] ?? null)) },
     modificador: {
+      findUnique: jest.fn(({ where: { id } }: any) => Promise.resolve(modificadores[id] ?? null)),
+      create: jest.fn(({ data }: any) => { modificadores[data.id] = { ...data }; return Promise.resolve(data); }),
       findMany: jest.fn(({ where }: any) => Promise.resolve(where.id.in.map((id: string) => modificadores[id]).filter(Boolean))),
     },
     producto: {
@@ -120,5 +122,53 @@ describe("CatalogoService.fijarModificadoresDeProducto", () => {
     await expect(servicio.fijarModificadoresDeProducto("emp-1", "nada", [])).rejects.toThrow(/no existe/);
     await servicio.altaProductoDesdeTerminal({ ...BASE });
     await expect(servicio.fijarModificadoresDeProducto("emp-2", "prod-nuevo", [])).rejects.toThrow(/otra empresa/);
+  });
+});
+
+describe("CatalogoService.crearModificadorDesdeTerminal", () => {
+  const GRUPO = {
+    id: "mod-nuevo", empresaId: "emp-1", nombre: " Jarabe ", tipo: "MULTIPLE", obligatorio: false,
+    opciones: [{ id: "op-1", nombre: " Vainilla ", precioExtra: 10 }, { id: "op-2", nombre: "Caramelo", precioExtra: 12.5 }],
+  };
+
+  it("crea el grupo con los ids de la terminal y las opciones en orden", async () => {
+    const { cliente } = crearPrismaFalso();
+    const r = await new CatalogoService(cliente).crearModificadorDesdeTerminal(GRUPO);
+    expect(r).toEqual({ id: "mod-nuevo", creado: true });
+    expect(cliente.modificador.create).toHaveBeenCalledWith({
+      data: {
+        id: "mod-nuevo", empresaId: "emp-1", nombre: "Jarabe", tipo: "MULTIPLE", obligatorio: false,
+        opciones: { create: [
+          { id: "op-1", nombre: "Vainilla", precioExtra: 10, orden: 1 },
+          { id: "op-2", nombre: "Caramelo", precioExtra: 12.5, orden: 2 },
+        ] },
+      },
+    });
+  });
+
+  it("es idempotente: reenviar el mismo grupo no lo duplica", async () => {
+    const { cliente } = crearPrismaFalso();
+    const servicio = new CatalogoService(cliente);
+    await servicio.crearModificadorDesdeTerminal(GRUPO);
+    const r = await servicio.crearModificadorDesdeTerminal(GRUPO);
+    expect(r).toEqual({ id: "mod-nuevo", creado: false });
+    expect(cliente.modificador.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("rechaza el id de otra empresa", async () => {
+    const { cliente } = crearPrismaFalso();
+    await expect(new CatalogoService(cliente).crearModificadorDesdeTerminal({ ...GRUPO, id: "mod-ajeno" })).rejects.toThrow("otra empresa");
+  });
+
+  it.each([
+    ["sin nombre", { nombre: "  " }, "no tiene nombre"],
+    ["tipo inválido", { tipo: "OTRO" }, "tipo del modificador"],
+    ["sin opciones", { opciones: [] }, "al menos una opción"],
+    ["opción sin nombre", { opciones: [{ nombre: " ", precioExtra: 0 }] }, "no tiene nombre"],
+    ["precio negativo", { opciones: [{ nombre: "X", precioExtra: -1 }] }, "no es válido"],
+  ])("rechaza %s", async (_caso: string, cambio: any, mensaje: string) => {
+    const { cliente } = crearPrismaFalso();
+    await expect(new CatalogoService(cliente).crearModificadorDesdeTerminal({ ...GRUPO, ...cambio })).rejects.toThrow(mensaje);
+    expect(cliente.modificador.create).not.toHaveBeenCalled();
   });
 });

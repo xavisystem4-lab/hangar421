@@ -158,6 +158,55 @@ export class CatalogoService {
   }
 
   /**
+   * Alta de un grupo de modificadores hecha en una terminal (SyncEntidad.MODIFICADOR / CREATE).
+   * Conserva los ids de la terminal (grupo y opciones) para que el producto y las ventas que ya
+   * los nombran resuelvan igual aquí. Idempotente: si el grupo ya existe (reenvío del lote) no se
+   * toca nada. La empresa sale del token, nunca del payload.
+   */
+  async crearModificadorDesdeTerminal(datos: {
+    id: string;
+    empresaId: string;
+    nombre: string;
+    tipo: string;
+    obligatorio?: boolean;
+    opciones?: { id?: string; nombre: string; precioExtra: number; orden?: number }[];
+  }) {
+    const nombre = String(datos.nombre ?? "").trim();
+    if (!nombre) throw new Error("El modificador no tiene nombre");
+    if (datos.tipo !== "SELECCION_UNICA" && datos.tipo !== "MULTIPLE") throw new Error("El tipo del modificador no es válido");
+    const opciones = (Array.isArray(datos.opciones) ? datos.opciones : []).map((o, i) => ({
+      id: o.id,
+      nombre: String(o.nombre ?? "").trim(),
+      precioExtra: Number(o.precioExtra ?? 0),
+      orden: o.orden ?? i + 1,
+    }));
+    if (opciones.length === 0) throw new Error("El modificador necesita al menos una opción");
+    for (const o of opciones) {
+      if (!o.nombre) throw new Error("Una opción del modificador no tiene nombre");
+      if (!Number.isFinite(o.precioExtra) || o.precioExtra < 0) throw new Error(`El precio extra de "${o.nombre}" no es válido`);
+    }
+
+    const existente = await this.prisma.modificador.findUnique({ where: { id: datos.id }, select: { empresaId: true } });
+    if (existente) {
+      if (existente.empresaId !== datos.empresaId) throw new Error("El modificador pertenece a otra empresa");
+      return { id: datos.id, creado: false };
+    }
+
+    await this.prisma.modificador.create({
+      data: {
+        id: datos.id,
+        empresaId: datos.empresaId,
+        nombre,
+        tipo: datos.tipo,
+        obligatorio: datos.obligatorio ?? false,
+        opciones: { create: opciones }, // id undefined → Prisma genera uno
+      },
+    });
+    this.logger.log(`Modificador "${nombre}" dado de alta desde la terminal (${datos.id}) con ${opciones.length} opción(es)`);
+    return { id: datos.id, creado: true };
+  }
+
+  /**
    * Alta de un producto hecha en una terminal (SyncEntidad.PRODUCTO / CREATE). Llega con el id
    * que ya tiene en la tablet, así que es idempotente: reenviar el mismo sobre no duplica nada.
    *

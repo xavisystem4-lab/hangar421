@@ -2,6 +2,7 @@ import type { SQLiteDatabase } from "expo-sqlite";
 import { uuid7, SyncEntidad, SyncOperacion } from "@hangar421/shared";
 import { encolarSync } from "./outboxRepo";
 import { obtenerOCrearDispositivoId, obtenerOCrearSucursalIdLocal } from "./dispositivoLocal";
+import type { ModificadorNuevo } from "../caja/nuevoModificador";
 
 /** Alta/edición de catálogo desde la terminal.
  *
@@ -24,6 +25,42 @@ export interface NuevoProducto {
   /** Modificadores que preguntará al venderse, en el orden en que se eligieron. Vacío = se
    *  agrega directo al carrito. */
   modificadorIds?: string[];
+}
+
+/** Crea un grupo de modificadores (con sus opciones) en la terminal y lo manda al ERP como
+ *  MODIFICADOR / CREATE con los mismos ids. Debe quedar en el outbox ANTES del producto que lo
+ *  usa: el outbox se drena en orden, así que basta con crear el grupo primero (el modal lo hace
+ *  al momento de guardarlo, no al crear el producto).
+ *
+ *  `origen = 'TERMINAL'` (no 'LOCAL'): 'LOCAL' es el catálogo sembrado del dispositivo y se
+ *  retira en cuanto el ERP manda uno de verdad; un grupo creado a propósito aquí no debe
+ *  desaparecer. Al sincronizar, el pull lo trae de vuelta con el mismo id y lo pasa a 'ERP'. */
+export async function crearModificadorLocal(db: SQLiteDatabase, datos: ModificadorNuevo, usuarioId?: string): Promise<string> {
+  const id = uuid7();
+  const opciones = datos.opciones.map((o, i) => ({ id: uuid7(), nombre: o.nombre, precioExtra: o.precioExtra, orden: i + 1 }));
+  const [sucursalId, dispositivoId] = await Promise.all([obtenerOCrearSucursalIdLocal(db), obtenerOCrearDispositivoId(db)]);
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      "INSERT INTO modificadores (id, nombre, tipo, obligatorio, activo, origen, synced_at) VALUES (?, ?, ?, ?, 1, 'TERMINAL', NULL)",
+      id, datos.nombre, datos.tipo, datos.obligatorio ? 1 : 0,
+    );
+    for (const o of opciones) {
+      await db.runAsync(
+        "INSERT INTO opciones_modificador (id, modificador_id, nombre, precio_extra, orden) VALUES (?, ?, ?, ?, ?)",
+        o.id, id, o.nombre, o.precioExtra, o.orden,
+      );
+    }
+    await encolarSync(db, {
+      entidad: SyncEntidad.MODIFICADOR,
+      operacion: SyncOperacion.CREATE,
+      entidadId: id,
+      sucursalId,
+      dispositivoId,
+      usuarioId,
+      payload: { nombre: datos.nombre, tipo: datos.tipo, obligatorio: datos.obligatorio, opciones },
+    });
+  });
+  return id;
 }
 
 export async function crearCategoria(db: SQLiteDatabase, datos: NuevaCategoria): Promise<string> {

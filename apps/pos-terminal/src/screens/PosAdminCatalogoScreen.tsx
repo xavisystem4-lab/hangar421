@@ -13,7 +13,9 @@ import {
   alternarDisponibilidadProducto,
   contarCambiosSoloLocales,
   fijarModificadoresDeProducto,
+  crearModificadorLocal,
 } from "../db/catalogoAdminRepo";
+import type { ModificadorNuevo } from "../caja/nuevoModificador";
 import { ModalModificadoresProducto } from "../components/ModalModificadoresProducto";
 import { sincronizarPronto } from "../sync/syncEngine";
 
@@ -106,6 +108,15 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
       cargar();
     }
     setEligiendoMods(null);
+  }
+
+  /** Crea el grupo, lo sube al ERP (va antes que el producto en el outbox) y recarga la lista. */
+  async function crearModificador(nuevo: ModificadorNuevo): Promise<string> {
+    const db = await abrirBaseDeDatos();
+    const id = await crearModificadorLocal(db, nuevo, usuario?.id);
+    sincronizarPronto();
+    await cargar();
+    return id;
   }
 
   const nombresMods = (ids: string[]) => ids.map((id) => modificadores.find((m) => m.id === id)?.nombre).filter(Boolean).join(", ");
@@ -237,6 +248,7 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
           seleccionInicial={eligiendoMods.productoId === null ? modsNuevoProducto : modsPorProducto.get(eligiendoMods.productoId) ?? []}
           onCancelar={() => setEligiendoMods(null)}
           onGuardar={guardarModificadores}
+          onCrearModificador={crearModificador}
         />
       )}
     </ScrollView>

@@ -370,6 +370,18 @@ export class SyncService {
         }
         break;
 
+      // Grupo de modificadores creado en la tablet; se encola antes que el producto que lo usa.
+      case SyncEntidad.MODIFICADOR:
+        await this.catalogo.crearModificadorDesdeTerminal({
+          id: item.id,
+          empresaId,
+          nombre: p.nombre,
+          tipo: p.tipo,
+          obligatorio: p.obligatorio,
+          opciones: p.opciones,
+        });
+        break;
+
       case SyncEntidad.PRODUCTO_SUCURSAL:
         if (p.precio != null) {
           await this.catalogo.fijarPrecioSucursal(p.productoId, item.sucursalId, p.precio, p.disponible ?? true);

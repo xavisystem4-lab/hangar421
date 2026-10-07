@@ -2,8 +2,12 @@ import { useState } from "react";
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
 import type { ModificadorLocal } from "../db/catalogoRepo";
+import type { ModificadorNuevo } from "../caja/nuevoModificador";
+import { ModalNuevoModificador } from "./ModalNuevoModificador";
 
 /** Elegir qué modificadores pregunta un producto (Admin → Catálogo): al darlo de alta o después.
+ *  Además de elegir los que ya existen, se puede crear uno nuevo ahí mismo (onCrearModificador
+ *  lo guarda y devuelve su id; el padre recarga la lista y aquí queda marcado).
  *  El orden en que se marcan es el orden en que se preguntarán al venderlo. Con alguno marcado el
  *  producto se vuelve "compuesto": tocarlo en Venta abre el modal de personalización. */
 export function ModalModificadoresProducto({
@@ -12,16 +16,26 @@ export function ModalModificadoresProducto({
   seleccionInicial,
   onCancelar,
   onGuardar,
+  onCrearModificador,
 }: {
   titulo: string;
   modificadores: ModificadorLocal[];
   seleccionInicial: string[];
   onCancelar: () => void;
   onGuardar: (modificadorIds: string[]) => void;
+  onCrearModificador: (modificador: ModificadorNuevo) => Promise<string>;
 }) {
   const colores = usarColores();
   const estilos = crearEstilos(colores);
   const [seleccion, setSeleccion] = useState<string[]>(seleccionInicial.filter((id) => modificadores.some((m) => m.id === id)));
+
+  const [creando, setCreando] = useState(false);
+
+  async function crearYMarcar(nuevo: ModificadorNuevo) {
+    const id = await onCrearModificador(nuevo);
+    setSeleccion((s) => (s.includes(id) ? s : [...s, id]));
+    setCreando(false);
+  }
 
   function alternar(id: string) {
     setSeleccion((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
@@ -39,7 +53,7 @@ export function ModalModificadoresProducto({
 
           <ScrollView style={{ maxHeight: 380 }}>
             {modificadores.length === 0 && (
-              <Text style={estilos.ayuda}>No hay modificadores en el catálogo. Se crean en el CRM (Catálogo → Modificadores) y llegan al sincronizar.</Text>
+              <Text style={estilos.ayuda}>Todavía no hay modificadores. Crea el primero con el botón de abajo.</Text>
             )}
             {modificadores.map((m) => {
               const posicion = seleccion.indexOf(m.id);
@@ -63,6 +77,10 @@ export function ModalModificadoresProducto({
             })}
           </ScrollView>
 
+          <TouchableOpacity onPress={() => setCreando(true)} style={estilos.crear} accessibilityLabel="Crear modificador nuevo">
+            <Text style={{ color: colores.navyTexto, fontWeight: "800" }}>➕ Crear modificador nuevo</Text>
+          </TouchableOpacity>
+
           <View style={estilos.botones}>
             <TouchableOpacity onPress={onCancelar} style={[estilos.boton, { backgroundColor: colores.gray50 }]}>
               <Text style={{ color: colores.texto, fontWeight: "700" }}>Cancelar</Text>
@@ -73,6 +91,7 @@ export function ModalModificadoresProducto({
           </View>
         </View>
       </View>
+      {creando && <ModalNuevoModificador nombresExistentes={modificadores.map((m) => m.nombre)} onCrear={crearYMarcar} onCancelar={() => setCreando(false)} />}
     </Modal>
   );
 }
@@ -90,6 +109,7 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     nombre: { fontSize: 15, fontWeight: "700", color: colores.texto },
     detalle: { fontSize: 12, fontWeight: "400", color: colores.textoSecundario },
     opciones: { fontSize: 12, color: colores.textoSecundario, marginTop: 2 },
+    crear: { minHeight: 44, borderRadius: 10, borderWidth: 1, borderStyle: "dashed", borderColor: colores.navy, alignItems: "center", justifyContent: "center", marginTop: 10 },
     botones: { flexDirection: "row", gap: 10, marginTop: 12 },
     boton: { flex: 1, minHeight: 48, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   });
