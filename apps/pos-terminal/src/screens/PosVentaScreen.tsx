@@ -10,6 +10,7 @@ import { coincideBusqueda } from "../db/busqueda";
 import { listarCategorias, listarProductos, modificadoresDeProducto, type CategoriaLocal, type ModificadorLocal, type ProductoLocal } from "../db/catalogoRepo";
 import { ModalModificadores } from "../components/ModalModificadores";
 import { ModalNombreCliente } from "../components/ModalNombreCliente";
+import { esVentaDidi } from "../caja/origenVenta";
 
 /** Catálogo + carrito — lee/escribe SQLite local, nunca la red. El catálogo de HANGAR 421 se
  *  siembra en la base local en el primer arranque (ver db/catalogoHangar.ts), así que la
@@ -87,12 +88,16 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
     cargar();
   }, []);
 
+  // Un pedido de DIDI se captura desde la tablet de DiDi y se entrega con el código de la app, no
+  // con un nombre: ahí no se pregunta ni se ofrece ponerle nombre.
+  const pedidoDidi = esVentaDidi(items.map((i) => i.categoria));
+
   // Pedido nuevo = primer producto en un carrito vacío: ahí se pregunta (una sola vez por pedido)
   // si se le pone nombre. Al cobrar o vaciar el carrito se reinicia y el siguiente pedido vuelve
   // a preguntar.
   useEffect(() => {
-    if (items.length > 0 && !nombrePreguntado) setPidiendoNombre(true);
-  }, [items.length, nombrePreguntado]);
+    if (items.length > 0 && !nombrePreguntado && !pedidoDidi) setPidiendoNombre(true);
+  }, [items.length, nombrePreguntado, pedidoDidi]);
 
   const t = totales();
   const buscando = busqueda.trim().length > 0;
@@ -225,13 +230,16 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
       </ScrollView>
 
       <View style={estilos.carrito}>
-        {/* Nombre del pedido: sale en el ticket y la comanda. Tocarlo lo cambia o lo quita. */}
-        <TouchableOpacity onPress={() => setPidiendoNombre(true)} style={estilos.filaNombre} accessibilityLabel="Nombre del pedido">
-          <Text style={{ color: nombreCliente ? colores.texto : colores.textoSecundario, fontWeight: nombreCliente ? "700" : "400" }} numberOfLines={1}>
-            {nombreCliente ? `👤 ${nombreCliente}` : "👤 Poner nombre al pedido"}
-          </Text>
-          <Text style={{ color: colores.textoSecundario }}>{nombreCliente ? "✎" : "+"}</Text>
-        </TouchableOpacity>
+        {/* Nombre del pedido: sale en el ticket y la comanda. Tocarlo lo cambia o lo quita. En un
+            pedido de DIDI no se ofrece (ver pedidoDidi). */}
+        {!pedidoDidi && (
+          <TouchableOpacity onPress={() => setPidiendoNombre(true)} style={estilos.filaNombre} accessibilityLabel="Nombre del pedido">
+            <Text style={{ color: nombreCliente ? colores.texto : colores.textoSecundario, fontWeight: nombreCliente ? "700" : "400" }} numberOfLines={1}>
+              {nombreCliente ? `👤 ${nombreCliente}` : "👤 Poner nombre al pedido"}
+            </Text>
+            <Text style={{ color: colores.textoSecundario }}>{nombreCliente ? "✎" : "+"}</Text>
+          </TouchableOpacity>
+        )}
         <ScrollView style={{ maxHeight: 160 }}>
           {items.map((item) => (
             <View key={item.id} style={estilos.filaItem}>
