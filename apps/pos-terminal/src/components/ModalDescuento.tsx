@@ -3,7 +3,7 @@ import { KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, Te
 import { TipoDescuento, round2 } from "@hangar421/shared";
 import { usarColores } from "../store/temaStore";
 import type { ItemCarrito } from "../store/carritoStore";
-import { SIN_DESCUENTOS, etiquetaDescuento, hayDescuentos, totalesConDescuentos, validarDescuento, type DescuentosVenta } from "../caja/descuentoVenta";
+import { MOTIVO_MAX, SIN_DESCUENTOS, etiquetaDescuento, hayDescuentos, normalizarMotivo, totalesConDescuentos, validarDescuento, type DescuentoConMotivo, type DescuentosVenta } from "../caja/descuentoVenta";
 
 const NARANJA = "#FF6A13";
 
@@ -30,14 +30,16 @@ export function ModalDescuento({
   const [lineaId, setLineaId] = useState<string | null>(null);
   const [tipo, setTipo] = useState<TipoDescuento>(TipoDescuento.PORCENTAJE);
   const [texto, setTexto] = useState("");
+  const [motivo, setMotivo] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const totales = totalesConDescuentos(items, borrador);
   const linea = items.find((i) => i.id === lineaId) ?? null;
 
-  function abrirEditor(actual: { tipo: TipoDescuento; valor: number } | null | undefined) {
+  function abrirEditor(actual: DescuentoConMotivo | null | undefined) {
     setTipo(actual?.tipo ?? TipoDescuento.PORCENTAJE);
     setTexto(actual ? String(actual.valor) : "");
+    setMotivo(actual?.motivo ?? "");
     setError(null);
   }
 
@@ -53,14 +55,15 @@ export function ModalDescuento({
   }
 
   /** Valida lo escrito y devuelve el descuento, o null (con el error en pantalla). */
-  function leer(): { tipo: TipoDescuento; valor: number } | null {
+  function leer(): DescuentoConMotivo | null {
     const valor = Number(texto.replace(",", "."));
     const problema = validarDescuento(tipo, valor);
     if (problema) {
       setError(problema);
       return null;
     }
-    return { tipo, valor: round2(valor) };
+    const m = normalizarMotivo(motivo);
+    return { tipo, valor: round2(valor), ...(m ? { motivo: m } : {}) };
   }
 
   function aplicarGeneral() {
@@ -101,6 +104,15 @@ export function ModalDescuento({
         maxLength={8}
         style={estilos.input}
         accessibilityLabel={tipo === TipoDescuento.PORCENTAJE ? "Porcentaje de descuento" : "Monto de descuento"}
+      />
+      <TextInput
+        value={motivo}
+        onChangeText={setMotivo}
+        placeholder="Motivo del descuento (opcional)"
+        placeholderTextColor={colores.textoSecundario}
+        maxLength={MOTIVO_MAX}
+        style={estilos.inputMotivo}
+        accessibilityLabel="Motivo del descuento"
       />
       {error && <Text style={estilos.error}>{error}</Text>}
     </View>
@@ -231,6 +243,7 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     segmentoActivo: { backgroundColor: NARANJA, borderColor: NARANJA },
     segmentoTexto: { color: colores.texto, fontWeight: "800" },
     input: { minHeight: 52, borderWidth: 1, borderColor: colores.borde, borderRadius: 10, paddingHorizontal: 12, fontSize: 22, fontWeight: "700", color: colores.texto, textAlign: "center" },
+    inputMotivo: { minHeight: 48, borderWidth: 1, borderColor: colores.borde, borderRadius: 10, paddingHorizontal: 12, fontSize: 15, color: colores.texto },
     error: { color: colores.red, fontSize: 13 },
     botones: { flexDirection: "row", gap: 10, marginTop: 16 },
     boton: { flex: 1, minHeight: 48, borderRadius: 10, alignItems: "center", justifyContent: "center" },
