@@ -1,5 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { minutosDeHora } from "@hangar421/shared";
 import { PrismaService } from "../prisma/prisma.service";
 
 @Injectable()
@@ -155,6 +156,107 @@ export class CatalogoService {
       },
       include: { opciones: true },
     });
+  }
+
+  /** Promociones de la empresa para las terminales (GET /catalogo/promociones). Incluye las
+   *  apagadas: la terminal las muestra en Admin para poder reactivarlas. */
+  async listarPromociones(empresaId: string) {
+    const promos = await this.prisma.promocion.findMany({
+      where: { empresaId },
+      include: { productos: { select: { productoId: true } } },
+      orderBy: { createdAt: "asc" },
+    });
+    return promos.map((p) => ({
+      id: p.id,
+      nombre: p.nombre,
+      tipo: p.tipo,
+      valor: Number(p.valor),
+      productoIds: p.productos.map((x) => x.productoId),
+      dias: p.dias,
+      horaInicio: p.horaInicio,
+      horaFin: p.horaFin,
+      fechaInicio: p.fechaInicio,
+      fechaFin: p.fechaFin,
+      sucursalId: p.sucursalId,
+      activo: p.activo,
+    }));
+  }
+
+  /**
+   * Alta o edición de una promoción hecha en una terminal (SyncEntidad.PROMOCION, CREATE y UPDATE).
+   * Llega con la definición COMPLETA y con el id de la tablet, así que es un upsert idempotente:
+   * reenviar el sobre deja el mismo resultado. Apagarla es mandarla con `activo: false`.
+   * Los productos deben ser de la empresa; la empresa sale del token.
+   */
+  async guardarPromocionDesdeTerminal(datos: {
+    id: string;
+    empresaId: string;
+    usuarioId?: string | null;
+    sucursalId?: string | null;
+    nombre: string;
+    tipo: string;
+    valor: number;
+    productoIds?: string[];
+    dias?: number[];
+    horaInicio?: string | null;
+    horaFin?: string | null;
+    fechaInicio?: string | null;
+    fechaFin?: string | null;
+    activo?: boolean;
+  }) {
+    const nombre = String(datos.nombre ?? "").trim();
+    if (!nombre) throw new Error("La promoción no tiene nombre");
+    if (datos.tipo !== "PRECIO" && datos.tipo !== "PORCENTAJE") throw new Error("El tipo de la promoción no es válido");
+    const valor = Number(datos.valor);
+    if (!Number.isFinite(valor) || valor < 0) throw new Error("El valor de la promoción no es válido");
+    if (datos.tipo === "PORCENTAJE" && (valor <= 0 || valor > 100)) throw new Error("El porcentaje debe ser mayor que 0 y hasta 100");
+
+    const dias = [...new Set(Array.isArray(datos.dias) ? datos.dias.map(Number) : [])];
+    if (dias.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) throw new Error("Los días deben ir de 0 (domingo) a 6 (sábado)");
+    const hora = (h: string | null | undefined, campo: string) => {
+      if (h == null || h === "") return null;
+      const m = minutosDeHora(h);
+      if (m === null) throw new Error(`${campo} no es una hora válida (HH:MM)`);
+      return h;
+    };
+    const horaInicio = hora(datos.horaInicio, "La hora de inicio");
+    const horaFin = hora(datos.horaFin, "La hora de fin");
+    if (horaInicio && horaFin && minutosDeHora(horaInicio)! >= minutosDeHora(horaFin)!) throw new Error("La hora de fin debe ser posterior a la de inicio");
+    const fecha = (f: string | null | undefined, campo: string) => {
+      if (f == null || f === "") return null;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(f)) throw new Error(`${campo} no es una fecha válida (AAAA-MM-DD)`);
+      return f;
+    };
+    const fechaInicio = fecha(datos.fechaInicio, "La fecha de inicio");
+    const fechaFin = fecha(datos.fechaFin, "La fecha de fin");
+    if (fechaInicio && fechaFin && fechaInicio > fechaFin) throw new Error("La fecha de fin debe ser igual o posterior a la de inicio");
+
+    const productoIds = [...new Set((Array.isArray(datos.productoIds) ? datos.productoIds : []).filter((x): x is string => typeof x === "string" && x.length > 0))];
+    if (productoIds.length === 0) throw new Error("La promoción necesita al menos un producto");
+    const productos = await this.prisma.producto.findMany({ where: { id: { in: productoIds } }, select: { id: true, empresaId: true } });
+    const empresaDe = new Map(productos.map((p) => [p.id, p.empresaId]));
+    for (const id of productoIds) {
+      const dueno = empresaDe.get(id);
+      if (!dueno) throw new Error("Uno de los productos no existe en el ERP: vuelve a sincronizar el catálogo");
+      if (dueno !== datos.empresaId) throw new Error("Uno de los productos pertenece a otra empresa");
+    }
+
+    const existente = await this.prisma.promocion.findUnique({ where: { id: datos.id }, select: { empresaId: true } });
+    if (existente && existente.empresaId !== datos.empresaId) throw new Error("La promoción pertenece a otra empresa");
+
+    const campos = {
+      nombre, tipo: datos.tipo, valor, dias, horaInicio, horaFin, fechaInicio, fechaFin,
+      sucursalId: datos.sucursalId || null,
+      activo: datos.activo ?? true,
+    };
+    await this.prisma.$transaction(async (tx) => {
+      if (existente) await tx.promocion.update({ where: { id: datos.id }, data: campos });
+      else await tx.promocion.create({ data: { id: datos.id, empresaId: datos.empresaId, creadaPorId: datos.usuarioId ?? null, ...campos } });
+      await tx.promocionProducto.deleteMany({ where: { promocionId: datos.id } });
+      await tx.promocionProducto.createMany({ data: productoIds.map((productoId) => ({ promocionId: datos.id, productoId })), skipDuplicates: true });
+    });
+    this.logger.log(`Promoción "${nombre}" ${existente ? "editada" : "creada"} desde la terminal (${datos.id}) con ${productoIds.length} producto(s)`);
+    return { id: datos.id, creada: !existente };
   }
 
   /**

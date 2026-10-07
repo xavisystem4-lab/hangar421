@@ -11,6 +11,7 @@ import {
   calcularMontoDescuento,
   calcularTotalesPedido,
   calcularCortesia,
+  precioConPromocion,
   calcularDescuentosVenta,
   validarPagoSuficiente,
 } from "@hangar421/shared";
@@ -350,6 +351,7 @@ export class PedidosService {
               productoId: it.productoId,
               cantidad: it.cantidad,
               precioUnitario: it.precioUnitario,
+              promocionId: it.promocionId,
               notas: it.notas,
               modificadores: {
                 create: it.modificadoresSeleccionados.map((m) => ({
@@ -395,6 +397,7 @@ export class PedidosService {
             productoId: it.productoId,
             cantidad: it.cantidad,
             precioUnitario: it.precioUnitario,
+            promocionId: it.promocionId,
             notas: it.notas,
             modificadores: {
               create: it.modificadoresSeleccionados.map((m) => ({
@@ -753,7 +756,7 @@ export class PedidosService {
     return { calculo, filas };
   }
 
-  private async resolverItem(item: { productoId: string; cantidad: number; notas?: string; modificadores?: { opcionModificadorId: string }[] }) {
+  private async resolverItem(item: { productoId: string; cantidad: number; notas?: string; promocionId?: string; modificadores?: { opcionModificadorId: string }[] }) {
     // findUniqueOrThrow revienta con un NotFoundError si el productoId no existe (ej. el POS
     // tenía el catálogo cacheado y alguien borró/desactivó ese producto entre medias) — sin este
     // try/catch se iba como 500 genérico ("Error interno del servidor"), sin decir cuál producto
@@ -772,12 +775,36 @@ export class PedidosService {
 
     const modificadoresPrecio = opciones.reduce((acc, o) => acc + Number(o.precioExtra), 0);
 
+    // Precio especial: se recalcula aquí con la definición de la promoción (la tablet ya la aplicó
+    // al vender; el servidor no confía en el precio que manda). Sin vigencia a propósito: una
+    // venta hecha sin conexión llega horas después y la tablet ya comprobó fecha/día/horario en el
+    // momento de vender. Si la promoción no existe, no incluye el producto o es de otra empresa, se
+    // cobra el precio de catálogo y se avisa en el log.
+    let precioUnitario = Number(producto.precioBase);
+    let promocionId: string | undefined;
+    if (item.promocionId) {
+      const promo = await this.prisma.promocion.findUnique({
+        where: { id: item.promocionId },
+        include: { productos: { where: { productoId: producto.id }, select: { productoId: true } } },
+      });
+      if (promo && promo.empresaId === producto.empresaId && promo.productos.length > 0) {
+        const conPromo = precioConPromocion({ tipo: promo.tipo as "PRECIO" | "PORCENTAJE", valor: Number(promo.valor) }, precioUnitario);
+        if (conPromo < precioUnitario) {
+          precioUnitario = conPromo;
+          promocionId = promo.id;
+        }
+      } else {
+        this.logger.warn(`Línea con promoción ${item.promocionId} que no aplica al producto ${producto.id}: se cobra el precio de catálogo`);
+      }
+    }
+
     return {
       productoId: item.productoId,
       nombreProducto: producto.nombre,
       cantidad: item.cantidad,
       notas: item.notas,
-      precioUnitario: Number(producto.precioBase),
+      precioUnitario,
+      promocionId,
       modificadoresPrecio,
       modificadoresSeleccionados: opciones.map((o) => ({ id: o.id, precioExtra: Number(o.precioExtra) })),
     };

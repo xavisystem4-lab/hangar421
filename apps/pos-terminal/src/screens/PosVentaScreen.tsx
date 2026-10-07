@@ -11,6 +11,10 @@ import { listarCategorias, listarProductos, modificadoresDeProducto, type Catego
 import { ModalModificadores } from "../components/ModalModificadores";
 import { ModalNombreCliente } from "../components/ModalNombreCliente";
 import { esVentaDidi } from "../caja/origenVenta";
+import { listarPromociones } from "../db/promocionesRepo";
+import { obtenerOCrearSucursalIdLocal } from "../db/dispositivoLocal";
+import { precioDeVenta } from "../caja/promocionVenta";
+import type { Promocion } from "@hangar421/shared";
 
 /** Catálogo + carrito — lee/escribe SQLite local, nunca la red. El catálogo de HANGAR 421 se
  *  siembra en la base local en el primer arranque (ver db/catalogoHangar.ts), así que la
@@ -27,6 +31,10 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
   const [categoriaActiva, setCategoriaActiva] = useState<string | null>(null);
   const [busqueda, setBusqueda] = useState("");
   const usuario = useAuthLocalStore((s) => s.usuario);
+  // Promociones (precios especiales) y sucursal de esta tablet: el precio con promoción se decide
+  // al agregar el producto, con la hora de ese momento (ver caja/promocionVenta.ts).
+  const [promociones, setPromociones] = useState<Promocion[]>([]);
+  const [sucursalLocalId, setSucursalLocalId] = useState<string | null>(null);
   const [personalizando, setPersonalizando] = useState<{ producto: ProductoLocal; modificadores: ModificadorLocal[] } | null>(null);
 
   /** Un producto compuesto (café, combo) abre el modal; el resto entra directo al carrito, que
@@ -47,7 +55,7 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
       nombreProducto: producto.nombre,
       categoria: nombrePorCategoria.get(producto.categoriaId),
       cantidad: 1,
-      precioUnitario: producto.precioBase,
+      ...precioDeVenta(promociones, producto, new Date(), sucursalLocalId),
       modificadores: [],
     });
   }
@@ -79,9 +87,11 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
 
   async function cargar() {
     const db = await abrirBaseDeDatos();
-    const [cats, prods] = await Promise.all([listarCategorias(db), listarProductos(db)]);
+    const [cats, prods, promos, sucursalId] = await Promise.all([listarCategorias(db), listarProductos(db), listarPromociones(db), obtenerOCrearSucursalIdLocal(db)]);
     setCategorias(cats);
     setProductos(prods);
+    setPromociones(promos);
+    setSucursalLocalId(sucursalId);
   }
 
   useEffect(() => {
@@ -207,6 +217,7 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
             <View style={estilos.grillaProductos}>
               {productosVisibles.map((p) => {
                 const contexto = etiquetaContexto(p);
+                const promo = precioDeVenta(promociones, p, new Date(), sucursalLocalId);
                 return (
                   <TouchableOpacity
                     key={p.id}
@@ -215,8 +226,10 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
                   >
                     <Text style={estilos.nombreProducto} numberOfLines={2}>{p.nombre}</Text>
                     {contexto && <Text style={estilos.contextoProducto} numberOfLines={1}>{contexto}</Text>}
+                    {promo.promocionId && <Text style={estilos.etiquetaPromo} numberOfLines={1}>🏷 {promo.nombrePromocion}</Text>}
                     <Text style={estilos.precioProducto}>
-                      ${p.precioBase.toFixed(2)}
+                      ${promo.precioUnitario.toFixed(2)}
+                      {promo.promocionId ? <Text style={estilos.precioAnterior}>  ${p.precioBase.toFixed(2)}</Text> : null}
                       {/* Avisa de que el precio puede subir con lo que se elija en el modal. */}
                       {p.requierePersonalizacion ? <Text style={estilos.marcaPersonaliza}>  ⚙</Text> : null}
                     </Text>
@@ -252,6 +265,9 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
                     {item.modificadores.map((m) => m.nombreOpcion).join(" · ")}
                   </Text>
                 )}
+                {item.promocionId ? (
+                  <Text style={estilos.promoItem} numberOfLines={1}>🏷 {item.nombrePromocion}{item.precioLista != null ? ` · antes $${item.precioLista.toFixed(2)}` : ""}</Text>
+                ) : null}
                 {item.notas ? <Text style={estilos.modificadoresItem} numberOfLines={1}>✎ {item.notas}</Text> : null}
               </View>
               <View style={estilos.controlesCantidad}>
@@ -312,7 +328,8 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
 
       {personalizando && (
         <ModalModificadores
-          producto={personalizando.producto}
+          // El modal suma los extras sobre el precio que se va a cobrar: con promoción, el especial.
+          producto={{ ...personalizando.producto, precioBase: precioDeVenta(promociones, personalizando.producto, new Date(), sucursalLocalId).precioUnitario }}
           modificadores={personalizando.modificadores}
           onCancelar={() => setPersonalizando(null)}
           onConfirmar={(cantidad, seleccion, notas) => {
@@ -321,7 +338,7 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
               nombreProducto: personalizando.producto.nombre,
               categoria: nombrePorCategoria.get(personalizando.producto.categoriaId),
               cantidad,
-              precioUnitario: personalizando.producto.precioBase,
+              ...precioDeVenta(promociones, personalizando.producto, new Date(), sucursalLocalId),
               notas: notas || undefined,
               modificadores: seleccion,
             });
@@ -364,6 +381,9 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     carrito: { backgroundColor: colores.superficie, borderTopWidth: 1, borderTopColor: colores.borde, padding: 12 },
     filaNombre: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 40, paddingBottom: 6, marginBottom: 4, borderBottomWidth: 1, borderBottomColor: colores.borde },
     filaItem: { flexDirection: "row", alignItems: "center", paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colores.borde },
+    etiquetaPromo: { fontSize: 11, fontWeight: "700", color: colores.green },
+    precioAnterior: { fontSize: 12, fontWeight: "400", color: colores.textoSecundario, textDecorationLine: "line-through" },
+    promoItem: { fontSize: 12, fontWeight: "700", color: colores.green },
     controlesCantidad: { flexDirection: "row", alignItems: "center", gap: 4, marginHorizontal: 8 },
     botonCantidad: { width: 40, height: 40, borderRadius: 8, backgroundColor: colores.gray50, alignItems: "center", justifyContent: "center" },
     botonCantidadTexto: { fontSize: 22, fontWeight: "700", color: colores.texto },

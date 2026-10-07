@@ -87,3 +87,27 @@ y **"Cold Foam (DiDi)"** y cambia el vínculo solo de los productos de la catego
 Las demás opciones conservan su precio y Tamaño/Extras no cambian. Los modificadores son de la
 empresa, así que aplica en **todas las sucursales**. Para cambiar un precio después, se edita el grupo
 "(DiDi)" desde el APK.
+
+## Promociones (precio especial)
+
+Admin → **Catálogo → 🏷 Promociones** (también disponible para quien tenga solo el permiso
+*Promociones*): crear, editar, encender y apagar promociones. Por defecto **todos los roles** tienen el
+permiso (Admin → Usuarios → *Promociones (dentro de Catálogo)*); un administrador puede quitárselo a
+alguien. A las personas con permisos ya personalizados hay que marcárselo.
+
+Una promoción es un **precio especial** para los productos que se elijan:
+- **Precio directo** (Latte a $49) o **porcentaje** de descuento.
+- **Días** de la semana, **horario** (24 h, incluye el inicio y excluye el fin) y **fechas** (DD/MM/AAAA,
+  ambos días incluidos). Todo opcional: sin nada, siempre vigente.
+- **Todas las sucursales** o solo la de esa tablet.
+- Se aplica **sola** al agregar el producto a la venta mientras esté vigente (etiqueta 🏷 en el
+  producto, "antes $X" en el carrito). Si varias aplican, gana la que deja el producto más barato; si no
+  baja el precio, no cuenta. Los extras de modificadores se suman encima, y los descuentos del cobro
+  (por producto / general) se calculan sobre el precio ya con promoción.
+- **Inventario:** vender con promoción descuenta inventario igual que cualquier venta (el producto es el mismo).
+
+Técnico: regla de precio y vigencia en `packages/shared/src/promociones.ts` (la misma en la tablet y
+en el servidor). `SyncEntidad.PROMOCION` lleva la definición completa (CREATE y UPDATE = upsert
+idempotente; apagar = `activo: false`); el pull baja `GET /catalogo/promociones`. La línea de venta
+manda `promocionId` y el servidor **recalcula** el precio con su definición (si no aplica, cobra el
+de catálogo y lo registra en el log). `pedido_items.promocionId` guarda con cuál se vendió.

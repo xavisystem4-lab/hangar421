@@ -252,6 +252,10 @@ export enum SyncEntidad {
    *  en la terminal, para que el producto que lo referencia y las ventas con esas opciones
    *  resuelvan igual en el ERP. Solo CREATE, idempotente por id. Usado por apps/pos-terminal. */
   MODIFICADOR = "MODIFICADOR",
+  /** Promoción de catálogo (precio especial o % en productos, con días, horario y fechas) creada o
+   *  editada en una terminal. Viaja con el MISMO id (uuid7) y la definición COMPLETA, así que
+   *  CREATE y UPDATE son un upsert idempotente; apagarla es UPDATE con activo = false. */
+  PROMOCION = "PROMOCION",
 }
 
 export enum EstadoSolicitudProducto {

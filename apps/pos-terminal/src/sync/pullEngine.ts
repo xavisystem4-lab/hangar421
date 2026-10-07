@@ -5,6 +5,7 @@ import { erpFetch, obtenerTokensErp } from "../api/erpHttp";
 import { obtenerSucursalErp } from "../db/dispositivoLocal";
 import { obtenerConfig, guardarConfig } from "../db/configLocalRepo";
 import { upsertCatalogo, upsertMesas, upsertModificadores, repararProductosLocalesEnOutbox } from "../db/catalogoSyncRepo";
+import { guardarPromocionesRemotas } from "../db/promocionesRepo";
 import { upsertInventario } from "../db/inventarioRepo";
 import { asegurarSesionEnSucursalActiva } from "./terminalErp";
 
@@ -50,6 +51,11 @@ export async function refrescarCatalogo(): Promise<void> {
     })),
   );
   if (Array.isArray(modificadores)) await upsertModificadores(db, modificadores);
+
+  // Promociones (precios especiales). Best-effort como los modificadores: un ERP anterior no
+  // tiene el endpoint y la venta sigue con los precios de catálogo.
+  const promociones = await erpFetch<any[]>("/catalogo/promociones").catch(() => null);
+  if (Array.isArray(promociones)) await guardarPromocionesRemotas(db, promociones);
 }
 
 /** Trae insumos y existencias por los mismos endpoints REST que usa el ERP web

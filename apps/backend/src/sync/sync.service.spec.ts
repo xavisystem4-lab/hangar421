@@ -22,6 +22,7 @@ const DUENOS: Record<string, Record<string, any>> = {
   producto: { "producto-ajeno": { empresaId: "emp-2" } },
   categoriaProducto: { "cat-1": { empresaId: "emp-1" }, "cat-ajena": { empresaId: "emp-2" } },
   modificador: { "mod-1": { empresaId: "emp-1" }, "mod-ajeno": { empresaId: "emp-2" } },
+  promocion: { "promo-ajena": { empresaId: "emp-2" } },
   usuario: { "user-1": { empresaId: "emp-1" }, "user-ajeno": { empresaId: "emp-2" } },
 };
 
@@ -42,6 +43,7 @@ function crearServicio() {
     producto: tabla("producto"),
     categoriaProducto: tabla("categoriaProducto"),
     modificador: tabla("modificador"),
+    promocion: tabla("promocion"),
     usuario: tabla("usuario"),
     solicitudProducto: tabla("solicitudProducto"),
     usuarioSucursal: {
@@ -79,6 +81,7 @@ function crearServicio() {
     fijarModificadoresDeProducto: jest.fn(() => Promise.resolve({ id: "x", modificadores: 0 })),
     editarModificadorDesdeTerminal: jest.fn((_datos: any) => Promise.resolve({ id: "x", opciones: 1, quitadas: 0 })),
     editarDatosProducto: jest.fn((..._args: any[]) => Promise.resolve({ id: "x", cambios: 1 })),
+    guardarPromocionDesdeTerminal: jest.fn((_datos: any) => Promise.resolve({ id: "x", creada: true })),
     crearModificadorDesdeTerminal: jest.fn((_datos: any) => Promise.resolve({ id: "x", creado: true })),
   };
   const solicitudes = { crear: jest.fn(() => Promise.resolve({})) };
@@ -282,6 +285,32 @@ describe("SyncService.push — alta de modificadores desde la terminal", () => {
     const resp = await push([nuevo({ id: "mod-ajeno" })]);
     expect(resp.resultados[0].error).toBe("El modificador pertenece a otra empresa");
     expect(catalogo.crearModificadorDesdeTerminal).not.toHaveBeenCalled();
+  });
+});
+
+describe("SyncService.push — promociones desde la terminal", () => {
+  const promo = (extra: any = {}) => ({
+    id: "promo-1", entidad: SyncEntidad.PROMOCION, operacion: SyncOperacion.CREATE,
+    idempotencyKey: `k-${Math.random()}`, dispositivoId: "dev-1", sucursalId: "suc-1", usuarioId: "user-1",
+    createdAtLocal: new Date().toISOString(),
+    payload: { empresaId: "emp-2", nombre: "Latte a $49", tipo: "PRECIO", valor: 49, productoIds: ["p1"], dias: [1], horaInicio: "14:00", horaFin: "17:00", fechaInicio: null, fechaFin: null, sucursalId: null, activo: true },
+    ...extra,
+  });
+
+  it("CREATE y UPDATE van al mismo upsert, con la empresa del token y quién la hizo", async () => {
+    const { push, catalogo } = crearServicio();
+    await push([promo(), promo({ operacion: SyncOperacion.UPDATE })]);
+    expect(catalogo.guardarPromocionDesdeTerminal).toHaveBeenCalledTimes(2);
+    expect(catalogo.guardarPromocionDesdeTerminal).toHaveBeenCalledWith(expect.objectContaining({
+      id: "promo-1", empresaId: "emp-1", usuarioId: "user-1", nombre: "Latte a $49", tipo: "PRECIO", valor: 49, productoIds: ["p1"], dias: [1], horaInicio: "14:00", horaFin: "17:00", activo: true,
+    }));
+  });
+
+  it("un id que ya es de otra empresa se rechaza sin tocar nada", async () => {
+    const { push, catalogo } = crearServicio();
+    const resp = await push([promo({ id: "promo-ajena" })]);
+    expect(resp.resultados[0].error).toBe("La promoción pertenece a otra empresa");
+    expect(catalogo.guardarPromocionDesdeTerminal).not.toHaveBeenCalled();
   });
 });
 

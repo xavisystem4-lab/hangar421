@@ -8,12 +8,18 @@ describe("permisosEfectivos", () => {
     expect(permisosEfectivos(RolUsuario.ADMIN_CORPORATIVO, null).size).toBe(todos.length);
   });
 
-  it("sin personalizar, un cajero conserva lo que ya podía hacer y no entra a Admin", () => {
+  it("sin personalizar, un cajero conserva lo que ya podía hacer y solo entra a Admin para Promociones", () => {
     const cajero = permisosEfectivos(RolUsuario.CAJERO, null);
     for (const p of [P.VENTA_COBRAR, P.VENTA_CORTESIA, P.VENTA_CANCELAR, P.CAJA_ABRIR, P.CAJA_MOVIMIENTOS, P.CAJA_CERRAR, P.ERP_SUBIR, P.VENTAS_CONSULTAR]) {
       expect(cajero.has(p)).toBe(true);
     }
-    expect([...cajero].some((p) => p.startsWith("admin:"))).toBe(false);
+    // Todos los roles pueden crear promociones; ninguna otra sección de Admin se abre sola.
+    expect(cajero.has(P.ADMIN_PROMOCIONES)).toBe(true);
+    expect([...cajero].filter((p) => p.startsWith("admin:"))).toEqual([P.ADMIN_PROMOCIONES]);
+  });
+
+  it("un administrador puede quitarle Promociones a alguien", () => {
+    expect(permisosEfectivos(RolUsuario.CAJERO, [P.VENTA_COBRAR]).has(P.ADMIN_PROMOCIONES)).toBe(false);
   });
 
   it("una lista guardada manda sobre el rol, aunque esté vacía", () => {
