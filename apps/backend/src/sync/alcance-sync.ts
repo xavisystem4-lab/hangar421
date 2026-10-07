@@ -95,6 +95,8 @@ export class AlcanceSync {
           if (await this.deOtraEmpresa("modificador", modificadorId)) return "El modificador pertenece a otra empresa";
         }
         return null;
+      case SyncEntidad.MODIFICADOR:
+        return (await this.deOtraEmpresa("modificador", item.id)) ? "El modificador pertenece a otra empresa" : null;
       case SyncEntidad.VENTA_HUB:
         return (await this.deOtraSucursal("pedido", item.id, suc)) ? "La venta pertenece a otra sucursal" : null;
       case SyncEntidad.SOLICITUD_PRODUCTO:

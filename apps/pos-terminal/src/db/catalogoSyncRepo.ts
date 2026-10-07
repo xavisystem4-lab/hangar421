@@ -73,7 +73,7 @@ interface MesaRemota { id: string; nombre: string; estado: string; orden?: numbe
 async function upsertModificador(db: SQLiteDatabase, m: ModificadorRemoto, ahora: string): Promise<void> {
   await db.runAsync(
     `INSERT INTO modificadores (id, nombre, tipo, obligatorio, activo, origen, synced_at) VALUES (?, ?, ?, ?, 1, 'ERP', ?)
-     ON CONFLICT(id) DO UPDATE SET nombre = excluded.nombre, tipo = excluded.tipo, obligatorio = excluded.obligatorio, activo = 1, synced_at = excluded.synced_at`,
+     ON CONFLICT(id) DO UPDATE SET nombre = excluded.nombre, tipo = excluded.tipo, obligatorio = excluded.obligatorio, activo = 1, origen = 'ERP', synced_at = excluded.synced_at`,
     m.id, m.nombre, m.tipo, m.obligatorio ? 1 : 0, ahora,
   );
   for (const o of m.opciones ?? []) {

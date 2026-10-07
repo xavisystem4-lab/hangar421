@@ -41,3 +41,18 @@ Botón **👛 Crédito empleado**: buscador por nombre + filtro por sucursal; mu
 La migración `20261007160000_credito_empleado_monedero` da de alta a Diana, Andrea, Daniela y Dalia
 buscando a los usuarios **activos por primer nombre** y su sucursal por nombre (Mecánicos / Benito
 Juárez). Si alguna no coincide, se da de alta con el `PUT` de arriba.
+
+## Modificadores desde el alta de producto (APK POS)
+
+En Admin → Catálogo → *Nuevo producto* → **⚙ Modificadores** se pueden elegir los grupos que ya
+existen (Tamaño, Tipo de leche, Extras, Jarabe…) **y crear uno nuevo** con **➕ Crear modificador
+nuevo**: nombre, *elegir una / varias*, obligatorio y sus opciones con precio extra. El grupo nuevo
+queda marcado en el producto en ese momento.
+
+- El grupo se guarda en la tablet con `origen = 'TERMINAL'` (no `'LOCAL'`, que es el catálogo
+  sembrado y se retira al bajar el del ERP) y se encola como `SyncEntidad.MODIFICADOR` / CREATE
+  **antes** que el producto que lo usa. Grupo y opciones conservan sus ids al llegar al ERP.
+- Reglas (`caja/nuevoModificador.ts`): nombre obligatorio y no repetido, al menos una opción,
+  opciones sin repetir, precio extra ≥ 0 (vacío = $0).
+- Backend: `CatalogoService.crearModificadorDesdeTerminal` (idempotente por id; la empresa sale
+  del token).

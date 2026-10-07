@@ -247,6 +247,11 @@ export enum SyncEntidad {
    *  con ese id, lo pone en venta en la sucursal que lo dio de alta y en standby en las demás.
    *  UPDATE solo cambia qué modificadores pregunta. Usado por apps/pos-terminal. */
   PRODUCTO = "PRODUCTO",
+  /** Alta de un grupo de modificadores (Tamaño, Tipo de leche, Extras…) hecha en una terminal
+   *  desde el alta de producto del APK. Viaja con el MISMO id (grupo y opciones, uuid7) que tiene
+   *  en la terminal, para que el producto que lo referencia y las ventas con esas opciones
+   *  resuelvan igual en el ERP. Solo CREATE, idempotente por id. Usado por apps/pos-terminal. */
+  MODIFICADOR = "MODIFICADOR",
 }
 
 export enum EstadoSolicitudProducto {
