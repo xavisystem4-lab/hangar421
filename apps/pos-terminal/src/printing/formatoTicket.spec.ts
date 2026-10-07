@@ -1,4 +1,4 @@
-import { propinaDeReferencia, etiquetaMetodoPago, formatearFechaTicket, ivaIncluido, prepararTicketParaImpresora } from "./formatoTicket";
+import { propinaDeReferencia, etiquetaMetodoPago, formatearFechaTicket, ivaIncluido, prepararTicketParaImpresora, prepararComandaParaImpresora } from "./formatoTicket";
 
 describe("formatoTicket", () => {
   it("formatea la fecha como dd/mm/aaaa hh:mm en hora local", () => {
@@ -46,5 +46,20 @@ describe("propinaDeReferencia", () => {
   it("devuelve 0 sin propina", () => {
     expect(propinaDeReferencia("DiDi Food #A1")).toBe(0);
     expect(propinaDeReferencia(null)).toBe(0);
+  });
+});
+
+describe("comanda", () => {
+  it("agrega la fecha ya formateada y conserva el nombre del cliente", () => {
+    const d = new Date(2026, 9, 7, 9, 30);
+    const c = prepararComandaParaImpresora({
+      folio: 12,
+      fecha: d.toISOString(),
+      nombreCliente: "Ana",
+      items: [{ cantidad: 2, nombre: "Latte", modificadores: ["Grande", "Avena"] }],
+    });
+    expect(c.fechaTexto).toBe("07/10/2026 09:30");
+    expect(c.nombreCliente).toBe("Ana");
+    expect(c.items[0].modificadores).toEqual(["Grande", "Avena"]);
   });
 });

@@ -40,6 +40,20 @@ export interface TicketPayload {
   qrLeyenda?: string;
   /** Ancho del papel configurado en la terminal (Configuración inicial). */
   anchoMM?: 58 | 80;
+  /** Nombre del pedido, para saber a quién se le entrega. Sin él no se imprime. */
+  nombreCliente?: string;
+}
+
+/** Comanda de preparación: lo que cocina/barra necesita para armar el pedido — sin precios. */
+export interface ComandaPayload {
+  folio: number;
+  fecha: string;
+  items: { cantidad: number; nombre: string; modificadores?: string[]; notas?: string }[];
+  nombreCliente?: string;
+  /** Notas generales de la venta (p. ej. "DiDi #A123"). */
+  notas?: string;
+  nombreSucursal?: string;
+  anchoMM?: 58 | 80;
 }
 
 export interface PrintResult {
@@ -58,4 +72,6 @@ export interface PrintResult {
 export interface PrinterAdapter {
   isAvailable(): Promise<boolean>;
   printTicket(ticket: TicketPayload): Promise<PrintResult>;
+  /** Opcional: un adaptador sin comanda (mock, APK viejo) simplemente no la imprime. */
+  printComanda?(comanda: ComandaPayload): Promise<PrintResult>;
 }

@@ -94,6 +94,14 @@ class HangarUsbPrinterModule : Module() {
             true
         }
 
+        AsyncFunction("imprimirComanda") Coroutine { json: String, anchoMM: Int ->
+            envolver {
+                val cfg = config()
+                impresora().imprimir(TicketRenderer(context, cfg, anchoMM).comanda(JSONObject(json)), cfg)
+            }
+            true
+        }
+
         AsyncFunction("imprimirPrueba") Coroutine { anchoMM: Int ->
             envolver {
                 val cfg = config()

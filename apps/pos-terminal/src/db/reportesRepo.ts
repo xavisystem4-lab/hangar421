@@ -6,6 +6,43 @@ export interface ResumenVentas {
   cantidadVentas: number;
   ticketPromedio: number;
   totalPorMetodo: { metodo: string; total: number; cantidad: number }[];
+  /** Mostrador y cada plataforma de delivery por separado (DiDi, Uber, Rappi), con su desglose por
+   *  método de pago: lo que permite distinguir en el corte lo cobrado como DiDi. */
+  totalPorOrigen: OrigenVentas[];
+}
+
+export interface OrigenVentas {
+  /** 'MOSTRADOR' | 'DIDI' | 'UBER' | 'RAPPI' */
+  origen: string;
+  total: number;
+  cantidad: number;
+  porMetodo: { metodo: string; total: number; cantidad: number }[];
+}
+
+/** Desglose de ventas por origen y método de pago. Acepta cualquier condición ya armada sobre
+ *  `ventas v` — la usan el corte del turno y los reportes con el mismo SQL. */
+export async function ventasPorOrigen(db: SQLiteDatabase, whereSql: string, params: any[]): Promise<OrigenVentas[]> {
+  const origenes = await db.getAllAsync<{ origen: string; total: number; cantidad: number }>(
+    `SELECT COALESCE(v.plataforma, 'MOSTRADOR') as origen, COALESCE(SUM(v.total), 0) as total, COUNT(*) as cantidad
+     FROM ventas v WHERE ${whereSql} GROUP BY COALESCE(v.plataforma, 'MOSTRADOR')`,
+    ...params,
+  );
+  const metodos = await db.getAllAsync<{ origen: string; metodo: string; total: number; cantidad: number }>(
+    `SELECT COALESCE(v.plataforma, 'MOSTRADOR') as origen, p.metodo as metodo, COALESCE(SUM(p.monto), 0) as total, COUNT(*) as cantidad
+     FROM pagos p JOIN ventas v ON v.id = p.venta_id
+     WHERE ${whereSql}
+     GROUP BY COALESCE(v.plataforma, 'MOSTRADOR'), p.metodo ORDER BY total DESC`,
+    ...params,
+  );
+  // Mostrador primero, luego las plataformas por importe.
+  return origenes
+    .map((o) => ({ ...o, porMetodo: metodos.filter((m) => m.origen === o.origen).map(({ metodo, total, cantidad }) => ({ metodo, total, cantidad })) }))
+    .sort((a, b) => (a.origen === "MOSTRADOR" ? -1 : b.origen === "MOSTRADOR" ? 1 : b.total - a.total));
+}
+
+/** Corte del turno: lo cobrado en el turno separado por origen (mostrador / DiDi…) y método. */
+export async function ventasPorOrigenDelTurno(db: SQLiteDatabase, turnoId: string): Promise<OrigenVentas[]> {
+  return ventasPorOrigen(db, "v.turno_id = ? AND v.estado = 'COBRADA'", [turnoId]);
 }
 
 export interface ProductoVendido {
@@ -89,6 +126,7 @@ export async function resumenVentas(db: SQLiteDatabase, filtro: FiltroReporte): 
     cantidadVentas: cantidad,
     ticketPromedio: cantidad > 0 ? Math.round((suma / cantidad) * 100) / 100 : 0,
     totalPorMetodo: porMetodo,
+    totalPorOrigen: await ventasPorOrigen(db, sql, params),
   };
 }
 

@@ -1,3 +1,4 @@
+import { origenDePlataforma } from "../caja/origenVenta";
 import { CanalOrigen, MetodoPago, TipoPedido, round2, type TotalesPedido } from "@hangar421/shared";
 import type { ItemCarrito } from "../store/carritoStore";
 import type { OpcionesVenta, PagoVenta } from "../db/ventasRepo";
@@ -176,6 +177,7 @@ export function ventaDesdePedidoErp(
     opciones: {
       ventaId: pedidoErp.id,
       canalOrigen: CanalOrigen.PLATAFORMA_DELIVERY,
+      plataforma: origenDePlataforma(pedido.plataforma),
       tipo: TipoPedido.DOMICILIO,
       notas: notasPedidoPlataforma(pedido),
     },

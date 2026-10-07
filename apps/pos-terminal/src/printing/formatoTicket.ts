@@ -1,4 +1,4 @@
-import type { TicketPayload } from "./PrinterAdapter";
+import type { ComandaPayload, TicketPayload } from "./PrinterAdapter";
 
 /**
  * Funciones puras para preparar el ticket antes de mandarlo a la impresora nativa. Sin I/O ni
@@ -50,4 +50,9 @@ export function prepararTicketParaImpresora(t: TicketPayload): TicketPayload & {
 export function propinaDeReferencia(referencia: string | null | undefined): number {
   const m = /Propina \$([\d,]+(?:\.\d+)?)/.exec(referencia ?? "");
   return m ? Number(m[1].replace(/,/g, "")) || 0 : 0;
+}
+
+/** Lo que recibe el renderer nativo para la comanda: el payload más la fecha ya formateada. */
+export function prepararComandaParaImpresora(c: ComandaPayload): ComandaPayload & { fechaTexto: string } {
+  return { ...c, fechaTexto: formatearFechaTicket(c.fecha) };
 }

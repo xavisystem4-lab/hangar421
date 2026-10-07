@@ -28,6 +28,7 @@ class TicketRenderer(private val context: Context, private val cfg: ConfigImpres
         b.setAlign(Align.LEFT)
         b.leftRight("Folio: ${t.optInt("folio")}", t.optString("fechaTexto"))
         t.texto("cajero")?.let { b.line("Atendió: $it") }
+        nombreCliente(b, t)
         b.separator()
 
         b.setBold(true).rowHeader().setBold(false)
@@ -81,6 +82,80 @@ class TicketRenderer(private val context: Context, private val cfg: ConfigImpres
         return b.build()
     }
 
+    /**
+     * Comanda de preparación para cocina/barra: sin precios ni pagos. Lo que importa es leerse de
+     * lejos: el folio y el nombre del cliente en grande, y cada producto con su cantidad y lo
+     * elegido (tamaño, leche, notas) para armarlo sin preguntar.
+     */
+    fun comanda(c: JSONObject): ByteArray {
+        val b = nuevo()
+        b.setAlign(Align.CENTER).setBold(true).setSize(doubleWidth = true, doubleHeight = true).line("COMANDA")
+        b.setSize(doubleWidth = false, doubleHeight = false).setBold(false)
+        c.texto("nombreSucursal")?.let { b.line(it) }
+        b.separator('=')
+
+        b.setAlign(Align.LEFT)
+        b.setBold(true).setSize(doubleWidth = false, doubleHeight = true)
+        b.leftRight("Pedido #${c.optInt("folio")}", c.optString("fechaTexto").takeLast(5), columnas)
+        b.setSize(doubleWidth = false, doubleHeight = false).setBold(false)
+        b.line(c.optString("fechaTexto").dropLast(5).trim())
+
+        // El nombre es lo que identifica el producto al entregarlo: grande y centrado.
+        c.texto("nombreCliente")?.let { nombre ->
+            b.feed(1).setAlign(Align.CENTER).setBold(true).setSize(doubleWidth = true, doubleHeight = true)
+            partir(nombre, columnas / 2).forEach { b.line(it) }
+            b.setSize(doubleWidth = false, doubleHeight = false).setBold(false).setAlign(Align.LEFT)
+        }
+        c.texto("notas")?.let { b.feed(1).line(it) }
+        b.separator()
+
+        val items = c.optJSONArray("items")
+        if (items != null) {
+            for (i in 0 until items.length()) {
+                val item = items.getJSONObject(i)
+                b.setBold(true).setSize(doubleWidth = false, doubleHeight = true)
+                b.line("${cantidad(item.optDouble("cantidad", 1.0))} x ${item.optString("nombre")}")
+                b.setSize(doubleWidth = false, doubleHeight = false).setBold(false)
+                val mods = item.optJSONArray("modificadores")
+                if (mods != null) for (m in 0 until mods.length()) b.line("   + ${mods.optString(m)}")
+                item.texto("notas")?.let { b.line("   * $it") }
+                b.feed(1)
+            }
+        }
+        b.separator()
+        cerrar(b, cajon = false)
+        return b.build()
+    }
+
+    /** "Cliente: Ana" bajo el folio del ticket, en negrita y doble alto para que se lea al entregar. */
+    private fun nombreCliente(b: TicketBuilder, t: JSONObject) {
+        val nombre = t.texto("nombreCliente") ?: return
+        b.setBold(true).setSize(doubleWidth = false, doubleHeight = true)
+        partir("Cliente: $nombre", columnas).forEach { b.line(it) }
+        b.setSize(doubleWidth = false, doubleHeight = false).setBold(false)
+    }
+
+    /** Parte un texto en renglones de [ancho] caracteres, cortando por palabras. */
+    private fun partir(texto: String, ancho: Int): List<String> {
+        val renglones = mutableListOf<String>()
+        var actual = ""
+        for (palabra in texto.trim().split(Regex("\\s+"))) {
+            var p = palabra
+            while (p.length > ancho) {
+                if (actual.isNotEmpty()) { renglones += actual; actual = "" }
+                renglones += p.take(ancho)
+                p = p.drop(ancho)
+            }
+            actual = when {
+                actual.isEmpty() -> p
+                actual.length + 1 + p.length <= ancho -> "$actual $p"
+                else -> { renglones += actual; p }
+            }
+        }
+        if (actual.isNotEmpty() || renglones.isEmpty()) renglones += actual
+        return renglones
+    }
+
     /** Hoja de diagnóstico: acentos, anchos, estilos, QR, código de barras y corte. */
     fun paginaPrueba(): ByteArray {
         val b = nuevo()
@@ -128,8 +203,9 @@ class TicketRenderer(private val context: Context, private val cfg: ConfigImpres
         bmp.recycle()
     }
 
-    private fun cerrar(b: TicketBuilder) {
-        if (cfg.abrirCajon) b.openCashDrawer()
+    /** La comanda no abre el cajón de dinero: eso lo hace el ticket del cobro. */
+    private fun cerrar(b: TicketBuilder, cajon: Boolean = true) {
+        if (cajon && cfg.abrirCajon) b.openCashDrawer()
         if (cfg.cortarPapel) b.cutPaper() else b.feed(4)
     }
 

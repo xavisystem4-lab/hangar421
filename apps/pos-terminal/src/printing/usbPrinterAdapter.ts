@@ -1,6 +1,6 @@
 import { impresoraUsb } from "../../modules/hangar-usb-printer";
-import type { PrinterAdapter, PrintResult, TicketPayload } from "./PrinterAdapter";
-import { prepararTicketParaImpresora } from "./formatoTicket";
+import type { ComandaPayload, PrinterAdapter, PrintResult, TicketPayload } from "./PrinterAdapter";
+import { prepararComandaParaImpresora, prepararTicketParaImpresora } from "./formatoTicket";
 
 /**
  * Impresora térmica ESC/POS por USB OTG (módulo nativo modules/hangar-usb-printer).
@@ -16,6 +16,14 @@ export const usbPrinterAdapter: PrinterAdapter = {
   async printTicket(ticket: TicketPayload): Promise<PrintResult> {
     try {
       await impresoraUsb.imprimirTicket(prepararTicketParaImpresora(ticket), ticket.anchoMM ?? 80);
+      return { impreso: true };
+    } catch (e: any) {
+      return { impreso: false, error: String(e?.message ?? e) };
+    }
+  },
+  async printComanda(comanda: ComandaPayload): Promise<PrintResult> {
+    try {
+      await impresoraUsb.imprimirComanda(prepararComandaParaImpresora(comanda), comanda.anchoMM ?? 80);
       return { impreso: true };
     } catch (e: any) {
       return { impreso: false, error: String(e?.message ?? e) };

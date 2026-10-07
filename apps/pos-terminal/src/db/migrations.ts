@@ -549,6 +549,24 @@ export const MIGRACIONES: Migracion[] = [
       `);
     },
   },
+  {
+    version: 13,
+    nombre: "nombre_cliente_en_ventas",
+    up: async (db) => {
+      // Nombre que se le pone al pedido para identificar a quién se le entrega: sale en el
+      // ticket y en la comanda de preparación (también al reimprimir). Opcional.
+      await db.execAsync(`ALTER TABLE ventas ADD COLUMN nombre_cliente TEXT;`);
+    },
+  },
+  {
+    version: 14,
+    nombre: "origen_plataforma_en_ventas",
+    up: async (db) => {
+      // De qué plataforma de delivery viene la venta ('DIDI' | 'UBER' | 'RAPPI'); NULL = mostrador.
+      // Es lo que separa las ventas de DiDi en el corte y en los reportes.
+      await db.execAsync(`ALTER TABLE ventas ADD COLUMN plataforma TEXT;`);
+    },
+  },
 ];
 
 /** Corre, en orden, toda migración con `version` mayor a la ya aplicada — cada una dentro de su
