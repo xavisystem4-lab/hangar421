@@ -214,6 +214,10 @@ export class SyncService {
             // Cortesía autorizada en la terminal (APK): se guarda como descuento del pedido.
             cortesia: p.cortesia,
             cortesiaAutorizadaPorId: p.cortesiaAutorizadaPorId,
+            // Descuento general del cajero (APK). El de cada producto viaja dentro de `items`.
+            // Hay que nombrarlo aquí: el pedido se reconstruye campo por campo, y sin esto el ERP
+            // registraría la venta a precio completo mientras la tablet cobró con descuento.
+            descuentoGeneral: p.descuentoGeneral,
           });
         } else if (item.operacion === SyncOperacion.UPDATE && p.accion === "CANCELAR") {
           // Cancelación hecha en una terminal, con el PIN del gerente ya validado allí (ver

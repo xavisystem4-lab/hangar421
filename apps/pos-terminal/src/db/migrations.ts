@@ -567,6 +567,41 @@ export const MIGRACIONES: Migracion[] = [
       await db.execAsync(`ALTER TABLE ventas ADD COLUMN plataforma TEXT;`);
     },
   },
+  {
+    version: 15,
+    nombre: "credito_empleado_monedero",
+    up: async (db) => {
+      // Crédito de empleado (monedero electrónico, ver packages/shared/src/monedero.ts).
+      //  - monederos_empleado: las empleadas con crédito, su sucursal y la regla de reinicio; las
+      //    baja el ERP (sync/terminalErp.ts) y se consultan sin red.
+      //  - monedero_movimientos: consumos del periodo. El id es el de la VENTA (una venta carga como
+      //    máximo un movimiento), así el consumo hecho aquí y el que luego trae el ERP son la misma
+      //    fila y nunca se cuentan dos veces. El saldo no se guarda: se calcula.
+      //  - pagos.empleado_id: a qué empleada se cargó un pago MONEDERO_EMPLEADO.
+      await db.execAsync(`
+        CREATE TABLE monederos_empleado (
+          usuario_id TEXT PRIMARY KEY,
+          nombre TEXT NOT NULL,
+          sucursal_id TEXT,
+          sucursal_nombre TEXT,
+          limite REAL NOT NULL,
+          dia_reinicio INTEGER NOT NULL,
+          hora_reinicio INTEGER NOT NULL,
+          minuto_reinicio INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE monedero_movimientos (
+          id TEXT PRIMARY KEY,
+          usuario_id TEXT NOT NULL,
+          monto REAL NOT NULL,
+          fecha TEXT NOT NULL
+        );
+        CREATE INDEX idx_monedero_movimientos_usuario ON monedero_movimientos(usuario_id, fecha);
+
+        ALTER TABLE pagos ADD COLUMN empleado_id TEXT;
+      `);
+    },
+  },
 ];
 
 /** Corre, en orden, toda migración con `version` mayor a la ya aplicada — cada una dentro de su

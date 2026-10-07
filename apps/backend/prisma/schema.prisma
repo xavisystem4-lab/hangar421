@@ -94,6 +94,7 @@ enum MetodoPago {
   OTRO
   EFECTIVO_USD
   EN_LINEA
+  MONEDERO_EMPLEADO
 }
 
 enum EstadoConexionTerminal {
@@ -293,6 +294,7 @@ model Sucursal {
 
   @@index([empresaId])
   @@map("sucursales")
+  monederos MonederoEmpleado[]
 }
 
 model Area {
@@ -351,6 +353,7 @@ model Usuario {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
+  monedero MonederoEmpleado?
   empresa Empresa @relation(fields: [empresaId], references: [id])
 
   sucursales                UsuarioSucursal[]
@@ -1417,4 +1420,52 @@ model EnvioNube {
   @@id([entidad, entidadId])
   @@index([estado])
   @@map("envios_nube")
+}
+
+// ---------------------------------------------------------------------------
+// Crédito de empleado: monedero electrónico con tope (por defecto $500) que se gasta con los
+// consumos de la empleada y se REINICIA a un día/hora fijos de la semana, sin acumular. Es el
+// mismo monedero en todas las sucursales. El saldo no se guarda: lo calcula la terminal como
+// `limite − consumos desde el último reinicio` (ver monedero.ts en shared), así que no hay un
+// contador que se desincronice entre tablets.
+// ---------------------------------------------------------------------------
+
+model MonederoEmpleado {
+  usuarioId      String   @id
+  empresaId      String
+  /// Sucursal de la empleada: solo sirve para ubicarla en el buscador del cobro.
+  sucursalId     String?
+  limite         Decimal  @default(500) @db.Decimal(10, 2)
+  /// Día de la semana del reinicio: 0 = domingo … 6 = sábado.
+  diaReinicio    Int
+  horaReinicio   Int
+  minutoReinicio Int      @default(0)
+  activo         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  usuario     Usuario              @relation(fields: [usuarioId], references: [id])
+  sucursal    Sucursal?            @relation(fields: [sucursalId], references: [id])
+  movimientos MovimientoMonedero[]
+
+  @@index([empresaId])
+  @@map("monederos_empleado")
+}
+
+/// Un consumo del monedero. `id` = id del pedido (una venta carga como máximo UN movimiento), así
+/// que registrarlo es idempotente y la terminal puede guardarlo local con el mismo id.
+model MovimientoMonedero {
+  id         String   @id
+  usuarioId  String
+  sucursalId String
+  pedidoId   String   @unique
+  monto      Decimal  @db.Decimal(10, 2)
+  /// Hora real del cobro (la de la terminal), la que decide en qué periodo cae.
+  createdAt  DateTime
+  registradoAt DateTime @default(now())
+
+  monedero MonederoEmpleado @relation(fields: [usuarioId], references: [usuarioId])
+
+  @@index([usuarioId, createdAt])
+  @@map("movimientos_monedero")
 }

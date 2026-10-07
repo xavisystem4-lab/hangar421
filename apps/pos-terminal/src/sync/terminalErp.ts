@@ -2,6 +2,7 @@ import { abrirBaseDeDatos } from "../db/database";
 import { erpFetch, guardarTokensErp, obtenerTokensErp } from "../api/erpHttp";
 import { decodificarJwt } from "../auth/jwt";
 import { obtenerSucursalErp } from "../db/dispositivoLocal";
+import { guardarMonederos, type MonederoErp, type MovimientoMonederoErp } from "../db/monederoRepo";
 import {
   aplicarPreciosDeSucursal,
   esTerminalMultisucursal,
@@ -31,6 +32,15 @@ export async function refrescarTerminalMultisucursal(): Promise<void> {
   await guardarPreciosSucursal(db, precios);
   const activa = await obtenerSucursalErp(db);
   if (activa) await aplicarPreciosDeSucursal(db, activa);
+}
+
+/** Trae del ERP las empleadas con crédito (monedero) y sus consumos recientes. Funciona en cualquier
+ *  terminal enlazada —no solo en las multisucursal—, y es best-effort: sin red se sigue cobrando
+ *  con lo último que se guardó. */
+export async function refrescarMonederos(): Promise<void> {
+  if (!(await obtenerTokensErp())) return;
+  const datos = await erpFetch<{ monederos: MonederoErp[]; movimientos: MovimientoMonederoErp[] }>("/monedero/terminal");
+  await guardarMonederos(await abrirBaseDeDatos(), datos);
 }
 
 /**
