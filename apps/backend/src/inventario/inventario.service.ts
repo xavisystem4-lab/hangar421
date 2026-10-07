@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import { TipoMovimientoInventario, WS_EVENTS, deltaExistenciaInventario } from "@hangar421/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { RealtimeGateway } from "../realtime/realtime.gateway";
@@ -94,6 +94,48 @@ export class InventarioService {
       where: { sucursalId },
       include: { insumo: true },
       orderBy: { insumo: { nombre: "asc" } },
+    });
+  }
+
+  /** Secciones físicas de la sucursal para el conteo, y en cuál está cada insumo asignado. Las
+   *  inactivas también van: la terminal tiene que saber que una sección se dio de baja. */
+  async secciones(sucursalId: string) {
+    const [secciones, asignaciones] = await Promise.all([
+      this.prisma.seccionInventario.findMany({ where: { sucursalId }, orderBy: [{ orden: "asc" }, { nombre: "asc" }] }),
+      this.prisma.insumoSeccion.findMany({ where: { sucursalId }, select: { insumoId: true, seccionId: true } }),
+    ]);
+    return {
+      secciones: secciones.map((s) => ({ id: s.id, nombre: s.nombre, orden: s.orden, activo: s.activo })),
+      asignaciones,
+    };
+  }
+
+  /** Alta, renombre o baja de una sección (upsert por id; el id lo genera la terminal). Una
+   *  sección de otra sucursal con ese id no se toca (lo frena antes AlcanceSync). */
+  async guardarSeccion(sucursalId: string, datos: { id: string; nombre: string; orden?: number; activo?: boolean }) {
+    const nombre = String(datos.nombre ?? "").trim().slice(0, 60);
+    if (!datos.id || !nombre) throw new BadRequestException("La sección necesita id y nombre");
+    return this.prisma.seccionInventario.upsert({
+      where: { id: datos.id },
+      update: { nombre, orden: datos.orden ?? undefined, activo: datos.activo ?? undefined },
+      create: { id: datos.id, sucursalId, nombre, orden: datos.orden ?? 0, activo: datos.activo ?? true },
+    });
+  }
+
+  /** En qué sección se guarda un insumo en esta sucursal (`seccionId` null = sin sección). */
+  async asignarSeccion(sucursalId: string, insumoId: string, seccionId: string | null) {
+    if (seccionId) {
+      const seccion = await this.prisma.seccionInventario.findUnique({ where: { id: seccionId }, select: { sucursalId: true } });
+      // Puede no haber llegado todavía si se creó sin conexión y su alta va detrás en la cola:
+      // la cola respeta el orden de creación, así que en la práctica llega antes. Si de verdad no
+      // existe, se rechaza y se reintenta.
+      if (!seccion) throw new BadRequestException("La sección todavía no existe en el ERP");
+      if (seccion.sucursalId !== sucursalId) throw new BadRequestException("La sección pertenece a otra sucursal");
+    }
+    return this.prisma.insumoSeccion.upsert({
+      where: { insumoId_sucursalId: { insumoId, sucursalId } },
+      update: { seccionId },
+      create: { insumoId, sucursalId, seccionId },
     });
   }
 

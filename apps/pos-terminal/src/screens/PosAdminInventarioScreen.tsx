@@ -13,8 +13,15 @@ import {
   type ExistenciaInsumo, type NivelStock,
 } from "../inventario/niveles";
 import { exportarComprasExcel, exportarComprasPdf } from "../reportes/exportarCompras";
+import { obtenerOCrearSucursalIdLocal } from "../db/dispositivoLocal";
+import { asignarSeccionInsumo, listarAsignaciones, listarSecciones } from "../db/seccionesRepo";
+import { seccionDeInsumo, type SeccionInventario } from "../inventario/secciones";
+import { ModalElegirSeccion, ModalEditarSecciones } from "../components/SeccionesInventario";
 
 type Pestana = "existencias" | "conteo" | "compras";
+
+/** Filtro del conteo para los insumos que no están en ninguna sección. */
+const SIN_SECCION = "__sin_seccion__";
 
 export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void }) {
   const colores = usarColores();
@@ -34,6 +41,13 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
   const [pendientes, setPendientes] = useState(0);
   /** Lo tecleado en el conteo físico, por insumo. Vacío = ese insumo no se contó. */
   const [conteo, setConteo] = useState<Record<string, string>>({});
+  // Secciones del conteo (Exhibidor, Refrigerador 1…), ver inventario/secciones.ts.
+  const [secciones, setSecciones] = useState<SeccionInventario[]>([]);
+  const [asignaciones, setAsignaciones] = useState<Map<string, string | null>>(new Map());
+  const [sucursalId, setSucursalId] = useState("");
+  const [seccionActiva, setSeccionActiva] = useState<string>("todas");
+  const [eligiendoSeccionPara, setEligiendoSeccionPara] = useState<ExistenciaInsumo | null>(null);
+  const [editandoSecciones, setEditandoSecciones] = useState(false);
 
   const COLOR_NIVEL: Record<NivelStock, string> = {
     agotado: colores.red,
@@ -54,14 +68,20 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
 
   async function cargar() {
     const db = await abrirBaseDeDatos();
-    const [existencias, movs, pend] = await Promise.all([
+    const [existencias, movs, pend, secs, asig, suc] = await Promise.all([
       listarExistencias(db),
       listarMovimientosRecientes(db),
       contarMovimientosInventarioPendientes(db),
+      listarSecciones(db),
+      listarAsignaciones(db),
+      obtenerOCrearSucursalIdLocal(db),
     ]);
     setItems(existencias);
     setMovimientos(movs);
     setPendientes(pend);
+    setSecciones(secs);
+    setAsignaciones(asig);
+    setSucursalId(suc);
     setCargando(false);
   }
 
@@ -139,15 +159,53 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
     return conteos;
   }, [items]);
 
+  // Sección de cada insumo (asignada a mano o propuesta por su nombre) y la lista del conteo
+  // filtrada por la sección elegida arriba.
+  const seccionesActivas = useMemo(() => secciones.filter((s) => s.activo), [secciones]);
+  const seccionPorInsumo = useMemo(
+    () => new Map(items.map((i) => [i.insumoId, seccionDeInsumo(i, asignaciones, secciones, sucursalId)])),
+    [items, asignaciones, secciones, sucursalId],
+  );
+  const visiblesConteo = useMemo(
+    () =>
+      seccionActiva === "todas"
+        ? visibles
+        : visibles.filter((i) => (seccionPorInsumo.get(i.insumoId) ?? SIN_SECCION) === seccionActiva),
+    [visibles, seccionActiva, seccionPorInsumo],
+  );
+  /** Por sección: cuántos insumos tiene y cuántos ya se contaron (para ver qué falta). */
+  const avancePorSeccion = useMemo(() => {
+    const avance = new Map<string, { total: number; contados: number }>();
+    for (const i of items) {
+      const clave = seccionPorInsumo.get(i.insumoId) ?? SIN_SECCION;
+      const a = avance.get(clave) ?? { total: 0, contados: 0 };
+      a.total += 1;
+      if (conteo[i.insumoId] !== undefined && conteo[i.insumoId] !== "") a.contados += 1;
+      avance.set(clave, a);
+    }
+    return avance;
+  }, [items, seccionPorInsumo, conteo]);
+  const nombreSeccion = (id: string | null | undefined) => seccionesActivas.find((s) => s.id === id)?.nombre ?? "Sin sección";
+
+  async function asignarSeccion(insumoId: string, seccionId: string | null) {
+    setEligiendoSeccionPara(null);
+    await asignarSeccionInsumo(await abrirBaseDeDatos(), insumoId, seccionId, usuario?.id);
+    setAsignaciones((a) => new Map(a).set(insumoId, seccionId));
+    procesarCola().catch(() => undefined);
+  }
+
   // Refs del conteo, para que Enter baje al siguiente insumo sin cerrar el teclado — igual que
   // en el desglose de caja. Se recalculan solo si cambia la lista visible.
-  const refsConteo = useMemo(() => visibles.map(() => createRef<TextInput>()), [visibles.length]);
+  const refsConteo = useMemo(() => visiblesConteo.map(() => createRef<TextInput>()), [visiblesConteo.length]);
 
   async function guardarConteo() {
     // Guarda contra el doble toque: sin esto, dos pulsaciones rápidas crearían dos movimientos
     // CONTEO del mismo insumo y el segundo pisaría al primero en el ERP.
     if (!usuario || guardandoConteo) return;
-    const aGuardar = visibles
+    // De TODOS los insumos, no solo de los que se ven: se cuenta sección por sección (y se busca),
+    // y lo capturado en otra sección o fuera de la búsqueda también se tiene que guardar. Antes
+    // salía de la lista visible y eso se perdía en silencio.
+    const aGuardar = items
       .map((i) => ({ item: i, valor: conteo[i.insumoId] }))
       .filter((x) => x.valor !== undefined && x.valor !== "" && !Number.isNaN(Number(x.valor)));
 
@@ -241,7 +299,8 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
   }
 
   // Cuántos insumos llevan cantidad capturada — alimenta la barra fija de guardado.
-  const capturados = visibles.filter((i) => {
+  // De todos los insumos, igual que guardarConteo: es lo que se va a guardar.
+  const capturados = items.filter((i) => {
     const v = conteo[i.insumoId];
     return v !== undefined && v !== "" && !Number.isNaN(Number(v));
   }).length;
@@ -353,9 +412,36 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
           {pestana === "conteo" && (
             <>
               <Text style={estilos.ayuda}>
-                Captura lo que hay físicamente. Enter baja al siguiente insumo. El conteo FIJA la existencia, no la suma.
+                Elige la sección que vas a contar. Enter baja al siguiente insumo. El conteo FIJA la existencia, no la suma.
               </Text>
-              {visibles.map((i, indice) => {
+
+              {/* Secciones a inventariar: se cuenta zona por zona, con su avance (contados/total). */}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={estilos.filaSecciones}>
+                {[
+                  { id: "todas", nombre: "Todas", avance: { total: items.length, contados: Object.values(conteo).filter((v) => v !== "").length } },
+                  ...seccionesActivas.map((s) => ({ id: s.id, nombre: s.nombre, avance: avancePorSeccion.get(s.id) ?? { total: 0, contados: 0 } })),
+                  ...((avancePorSeccion.get(SIN_SECCION)?.total ?? 0) > 0
+                    ? [{ id: SIN_SECCION, nombre: "Sin sección", avance: avancePorSeccion.get(SIN_SECCION)! }]
+                    : []),
+                ].map((s) => {
+                  const activa = seccionActiva === s.id;
+                  const completa = s.avance.total > 0 && s.avance.contados === s.avance.total;
+                  return (
+                    <TouchableOpacity key={s.id} onPress={() => setSeccionActiva(s.id)} style={[estilos.chipSeccion, activa && estilos.chipSeccionActiva]}>
+                      <Text style={[estilos.chipSeccionTexto, activa && { color: "#fff" }]}>{completa ? "✓ " : ""}{s.nombre}</Text>
+                      <Text style={[estilos.chipSeccionAvance, activa && { color: "#fff" }]}>{s.avance.contados}/{s.avance.total}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+                <TouchableOpacity onPress={() => setEditandoSecciones(true)} style={estilos.chipSeccion} accessibilityLabel="Editar secciones">
+                  <Text style={estilos.chipSeccionTexto}>⚙ Secciones</Text>
+                </TouchableOpacity>
+              </ScrollView>
+
+              {visiblesConteo.length === 0 && (
+                <Text style={estilos.ayuda}>No hay insumos en esta sección. Toca la sección de un insumo (📍) para moverlo aquí.</Text>
+              )}
+              {visiblesConteo.map((i, indice) => {
                 const capturado = conteo[i.insumoId];
                 const dif = capturado !== undefined && capturado !== "" ? diferenciaConteo(Number(capturado), i.existencia) : null;
                 return (
@@ -363,6 +449,9 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
                     <View style={{ flex: 1 }}>
                       <Text style={estilos.nombreInsumo} numberOfLines={1}>{i.nombre}</Text>
                       <Text style={estilos.ayuda}>Sistema: {i.existencia} {i.unidadMedida}</Text>
+                      <TouchableOpacity onPress={() => setEligiendoSeccionPara(i)} accessibilityLabel={`Cambiar la sección de ${i.nombre}`}>
+                        <Text style={estilos.etiquetaSeccion}>📍 {nombreSeccion(seccionPorInsumo.get(i.insumoId))} ▾</Text>
+                      </TouchableOpacity>
                     </View>
                     <TextInput
                       ref={refsConteo[indice]}
@@ -370,7 +459,7 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
                       onChangeText={(v) => setConteo((s) => ({ ...s, [i.insumoId]: v.replace(/[^0-9.]/g, "") }))}
                       onSubmitEditing={() => refsConteo[indice + 1]?.current?.focus()}
                       keyboardType="decimal-pad"
-                      returnKeyType={indice === visibles.length - 1 ? "done" : "next"}
+                      returnKeyType={indice === visiblesConteo.length - 1 ? "done" : "next"}
                       blurOnSubmit={false}
                       placeholder="—"
                       placeholderTextColor={colores.textoSecundario}
@@ -484,6 +573,31 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
         </TouchableOpacity>
       </View>
     )}
+
+    {eligiendoSeccionPara && (
+      <ModalElegirSeccion
+        insumo={eligiendoSeccionPara.nombre}
+        secciones={seccionesActivas}
+        actual={seccionPorInsumo.get(eligiendoSeccionPara.insumoId) ?? null}
+        onElegir={(seccionId) => asignarSeccion(eligiendoSeccionPara.insumoId, seccionId)}
+        onCancelar={() => setEligiendoSeccionPara(null)}
+      />
+    )}
+    {editandoSecciones && (
+      <ModalEditarSecciones
+        secciones={seccionesActivas}
+        usuarioId={usuario?.id}
+        onCambio={async () => {
+          setSecciones(await listarSecciones(await abrirBaseDeDatos()));
+          procesarCola().catch(() => undefined);
+        }}
+        onCerrar={() => {
+          setEditandoSecciones(false);
+          // Si se quitó la sección que estaba elegida, se vuelve a "Todas".
+          setSeccionActiva((actual) => (actual === "todas" || actual === SIN_SECCION || seccionesActivas.some((s) => s.id === actual) ? actual : "todas"));
+        }}
+      />
+    )}
     </View>
   );
 }
@@ -524,6 +638,15 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
       paddingHorizontal: 4, fontSize: 15, textAlign: "center", color: colores.texto,
     },
     difConteo: { width: 52, textAlign: "right", fontSize: 12, fontWeight: "700" },
+    filaSecciones: { gap: 8, paddingVertical: 10 },
+    chipSeccion: {
+      paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, minHeight: 48, justifyContent: "center",
+      backgroundColor: colores.gray50, borderWidth: 1, borderColor: colores.borde,
+    },
+    chipSeccionActiva: { backgroundColor: colores.navy, borderColor: colores.navy },
+    chipSeccionTexto: { fontSize: 14, fontWeight: "700", color: colores.texto },
+    chipSeccionAvance: { fontSize: 11, color: colores.textoSecundario, marginTop: 1 },
+    etiquetaSeccion: { fontSize: 12, color: colores.navyTexto, fontWeight: "600", marginTop: 2, paddingVertical: 4 },
     filaCompra: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, paddingLeft: 10, borderLeftWidth: 4, marginBottom: 6 },
     cantidadCompra: { fontSize: 15, fontWeight: "800", color: colores.navyTexto },
     filaMovimiento: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 5 },

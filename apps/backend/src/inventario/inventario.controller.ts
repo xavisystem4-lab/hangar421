@@ -58,6 +58,13 @@ export class InventarioController {
     return this.inventario.existencias(sucursalId);
   }
 
+  /** Secciones del conteo físico (Exhibidor, Refrigerador 1…) y la de cada insumo. Se editan
+   *  desde la terminal por /sync/push (SECCION_INVENTARIO, INSUMO_SECCION). */
+  @Get("secciones")
+  secciones(@Query("sucursalId") sucursalId: string) {
+    return this.inventario.secciones(sucursalId);
+  }
+
   @Get("alertas")
   alertas(@Query("sucursalId") sucursalId: string) {
     return this.inventario.alertasStockBajo(sucursalId);
