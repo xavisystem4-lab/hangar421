@@ -3,17 +3,28 @@ import { uuid7, SyncEntidad, SyncOperacion } from "@hangar421/shared";
 import { encolarSync } from "./outboxRepo";
 import { obtenerOCrearDispositivoId, obtenerOCrearSucursalIdLocal } from "./dispositivoLocal";
 
-/** Alta/edición de catálogo LOCAL. Editar precio/disponibilidad de un producto que YA vino del
- *  ERP sí sincroniza (`SyncEntidad.PRODUCTO_SUCURSAL`, resuelto en `sync.service.ts::enrutar()`).
- *  Crear un producto o categoría COMPLETAMENTE NUEVO sigue siendo local-only a propósito: no
- *  existe (ni debería inventarse aquí) una ruta de sync para dar de alta un `Producto` entero —
- *  eso requiere `empresaId`/`categoriaId` válidos del lado del ERP y es, en esencia, el mismo
- *  flujo que ya cubre crm-web. `synced_at IS NULL` marca qué filas quedan "solo locales" hasta
- *  que el ERP las traiga de vuelta por `/sync/pull` (si alguien las da de alta allá también) o
- *  se resuelva ese gap de verdad. */
+/** Alta/edición de catálogo desde la terminal.
+ *
+ *  - Precio/disponibilidad de un producto: `SyncEntidad.PRODUCTO_SUCURSAL` (por sucursal).
+ *  - Alta de un producto, con los modificadores que debe preguntar: `SyncEntidad.PRODUCTO` /
+ *    CREATE. Viaja con el mismo id que aquí; el ERP lo crea, lo pone en venta en esta sucursal
+ *    y en standby en las demás (ver catalogo.service.ts::altaProductoDesdeTerminal). Cambiar los
+ *    modificadores de un producto ya existente va como PRODUCTO / UPDATE.
+ *  - Crear una CATEGORÍA nueva sigue siendo local-only: el ERP rechaza un producto cuya
+ *    categoría no exista allá, así que un producto nuevo debe ir en una categoría que ya vino del
+ *    ERP (la pantalla lo avisa).
+ *  `synced_at IS NULL` marca lo que todavía no confirmó el ERP; el siguiente pull del catálogo
+ *  trae el producto de vuelta con el mismo id y lo limpia. */
 
 export interface NuevaCategoria { nombre: string; orden?: number }
-export interface NuevoProducto { categoriaId: string; nombre: string; precioBase: number }
+export interface NuevoProducto {
+  categoriaId: string;
+  nombre: string;
+  precioBase: number;
+  /** Modificadores que preguntará al venderse, en el orden en que se eligieron. Vacío = se
+   *  agrega directo al carrito. */
+  modificadorIds?: string[];
+}
 
 export async function crearCategoria(db: SQLiteDatabase, datos: NuevaCategoria): Promise<string> {
   const id = uuid7();
@@ -34,13 +45,62 @@ export async function desactivarCategoria(db: SQLiteDatabase, id: string): Promi
   await db.runAsync("UPDATE categorias_producto SET activo = 0 WHERE id = ?", id);
 }
 
-export async function crearProducto(db: SQLiteDatabase, datos: NuevoProducto): Promise<string> {
+export async function crearProducto(db: SQLiteDatabase, datos: NuevoProducto, usuarioId?: string): Promise<string> {
   const id = uuid7();
-  await db.runAsync(
-    "INSERT INTO productos (id, categoria_id, nombre, precio_base, tasa_impuesto, activo, updated_at_server, synced_at) VALUES (?, ?, ?, ?, 0, 1, NULL, NULL)",
-    id, datos.categoriaId, datos.nombre, datos.precioBase,
-  );
+  const modificadorIds = [...new Set(datos.modificadorIds ?? [])];
+  const [sucursalId, dispositivoId] = await Promise.all([obtenerOCrearSucursalIdLocal(db), obtenerOCrearDispositivoId(db)]);
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      "INSERT INTO productos (id, categoria_id, nombre, precio_base, tasa_impuesto, activo, requiere_personalizacion, updated_at_server, synced_at) VALUES (?, ?, ?, ?, 0, 1, ?, NULL, NULL)",
+      id, datos.categoriaId, datos.nombre, datos.precioBase, modificadorIds.length > 0 ? 1 : 0,
+    );
+    await guardarModificadoresLocales(db, id, modificadorIds);
+    // En venta aquí desde ya (precios_sucursal es lo que aplicarPreciosDeSucursal relee al
+    // cambiar de sucursal; sin la fila, el producto se perdería al reabrir sesión).
+    await db.runAsync(
+      "INSERT OR REPLACE INTO precios_sucursal (producto_id, sucursal_id, precio, disponible) VALUES (?, ?, ?, 1)",
+      id, sucursalId, datos.precioBase,
+    );
+    await encolarSync(db, {
+      entidad: SyncEntidad.PRODUCTO,
+      operacion: SyncOperacion.CREATE,
+      entidadId: id,
+      sucursalId,
+      dispositivoId,
+      usuarioId,
+      payload: { categoriaId: datos.categoriaId, nombre: datos.nombre, precioBase: datos.precioBase, modificadorIds },
+    });
+  });
   return id;
+}
+
+/** Cambia qué modificadores pregunta un producto (nuevo o del ERP). Reemplaza la lista local y
+ *  la manda al ERP como PRODUCTO / UPDATE; `requiere_personalizacion` sigue a la lista para que
+ *  el modal abra (o deje de abrir) en cuanto se guarda, sin esperar al siguiente pull. */
+export async function fijarModificadoresDeProducto(db: SQLiteDatabase, productoId: string, modificadorIds: string[], usuarioId?: string): Promise<void> {
+  const ids = [...new Set(modificadorIds)];
+  const [sucursalId, dispositivoId] = await Promise.all([obtenerOCrearSucursalIdLocal(db), obtenerOCrearDispositivoId(db)]);
+  await db.withTransactionAsync(async () => {
+    await guardarModificadoresLocales(db, productoId, ids);
+    await db.runAsync("UPDATE productos SET requiere_personalizacion = ?, synced_at = NULL WHERE id = ?", ids.length > 0 ? 1 : 0, productoId);
+    await encolarSync(db, {
+      entidad: SyncEntidad.PRODUCTO,
+      operacion: SyncOperacion.UPDATE,
+      entidadId: productoId,
+      sucursalId,
+      dispositivoId,
+      usuarioId,
+      payload: { modificadorIds: ids },
+    });
+  });
+}
+
+async function guardarModificadoresLocales(db: SQLiteDatabase, productoId: string, modificadorIds: string[]): Promise<void> {
+  await db.runAsync("DELETE FROM producto_modificadores WHERE producto_id = ?", productoId);
+  let orden = 1;
+  for (const modificadorId of modificadorIds) {
+    await db.runAsync("INSERT INTO producto_modificadores (producto_id, modificador_id, orden) VALUES (?, ?, ?)", productoId, modificadorId, orden++);
+  }
 }
 
 /** El nombre se edita local únicamente (no hay ruta de sync para renombrar un Producto, solo

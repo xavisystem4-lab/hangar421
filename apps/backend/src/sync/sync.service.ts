@@ -346,6 +346,26 @@ export class SyncService {
         await this.importacionHub.importarVenta({ id: item.id, empresaId, sucursalId: item.sucursalId, huellaHub: item.dispositivoId, venta: p });
         break;
 
+      // Alta de producto hecha en la tablet (Admin → Catálogo). La empresa sale del token, nunca
+      // del payload; la sucursal del sobre es donde queda en venta.
+      case SyncEntidad.PRODUCTO:
+        if (item.operacion === SyncOperacion.CREATE) {
+          await this.catalogo.altaProductoDesdeTerminal({
+            id: item.id,
+            empresaId,
+            sucursalId: item.sucursalId,
+            categoriaId: p.categoriaId,
+            nombre: p.nombre,
+            precioBase: p.precioBase,
+            subcategoria: p.subcategoria,
+            estacionPreparacion: p.estacionPreparacion,
+            modificadorIds: p.modificadorIds,
+          });
+        } else {
+          await this.catalogo.fijarModificadoresDeProducto(empresaId, item.id, p.modificadorIds);
+        }
+        break;
+
       case SyncEntidad.PRODUCTO_SUCURSAL:
         if (p.precio != null) {
           await this.catalogo.fijarPrecioSucursal(p.productoId, item.sucursalId, p.precio, p.disponible ?? true);

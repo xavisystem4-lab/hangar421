@@ -20,6 +20,8 @@ const DUENOS: Record<string, Record<string, any>> = {
   solicitudProducto: { "solicitud-suc-2": { sucursalId: "suc-2" } },
   insumo: { "insumo-ajeno": { empresaId: "emp-2" } },
   producto: { "producto-ajeno": { empresaId: "emp-2" } },
+  categoriaProducto: { "cat-1": { empresaId: "emp-1" }, "cat-ajena": { empresaId: "emp-2" } },
+  modificador: { "mod-1": { empresaId: "emp-1" }, "mod-ajeno": { empresaId: "emp-2" } },
   usuario: { "user-1": { empresaId: "emp-1" }, "user-ajeno": { empresaId: "emp-2" } },
 };
 
@@ -38,6 +40,8 @@ function crearServicio() {
     caja: tabla("caja"),
     insumo: tabla("insumo"),
     producto: tabla("producto"),
+    categoriaProducto: tabla("categoriaProducto"),
+    modificador: tabla("modificador"),
     usuario: tabla("usuario"),
     solicitudProducto: tabla("solicitudProducto"),
     usuarioSucursal: {
@@ -68,7 +72,12 @@ function crearServicio() {
   const mesas = { cambiarEstado: jest.fn() };
   const inventario = { registrarMovimiento: jest.fn() };
   const caja = { abrirTurno: jest.fn(), cerrarTurno: jest.fn(), registrarMovimiento: jest.fn() };
-  const catalogo = { fijarPrecioSucursal: jest.fn(), fijarDisponibilidad: jest.fn() };
+  const catalogo = {
+    fijarPrecioSucursal: jest.fn(),
+    fijarDisponibilidad: jest.fn(),
+    altaProductoDesdeTerminal: jest.fn(() => Promise.resolve({ id: "x", creado: true })),
+    fijarModificadoresDeProducto: jest.fn(() => Promise.resolve({ id: "x", modificadores: 0 })),
+  };
   const solicitudes = { crear: jest.fn(() => Promise.resolve({})) };
 
   const importacionHub = { importarVenta: jest.fn(() => Promise.resolve({})) };
@@ -173,6 +182,55 @@ describe("SyncService.push — idempotencia", () => {
       payload: { productoId: "p1", disponible: false },
     } as any]);
     expect(catalogo.fijarDisponibilidad).toHaveBeenCalledWith("p1", "suc-1", false);
+  });
+});
+
+describe("SyncService.push — PRODUCTO dado de alta en la terminal", () => {
+  const alta = (extra: any = {}) => ({
+    id: "producto-nuevo-1", entidad: SyncEntidad.PRODUCTO, operacion: SyncOperacion.CREATE,
+    idempotencyKey: `k-${Math.random()}`, dispositivoId: "dev-1", sucursalId: "suc-1", usuarioId: "user-1",
+    createdAtLocal: new Date().toISOString(),
+    payload: { empresaId: "emp-2", categoriaId: "cat-1", nombre: "Latte Lavanda", precioBase: 95, modificadorIds: ["mod-1"] },
+    ...extra,
+  });
+
+  it("CREATE enruta al alta con la empresa del token y la sucursal del sobre", async () => {
+    const { push, catalogo } = crearServicio();
+    const resp = await push([alta()]);
+    expect(resp.resultados[0].estado).toBe(SyncStatus.SYNCED);
+    expect(catalogo.altaProductoDesdeTerminal).toHaveBeenCalledWith(expect.objectContaining({
+      id: "producto-nuevo-1", empresaId: "emp-1", sucursalId: "suc-1", categoriaId: "cat-1", nombre: "Latte Lavanda", precioBase: 95, modificadorIds: ["mod-1"],
+    }));
+  });
+
+  it("UPDATE solo cambia los modificadores del producto", async () => {
+    const { push, catalogo } = crearServicio();
+    await push([alta({ operacion: SyncOperacion.UPDATE, payload: { modificadorIds: ["mod-1"] } })]);
+    expect(catalogo.fijarModificadoresDeProducto).toHaveBeenCalledWith("emp-1", "producto-nuevo-1", ["mod-1"]);
+    expect(catalogo.altaProductoDesdeTerminal).not.toHaveBeenCalled();
+  });
+
+  it("rechaza una categoría o un modificador de otra empresa sin tocar nada", async () => {
+    const { push, catalogo } = crearServicio();
+    const resp = await push([
+      alta({ payload: { categoriaId: "cat-ajena", nombre: "X", precioBase: 1 } }),
+      alta({ payload: { categoriaId: "cat-1", nombre: "X", precioBase: 1, modificadorIds: ["mod-ajeno"] } }),
+      alta({ id: "producto-ajeno", operacion: SyncOperacion.UPDATE, payload: { modificadorIds: [] } }),
+    ]);
+    expect(resp.resultados.map((r) => r.error)).toEqual([
+      "La categoría pertenece a otra empresa",
+      "El modificador pertenece a otra empresa",
+      "El producto pertenece a otra empresa",
+    ]);
+    expect(catalogo.altaProductoDesdeTerminal).not.toHaveBeenCalled();
+    expect(catalogo.fijarModificadoresDeProducto).not.toHaveBeenCalled();
+  });
+
+  it("si el alta falla en el ERP, el item queda en ERROR con el motivo", async () => {
+    const { push, catalogo } = crearServicio();
+    catalogo.altaProductoDesdeTerminal.mockImplementationOnce(() => Promise.reject(new Error("La categoría del producto no existe en el ERP")));
+    const resp = await push([alta()]);
+    expect(resp.resultados[0]).toMatchObject({ estado: SyncStatus.ERROR, error: "La categoría del producto no existe en el ERP" });
   });
 });
 

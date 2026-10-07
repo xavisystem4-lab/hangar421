@@ -4,7 +4,7 @@ import { abrirBaseDeDatos } from "../db/database";
 import { erpFetch, obtenerTokensErp } from "../api/erpHttp";
 import { obtenerSucursalErp } from "../db/dispositivoLocal";
 import { obtenerConfig, guardarConfig } from "../db/configLocalRepo";
-import { upsertCatalogo, upsertMesas, repararProductosLocalesEnOutbox } from "../db/catalogoSyncRepo";
+import { upsertCatalogo, upsertMesas, upsertModificadores, repararProductosLocalesEnOutbox } from "../db/catalogoSyncRepo";
 import { upsertInventario } from "../db/inventarioRepo";
 import { asegurarSesionEnSucursalActiva } from "./terminalErp";
 
@@ -31,9 +31,12 @@ export async function refrescarCatalogo(): Promise<void> {
   // pedir los precios de la nueva (ver terminalErp).
   await asegurarSesionEnSucursalActiva();
 
-  const [categorias, productos] = await Promise.all([
+  const [categorias, productos, modificadores] = await Promise.all([
     erpFetch<any[]>(`/catalogo/categorias?empresaId=${empresaId}`),
     erpFetch<any[]>(`/catalogo/productos?empresaId=${empresaId}&sucursalId=${sucursalId}`),
+    // Best-effort: un ERP anterior no tiene este endpoint, y sin él el alta de productos sigue
+    // ofreciendo los modificadores que ya llegaron anidados en los productos.
+    erpFetch<any[]>(`/catalogo/modificadores?empresaId=${empresaId}`).catch(() => null),
   ]);
 
   await upsertCatalogo(
@@ -46,6 +49,7 @@ export async function refrescarCatalogo(): Promise<void> {
       requierePersonalizacion: p.requierePersonalizacion, modificadores: p.modificadores,
     })),
   );
+  if (Array.isArray(modificadores)) await upsertModificadores(db, modificadores);
 }
 
 /** Trae insumos y existencias por los mismos endpoints REST que usa el ERP web

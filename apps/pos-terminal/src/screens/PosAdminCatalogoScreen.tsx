@@ -3,7 +3,7 @@ import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View 
 import { usarColores } from "../store/temaStore";
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { abrirBaseDeDatos } from "../db/database";
-import { listarCategorias, listarProductos, type CategoriaLocal, type ProductoLocal } from "../db/catalogoRepo";
+import { listarCategorias, listarModificadores, listarProductos, modificadoresPorProducto, type CategoriaLocal, type ModificadorLocal, type ProductoLocal } from "../db/catalogoRepo";
 import {
   crearCategoria,
   editarCategoria,
@@ -12,11 +12,14 @@ import {
   editarProducto,
   alternarDisponibilidadProducto,
   contarCambiosSoloLocales,
+  fijarModificadoresDeProducto,
 } from "../db/catalogoAdminRepo";
+import { ModalModificadoresProducto } from "../components/ModalModificadoresProducto";
+import { sincronizarPronto } from "../sync/syncEngine";
 
-/** Administración de catálogo — crear productos/categorías nuevos es local-only (ver
- *  catalogoAdminRepo.ts: sin ruta de sync para altas completas, gap de backend documentado);
- *  editar precio/disponibilidad de un producto YA sincronizado sí sale por sync. */
+/** Administración de catálogo. Dar de alta un producto (con los modificadores que debe preguntar)
+ *  y cambiar precio/disponibilidad/modificadores sí viajan al ERP (ver catalogoAdminRepo.ts);
+ *  crear una categoría nueva sigue siendo local-only. */
 export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
   const colores = usarColores();
   const estilos = crearEstilos(colores);
@@ -24,6 +27,12 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
   const [categorias, setCategorias] = useState<CategoriaLocal[]>([]);
   const [productos, setProductos] = useState<ProductoLocal[]>([]);
   const [cambiosLocales, setCambiosLocales] = useState(0);
+  const [modificadores, setModificadores] = useState<ModificadorLocal[]>([]);
+  const [modsPorProducto, setModsPorProducto] = useState<Map<string, string[]>>(new Map());
+  // Modificadores elegidos para el producto que se está dando de alta.
+  const [modsNuevoProducto, setModsNuevoProducto] = useState<string[]>([]);
+  // Qué selector está abierto: el del alta, o el de un producto existente.
+  const [eligiendoMods, setEligiendoMods] = useState<{ productoId: string | null; nombre: string } | null>(null);
 
   const [nombreCategoria, setNombreCategoria] = useState("");
   const [categoriaEditando, setCategoriaEditando] = useState<string | null>(null);
@@ -37,9 +46,13 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
 
   async function cargar() {
     const db = await abrirBaseDeDatos();
-    const [cats, prods] = await Promise.all([listarCategorias(db), listarProductos(db, { incluirStandby: true })]);
+    const [cats, prods, mods, porProducto] = await Promise.all([
+      listarCategorias(db), listarProductos(db, { incluirStandby: true }), listarModificadores(db), modificadoresPorProducto(db),
+    ]);
     setCategorias(cats);
     setProductos(prods);
+    setModificadores(mods);
+    setModsPorProducto(porProducto);
     setCambiosLocales(await contarCambiosSoloLocales(db));
     if (!categoriaNuevoProducto && cats[0]) setCategoriaNuevoProducto(cats[0].id);
   }
@@ -73,11 +86,29 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
   async function agregarProducto() {
     if (!categoriaNuevoProducto || !nombreProducto.trim() || !precioProducto) return;
     const db = await abrirBaseDeDatos();
-    await crearProducto(db, { categoriaId: categoriaNuevoProducto, nombre: nombreProducto.trim(), precioBase: Number(precioProducto) || 0 });
+    await crearProducto(db, { categoriaId: categoriaNuevoProducto, nombre: nombreProducto.trim(), precioBase: Number(precioProducto) || 0, modificadorIds: modsNuevoProducto }, usuario?.id);
     setNombreProducto("");
     setPrecioProducto("");
+    setModsNuevoProducto([]);
+    // Al ERP en cuanto haya red: así el producto existe allá antes de la primera venta.
+    sincronizarPronto();
     cargar();
   }
+
+  async function guardarModificadores(ids: string[]) {
+    if (!eligiendoMods) return;
+    if (eligiendoMods.productoId === null) {
+      setModsNuevoProducto(ids);
+    } else {
+      const db = await abrirBaseDeDatos();
+      await fijarModificadoresDeProducto(db, eligiendoMods.productoId, ids, usuario?.id);
+      sincronizarPronto();
+      cargar();
+    }
+    setEligiendoMods(null);
+  }
+
+  const nombresMods = (ids: string[]) => ids.map((id) => modificadores.find((m) => m.id === id)?.nombre).filter(Boolean).join(", ");
 
   async function guardarProducto(id: string) {
     if (!productoBorrador.nombre.trim() || !usuario) return;
@@ -113,7 +144,7 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
       </View>
 
       {cambiosLocales > 0 && (
-        <Text style={estilos.avisoLocal}>⚠ {cambiosLocales} cambio(s) sin confirmar del ERP: los productos nuevos creados aquí se quedan solo en este dispositivo; los cambios de precio/disponibilidad de productos ya sincronizados sí se envían al conectar.</Text>
+        <Text style={estilos.avisoLocal}>⚠ {cambiosLocales} cambio(s) pendientes de confirmar por el ERP: productos nuevos, precios, disponibilidad y modificadores se envían al conectar. Las categorías nuevas se quedan solo en este dispositivo.</Text>
       )}
 
       {/* El alta va primero: es lo que se viene a hacer aquí la mayoría de las veces, y al
@@ -137,7 +168,15 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
         </View>
         <TextInput placeholder="Nombre del producto" placeholderTextColor={colores.textoSecundario} value={nombreProducto} onChangeText={setNombreProducto} style={estilos.input} />
         <TextInput placeholder="Precio" placeholderTextColor={colores.textoSecundario} value={precioProducto} onChangeText={setPrecioProducto} keyboardType="decimal-pad" style={estilos.input} />
+        {/* Producto compuesto: qué preguntar al venderlo (tamaño, leche, jarabes…). */}
+        <TouchableOpacity onPress={() => setEligiendoMods({ productoId: null, nombre: nombreProducto.trim() || "Nuevo producto" })} style={estilos.botonMods} accessibilityLabel="Elegir modificadores del producto nuevo">
+          <Text style={{ color: colores.texto, fontWeight: "700" }}>⚙ Modificadores</Text>
+          <Text style={{ color: modsNuevoProducto.length > 0 ? colores.navyTexto : colores.textoSecundario, fontSize: 12, flex: 1, textAlign: "right" }} numberOfLines={2}>
+            {modsNuevoProducto.length > 0 ? nombresMods(modsNuevoProducto) : "Ninguno · se agrega directo al carrito"}
+          </Text>
+        </TouchableOpacity>
         <TouchableOpacity onPress={agregarProducto} style={estilos.botonPrincipal}><Text style={estilos.botonPrincipalTexto}>Crear producto</Text></TouchableOpacity>
+        <Text style={estilos.notaAlta}>Queda en venta en esta sucursal y en standby en las demás; el ERP lo recibe al sincronizar.</Text>
       </View>
 
       {categorias.map((cat) => (
@@ -172,6 +211,12 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
                     {p.nombre}{p.activo ? "" : " · standby"}
                   </Text>
                   <Text style={{ color: colores.textoSecundario, width: 60, textAlign: "right" }}>${p.precioBase.toFixed(2)}</Text>
+                  {/* ⚙ n = cuántos modificadores pregunta; tocar para cambiarlos. */}
+                  <TouchableOpacity onPress={() => setEligiendoMods({ productoId: p.id, nombre: p.nombre })} style={estilos.botonModsFila} accessibilityLabel={`Modificadores de ${p.nombre}`}>
+                    <Text style={{ color: (modsPorProducto.get(p.id)?.length ?? 0) > 0 ? colores.navyTexto : colores.textoSecundario, fontSize: 12, fontWeight: "700" }}>
+                      ⚙ {modsPorProducto.get(p.id)?.length ?? 0}
+                    </Text>
+                  </TouchableOpacity>
                   <TouchableOpacity onPress={() => alternarDisponibilidad(p)} style={[estilos.pildoraEstado, p.activo ? estilos.pildoraEnVenta : estilos.pildoraStandby]}>
                     <Text style={{ color: p.activo ? colores.green : colores.amber, fontSize: 12, fontWeight: "700" }}>{p.activo ? "● En venta" : "⏸ Standby"}</Text>
                   </TouchableOpacity>
@@ -185,6 +230,15 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
         </View>
       ))}
 
+      {eligiendoMods && (
+        <ModalModificadoresProducto
+          titulo={`Modificadores · ${eligiendoMods.nombre}`}
+          modificadores={modificadores}
+          seleccionInicial={eligiendoMods.productoId === null ? modsNuevoProducto : modsPorProducto.get(eligiendoMods.productoId) ?? []}
+          onCancelar={() => setEligiendoMods(null)}
+          onGuardar={guardarModificadores}
+        />
+      )}
     </ScrollView>
   );
 }
@@ -205,6 +259,9 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     input: { borderWidth: 1, borderColor: colores.borde, borderRadius: 8, padding: 10, marginBottom: 8, color: colores.texto },
     botonChico: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
     botonPrincipal: { backgroundColor: colores.green, borderRadius: 10, padding: 14, alignItems: "center", marginTop: 4 },
+    botonMods: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 44, paddingHorizontal: 10, borderWidth: 1, borderColor: colores.borde, borderRadius: 8, marginBottom: 8 },
+    botonModsFila: { marginLeft: 8, paddingHorizontal: 8, minHeight: 32, justifyContent: "center", borderRadius: 8, backgroundColor: colores.gray50 },
+    notaAlta: { fontSize: 11, color: colores.textoSecundario, marginTop: 8, lineHeight: 15 },
     botonPrincipalTexto: { color: "#fff", fontWeight: "700" },
     pildoraEstado: { marginLeft: 10, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, minHeight: 32, justifyContent: "center" },
     pildoraEnVenta: { backgroundColor: colores.green + "1A" },
