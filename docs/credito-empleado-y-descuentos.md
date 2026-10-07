@@ -111,3 +111,10 @@ en el servidor). `SyncEntidad.PROMOCION` lleva la definición completa (CREATE y
 idempotente; apagar = `activo: false`); el pull baja `GET /catalogo/promociones`. La línea de venta
 manda `promocionId` y el servidor **recalcula** el precio con su definición (si no aplica, cobra el
 de catálogo y lo registra en el log). `pedido_items.promocionId` guarda con cuál se vendió.
+## Motivo del descuento
+
+Al aplicar un descuento (general o por producto) el modal tiene, debajo del monto, el campo
+**"Motivo del descuento (opcional)"** (máx. 120 caracteres). El texto se guarda junto al descuento
+(`descuentos.motivo`, "Descuento 10% — Cumpleaños") y viaja al ERP en `motivo`. En **Caja → Corte de
+caja** aparece la lista "Descuentos del turno" con folio y motivo de cada descuento (incluidas las
+cortesías). No cambia el dinero.
