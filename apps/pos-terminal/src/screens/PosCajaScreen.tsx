@@ -5,7 +5,7 @@ import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
 import { etiquetaMetodoPago } from "../db/metodosPagoRepo";
 import { etiquetaOrigen } from "../caja/origenVenta";
-import { ventasPorOrigenDelTurno, type OrigenVentas } from "../db/reportesRepo";
+import { descuentosDelTurno, ventasPorOrigenDelTurno, type DescuentoDelTurno, type OrigenVentas } from "../db/reportesRepo";
 import { abrirTurno, cerrarTurno, efectivoDelTurno, fijarTipoCambioTurno, listarMovimientosCaja, reasignarTurno, registrarMovimientoCaja, turnoAbierto, type MovimientoCajaLocal, type TurnoLocal } from "../db/turnosRepo";
 import { listarVentasRecientes, type VentaResumen } from "../db/ventasHistorialRepo";
 import { BILLETES_MXN, BILLETES_USD, MONEDAS_MXN, calcularDiferencia, construirDesglose, round2, type Conteo } from "../caja/denominaciones";
@@ -48,6 +48,7 @@ export function PosCajaScreen() {
   const [motivoMovimiento, setMotivoMovimiento] = useState("");
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [porOrigen, setPorOrigen] = useState<OrigenVentas[]>([]);
+  const [descuentos, setDescuentos] = useState<DescuentoDelTurno[]>([]);
 
   async function cargar() {
     const db = await abrirBaseDeDatos();
@@ -57,6 +58,7 @@ export function PosCajaScreen() {
       setMovimientos(await listarMovimientosCaja(db, t.id));
       setVentasEnEfectivo(await efectivoDelTurno(db, t.id));
       setPorOrigen(await ventasPorOrigenDelTurno(db, t.id));
+      setDescuentos(await descuentosDelTurno(db, t.id));
     }
     setVentas(await listarVentasRecientes(db, 20));
     setCajeros(await listarUsuariosLocales(db));
@@ -342,6 +344,18 @@ export function PosCajaScreen() {
                         <Text style={estilos.etiquetaResumen}>${m.total.toFixed(2)}</Text>
                       </View>
                     ))}
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Descuentos del turno con el motivo que escribió el cajero. */}
+            {descuentos.length > 0 && (
+              <View style={[estilos.resumenCorte, { marginTop: 14 }]}>
+                <Text style={[estilos.etiquetaResumen, { fontWeight: "800", marginBottom: 6 }]}>Descuentos del turno ({descuentos.length})</Text>
+                {descuentos.map((d, i) => (
+                  <View key={i} style={estilos.filaResumen}>
+                    <Text style={[estilos.etiquetaResumen, { flex: 1, paddingRight: 8 }]}>#{d.folio} · {d.motivo}</Text>
                   </View>
                 ))}
               </View>

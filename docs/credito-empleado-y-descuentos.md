@@ -87,3 +87,11 @@ y **"Cold Foam (DiDi)"** y cambia el vínculo solo de los productos de la catego
 Las demás opciones conservan su precio y Tamaño/Extras no cambian. Los modificadores son de la
 empresa, así que aplica en **todas las sucursales**. Para cambiar un precio después, se edita el grupo
 "(DiDi)" desde el APK.
+
+## Motivo del descuento
+
+Al aplicar un descuento (general o por producto) el modal tiene, debajo del monto, el campo
+**"Motivo del descuento (opcional)"** (máx. 120 caracteres). El texto se guarda junto al descuento
+(`descuentos.motivo`, "Descuento 10% — Cumpleaños") y viaja al ERP en `motivo`. En **Caja → Corte de
+caja** aparece la lista "Descuentos del turno" con folio y motivo de cada descuento (incluidas las
+cortesías). No cambia el dinero.

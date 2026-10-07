@@ -9,10 +9,20 @@ import type { ItemCarrito } from "../store/carritoStore";
  * que el backend.
  */
 
+/** Un descuento con el motivo que el cajero escribió (opcional). */
+export type DescuentoConMotivo = DescuentoVenta & { motivo?: string };
+
 export interface DescuentosVenta {
-  general: DescuentoVenta | null;
+  general: DescuentoConMotivo | null;
   /** Descuento de cada línea, por `ItemCarrito.id`. */
-  porProducto: Record<string, DescuentoVenta>;
+  porProducto: Record<string, DescuentoConMotivo>;
+}
+
+export const MOTIVO_MAX = 120;
+
+/** Texto del motivo limpio: sin espacios sobrantes y con tope de largo; "" si no escribió nada. */
+export function normalizarMotivo(texto: string | null | undefined): string {
+  return (texto ?? "").replace(/\s+/g, " ").trim().slice(0, MOTIVO_MAX);
 }
 
 export const SIN_DESCUENTOS: DescuentosVenta = { general: null, porProducto: {} };
@@ -47,11 +57,17 @@ export function totalesConDescuentos(items: ItemCarrito[], descuentos: Descuento
   );
 }
 
-/** Motivo que se guarda con el descuento (ticket, reportes y ERP). */
-export function motivoDescuentoProducto(nombreProducto: string, d: DescuentoVenta): string {
-  return `Descuento ${etiquetaDescuento(d)}: ${nombreProducto}`;
+/** Motivo que se guarda con el descuento (ticket, corte y ERP): la descripción automática y, si el
+ *  cajero escribió una razón, se agrega al final ("Descuento 10%: Latte — cumpleaños"). */
+export function motivoDescuentoProducto(nombreProducto: string, d: DescuentoConMotivo): string {
+  return conMotivo(`Descuento ${etiquetaDescuento(d)}: ${nombreProducto}`, d.motivo);
 }
 
-export function motivoDescuentoGeneral(d: DescuentoVenta): string {
-  return `Descuento general ${etiquetaDescuento(d)}`;
+export function motivoDescuentoGeneral(d: DescuentoConMotivo): string {
+  return conMotivo(`Descuento general ${etiquetaDescuento(d)}`, d.motivo);
+}
+
+function conMotivo(base: string, motivo: string | undefined): string {
+  const m = normalizarMotivo(motivo);
+  return m ? `${base} — ${m}` : base;
 }

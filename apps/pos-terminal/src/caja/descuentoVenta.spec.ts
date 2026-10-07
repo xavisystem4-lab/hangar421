@@ -1,6 +1,6 @@
 import { TipoDescuento } from "@hangar421/shared";
 import type { ItemCarrito } from "../store/carritoStore";
-import { SIN_DESCUENTOS, etiquetaDescuento, hayDescuentos, totalesConDescuentos, validarDescuento } from "./descuentoVenta";
+import { MOTIVO_MAX, SIN_DESCUENTOS, etiquetaDescuento, hayDescuentos, motivoDescuentoGeneral, motivoDescuentoProducto, normalizarMotivo, totalesConDescuentos, validarDescuento } from "./descuentoVenta";
 
 const item = (id: string, precio: number, cantidad: number, extra = 0): ItemCarrito => ({
   id,
@@ -58,5 +58,31 @@ describe("etiquetas", () => {
     expect(hayDescuentos(SIN_DESCUENTOS)).toBe(false);
     expect(hayDescuentos({ general: { tipo: TipoDescuento.MONTO, valor: 5 }, porProducto: {} })).toBe(true);
     expect(hayDescuentos({ general: null, porProducto: { a: { tipo: TipoDescuento.MONTO, valor: 5 } } })).toBe(true);
+  });
+});
+
+describe("motivo del descuento", () => {
+  it("sin motivo escrito deja el texto automático", () => {
+    expect(motivoDescuentoGeneral({ tipo: TipoDescuento.PORCENTAJE, valor: 10 })).toBe("Descuento general 10%");
+    expect(motivoDescuentoProducto("Latte", { tipo: TipoDescuento.MONTO, valor: 20 })).toBe("Descuento $20.00: Latte");
+  });
+
+  it("agrega al final el motivo que escribió el cajero", () => {
+    expect(motivoDescuentoGeneral({ tipo: TipoDescuento.PORCENTAJE, valor: 10, motivo: "Cumpleaños" })).toBe("Descuento general 10% — Cumpleaños");
+    expect(motivoDescuentoProducto("Latte", { tipo: TipoDescuento.MONTO, valor: 20, motivo: "Se tardó" })).toBe("Descuento $20.00: Latte — Se tardó");
+  });
+
+  it("limpia espacios, ignora motivos vacíos y limita el largo", () => {
+    expect(normalizarMotivo("  cliente   frecuente \n")).toBe("cliente frecuente");
+    expect(normalizarMotivo("   ")).toBe("");
+    expect(normalizarMotivo(undefined)).toBe("");
+    expect(normalizarMotivo("x".repeat(500))).toHaveLength(MOTIVO_MAX);
+    expect(motivoDescuentoGeneral({ tipo: TipoDescuento.MONTO, valor: 5, motivo: "   " })).toBe("Descuento general $5.00");
+  });
+
+  it("el motivo no cambia el dinero", () => {
+    const items = [item("a", 100, 1)];
+    const r = totalesConDescuentos(items, { general: { tipo: TipoDescuento.PORCENTAJE, valor: 10, motivo: "x" }, porProducto: {} });
+    expect(r.total).toBe(90);
   });
 });

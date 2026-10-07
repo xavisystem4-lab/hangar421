@@ -45,6 +45,27 @@ export async function ventasPorOrigenDelTurno(db: SQLiteDatabase, turnoId: strin
   return ventasPorOrigen(db, "v.turno_id = ? AND v.estado = 'COBRADA'", [turnoId]);
 }
 
+export interface DescuentoDelTurno {
+  folio: number;
+  tipo: string;
+  valor: number;
+  /** Texto guardado con el descuento: la descripción automática + la razón que escribió el cajero. */
+  motivo: string;
+}
+
+/** Descuentos aplicados en las ventas cobradas del turno, para mostrarlos con su motivo en el
+ *  corte. Las cortesías llevan su propio motivo y autorización, y también aparecen aquí. */
+export async function descuentosDelTurno(db: SQLiteDatabase, turnoId: string): Promise<DescuentoDelTurno[]> {
+  const filas = await db.getAllAsync<{ folio: number; tipo: string; valor: number; motivo: string | null }>(
+    `SELECT v.folio_local as folio, d.tipo as tipo, d.valor as valor, d.motivo as motivo
+     FROM descuentos d JOIN ventas v ON v.id = d.venta_id
+     WHERE v.turno_id = ? AND v.estado = 'COBRADA'
+     ORDER BY v.folio_local, d.created_at, d.id`,
+    turnoId,
+  );
+  return filas.map((f) => ({ folio: f.folio, tipo: f.tipo, valor: f.valor, motivo: f.motivo?.trim() || "Descuento" }));
+}
+
 export interface ProductoVendido {
   nombre: string;
   cantidad: number;
