@@ -14,7 +14,7 @@ export class CatalogoService {
   async listarModificadores(empresaId: string) {
     const lista = await this.prisma.modificador.findMany({
       where: { empresaId },
-      include: { opciones: { orderBy: { orden: "asc" } } },
+      include: { opciones: { where: { activo: true }, orderBy: { orden: "asc" } } },
       orderBy: { nombre: "asc" },
     });
     return lista.map((m) => ({
@@ -42,7 +42,7 @@ export class CatalogoService {
         sucursales: { where: { sucursalId } },
         modificadores: {
           orderBy: { orden: "asc" },
-          include: { modificador: { include: { opciones: { orderBy: { orden: "asc" } } } } },
+          include: { modificador: { include: { opciones: { where: { activo: true }, orderBy: { orden: "asc" } } } } },
         },
       },
       orderBy: [{ orden: "asc" }, { nombre: "asc" }],
@@ -171,20 +171,7 @@ export class CatalogoService {
     obligatorio?: boolean;
     opciones?: { id?: string; nombre: string; precioExtra: number; orden?: number }[];
   }) {
-    const nombre = String(datos.nombre ?? "").trim();
-    if (!nombre) throw new Error("El modificador no tiene nombre");
-    if (datos.tipo !== "SELECCION_UNICA" && datos.tipo !== "MULTIPLE") throw new Error("El tipo del modificador no es válido");
-    const opciones = (Array.isArray(datos.opciones) ? datos.opciones : []).map((o, i) => ({
-      id: o.id,
-      nombre: String(o.nombre ?? "").trim(),
-      precioExtra: Number(o.precioExtra ?? 0),
-      orden: o.orden ?? i + 1,
-    }));
-    if (opciones.length === 0) throw new Error("El modificador necesita al menos una opción");
-    for (const o of opciones) {
-      if (!o.nombre) throw new Error("Una opción del modificador no tiene nombre");
-      if (!Number.isFinite(o.precioExtra) || o.precioExtra < 0) throw new Error(`El precio extra de "${o.nombre}" no es válido`);
-    }
+    const { nombre, opciones } = this.validarGrupo(datos);
 
     const existente = await this.prisma.modificador.findUnique({ where: { id: datos.id }, select: { empresaId: true } });
     if (existente) {
@@ -204,6 +191,102 @@ export class CatalogoService {
     });
     this.logger.log(`Modificador "${nombre}" dado de alta desde la terminal (${datos.id}) con ${opciones.length} opción(es)`);
     return { id: datos.id, creado: true };
+  }
+
+  /** Valida y normaliza un grupo de modificadores recibido de una terminal (alta o edición). */
+  private validarGrupo(datos: { nombre: string; tipo: string; opciones?: { id?: string; nombre: string; precioExtra: number; orden?: number }[] }) {
+    const nombre = String(datos.nombre ?? "").trim();
+    if (!nombre) throw new Error("El modificador no tiene nombre");
+    if (datos.tipo !== "SELECCION_UNICA" && datos.tipo !== "MULTIPLE") throw new Error("El tipo del modificador no es válido");
+    const opciones = (Array.isArray(datos.opciones) ? datos.opciones : []).map((o, i) => ({
+      id: o.id,
+      nombre: String(o.nombre ?? "").trim(),
+      precioExtra: Number(o.precioExtra ?? 0),
+      orden: o.orden ?? i + 1,
+    }));
+    if (opciones.length === 0) throw new Error("El modificador necesita al menos una opción");
+    for (const o of opciones) {
+      if (!o.nombre) throw new Error("Una opción del modificador no tiene nombre");
+      if (!Number.isFinite(o.precioExtra) || o.precioExtra < 0) throw new Error(`El precio extra de "${o.nombre}" no es válido`);
+    }
+    return { nombre, opciones };
+  }
+
+  /**
+   * Edición de un grupo de modificadores hecha en una terminal (SyncEntidad.MODIFICADOR / UPDATE):
+   * renombrar, cambiar tipo/obligatorio, agregar opciones, cambiar sus precios y quitar opciones.
+   * La lista de opciones recibida es la COMPLETA: las que ya no vienen se borran, o se apagan si
+   * alguna venta las usó (el historial las sigue referenciando). Idempotente: reenviar el mismo
+   * sobre deja el mismo resultado.
+   */
+  async editarModificadorDesdeTerminal(datos: {
+    id: string;
+    empresaId: string;
+    nombre: string;
+    tipo: string;
+    obligatorio?: boolean;
+    opciones?: { id?: string; nombre: string; precioExtra: number; orden?: number }[];
+  }) {
+    const { nombre, opciones } = this.validarGrupo(datos);
+    const grupo = await this.prisma.modificador.findUnique({ where: { id: datos.id }, select: { empresaId: true, opciones: { select: { id: true } } } });
+    if (!grupo) throw new Error("El modificador no existe en el ERP: espera a que se sincronice su alta");
+    if (grupo.empresaId !== datos.empresaId) throw new Error("El modificador pertenece a otra empresa");
+
+    const propias = new Set(grupo.opciones.map((o) => o.id));
+    const idsRecibidos = new Set<string>();
+    for (const o of opciones) {
+      if (!o.id) continue;
+      if (!propias.has(o.id)) {
+        const otra = await this.prisma.opcionModificador.findUnique({ where: { id: o.id }, select: { modificadorId: true } });
+        if (otra && otra.modificadorId !== datos.id) throw new Error(`La opción "${o.nombre}" pertenece a otro modificador`);
+      }
+      idsRecibidos.add(o.id);
+    }
+    const sobrantes = [...propias].filter((id) => !idsRecibidos.has(id));
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.modificador.update({ where: { id: datos.id }, data: { nombre, tipo: datos.tipo, obligatorio: datos.obligatorio ?? false } });
+      for (const o of opciones) {
+        if (o.id) {
+          await tx.opcionModificador.upsert({
+            where: { id: o.id },
+            update: { nombre: o.nombre, precioExtra: o.precioExtra, orden: o.orden, activo: true },
+            create: { id: o.id, modificadorId: datos.id, nombre: o.nombre, precioExtra: o.precioExtra, orden: o.orden },
+          });
+        } else {
+          await tx.opcionModificador.create({ data: { modificadorId: datos.id, nombre: o.nombre, precioExtra: o.precioExtra, orden: o.orden } });
+        }
+      }
+      for (const id of sobrantes) {
+        const usos = await tx.pedidoItemModificador.count({ where: { opcionModificadorId: id } });
+        if (usos > 0) await tx.opcionModificador.update({ where: { id }, data: { activo: false } });
+        else await tx.opcionModificador.delete({ where: { id } });
+      }
+    });
+    this.logger.log(`Modificador "${nombre}" editado desde la terminal (${datos.id}): ${opciones.length} opción(es), ${sobrantes.length} quitada(s)`);
+    return { id: datos.id, opciones: opciones.length, quitadas: sobrantes.length };
+  }
+
+  /** Cambios de datos de un producto hechos en una terminal (SyncEntidad.PRODUCTO / UPDATE):
+   *  nombre y categoría. Solo toca lo que llega; el precio va por PRODUCTO_SUCURSAL. */
+  async editarDatosProducto(empresaId: string, productoId: string, datos: { nombre?: string; categoriaId?: string }) {
+    const producto = await this.prisma.producto.findUnique({ where: { id: productoId }, select: { empresaId: true } });
+    if (!producto) throw new Error("El producto no existe en el ERP");
+    if (producto.empresaId !== empresaId) throw new Error("El producto pertenece a otra empresa");
+    const cambios: { nombre?: string; categoriaId?: string } = {};
+    if (datos.nombre !== undefined) {
+      const nombre = String(datos.nombre).trim();
+      if (!nombre) throw new Error("El producto no tiene nombre");
+      cambios.nombre = nombre;
+    }
+    if (datos.categoriaId !== undefined) {
+      const categoria = await this.prisma.categoriaProducto.findUnique({ where: { id: datos.categoriaId }, select: { empresaId: true } });
+      if (!categoria || categoria.empresaId !== empresaId) throw new Error("La categoría del producto no existe en el ERP");
+      cambios.categoriaId = datos.categoriaId;
+    }
+    if (Object.keys(cambios).length === 0) return { id: productoId, cambios: 0 };
+    await this.prisma.producto.update({ where: { id: productoId }, data: cambios });
+    return { id: productoId, cambios: Object.keys(cambios).length };
   }
 
   /**

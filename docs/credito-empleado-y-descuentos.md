@@ -57,3 +57,33 @@ queda marcado en el producto en ese momento.
   opciones sin repetir, precio extra ≥ 0 (vacío = $0).
 - Backend: `CatalogoService.crearModificadorDesdeTerminal` (idempotente por id; la empresa sale
   del token).
+
+## Editar un producto por completo (APK POS)
+
+Admin → Catálogo → **Editar** en un producto abre la edición completa: nombre, precio, **categoría** y
+**modificadores**. En ⚙ Modificadores se eligen los grupos del producto y, con **✎ Editar** en cada
+grupo, se cambian sus opciones: agregar, quitar (✕) y cambiar el precio extra. Un cambio en un grupo
+aplica a **todos los productos que lo usan**.
+
+- Nombre/categoría: `SyncEntidad.PRODUCTO` / UPDATE (la lista de modificadores solo se toca si llega).
+  Precio: `PRODUCTO_SUCURSAL`, como antes.
+- Grupo: `SyncEntidad.MODIFICADOR` / UPDATE con la lista **completa** de opciones. Una opción quitada
+  se borra si nunca se vendió; si ya se vendió se apaga (`opciones_modificador.activo = false`) para
+  no romper el historial. El pull del catálogo no pisa un grupo con cambios aún sin subir.
+
+## Precios de DiDi en los extras
+
+Los productos DiDi comparten los grupos de modificadores con el mostrador, así que la migración
+`20261007210000_didi_precios_modificadores` crea copias **"Tipo de leche (DiDi)"**, **"Jarabe (DiDi)"**
+y **"Cold Foam (DiDi)"** y cambia el vínculo solo de los productos de la categoría DIDI:
+
+| Opción | Precio DiDi |
+|---|---|
+| Leche de almendra | $28 |
+| Leche de avena | $30 |
+| Jarabes (los que cuestan extra) | $21 |
+| Cold foam (los que cuestan extra) | $32 |
+
+Las demás opciones conservan su precio y Tamaño/Extras no cambian. Los modificadores son de la
+empresa, así que aplica en **todas las sucursales**. Para cambiar un precio después, se edita el grupo
+"(DiDi)" desde el APK.

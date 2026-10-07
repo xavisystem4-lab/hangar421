@@ -561,6 +561,9 @@ model OpcionModificador {
   nombre        String
   precioExtra   Decimal @default(0) @db.Decimal(10, 2)
   orden         Int     @default(0)
+  // Quitar una opción desde la terminal la APAGA si ya hay ventas que la usaron (no se puede
+  // borrar sin romper el historial); si nunca se vendió, se borra de verdad.
+  activo        Boolean @default(true)
 
   modificador             Modificador             @relation(fields: [modificadorId], references: [id])
   pedidoItemModificadores PedidoItemModificador[]

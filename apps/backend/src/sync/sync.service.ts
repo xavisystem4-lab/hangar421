@@ -366,21 +366,22 @@ export class SyncService {
             modificadorIds: p.modificadorIds,
           });
         } else {
-          await this.catalogo.fijarModificadoresDeProducto(empresaId, item.id, p.modificadorIds);
+          // UPDATE trae solo lo que cambió: nombre/categoría y/o la lista de modificadores. Una
+          // lista ausente NO es "ninguno": no se toca (editar el nombre no debe vaciarla).
+          if (p.nombre !== undefined || p.categoriaId !== undefined) {
+            await this.catalogo.editarDatosProducto(empresaId, item.id, { nombre: p.nombre, categoriaId: p.categoriaId });
+          }
+          if (Array.isArray(p.modificadorIds)) await this.catalogo.fijarModificadoresDeProducto(empresaId, item.id, p.modificadorIds);
         }
         break;
 
       // Grupo de modificadores creado en la tablet; se encola antes que el producto que lo usa.
-      case SyncEntidad.MODIFICADOR:
-        await this.catalogo.crearModificadorDesdeTerminal({
-          id: item.id,
-          empresaId,
-          nombre: p.nombre,
-          tipo: p.tipo,
-          obligatorio: p.obligatorio,
-          opciones: p.opciones,
-        });
+      case SyncEntidad.MODIFICADOR: {
+        const grupo = { id: item.id, empresaId, nombre: p.nombre, tipo: p.tipo, obligatorio: p.obligatorio, opciones: p.opciones };
+        if (item.operacion === SyncOperacion.UPDATE) await this.catalogo.editarModificadorDesdeTerminal(grupo);
+        else await this.catalogo.crearModificadorDesdeTerminal(grupo);
         break;
+      }
 
       case SyncEntidad.PRODUCTO_SUCURSAL:
         if (p.precio != null) {

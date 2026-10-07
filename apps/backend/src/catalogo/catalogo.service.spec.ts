@@ -172,3 +172,89 @@ describe("CatalogoService.crearModificadorDesdeTerminal", () => {
     expect(cliente.modificador.create).not.toHaveBeenCalled();
   });
 });
+
+/** Edición de un grupo: opciones nuevas, precios, y quitar (borrar si nunca se vendió, apagar si sí). */
+function prismaEdicion(usos: Record<string, number> = {}) {
+  const opciones = new Map<string, any>([
+    ["op-1", { id: "op-1", modificadorId: "mod-1", nombre: "Entera", precioExtra: 0, orden: 1, activo: true }],
+    ["op-2", { id: "op-2", modificadorId: "mod-1", nombre: "Avena", precioExtra: 10, orden: 2, activo: true }],
+    ["op-3", { id: "op-3", modificadorId: "mod-1", nombre: "Soya", precioExtra: 10, orden: 3, activo: true }],
+    ["op-otro", { id: "op-otro", modificadorId: "mod-9", nombre: "Ajena", precioExtra: 0, orden: 1, activo: true }],
+  ]);
+  const grupos: Record<string, any> = { "mod-1": { empresaId: "emp-1", nombre: "Leche" }, "mod-ajeno": { empresaId: "emp-2" } };
+  const tx: any = {
+    modificador: {
+      findUnique: jest.fn(({ where: { id } }: any) => Promise.resolve(grupos[id] ? { ...grupos[id], opciones: [...opciones.values()].filter((o) => o.modificadorId === id).map((o) => ({ id: o.id })) } : null)),
+      update: jest.fn(({ where: { id }, data }: any) => { grupos[id] = { ...grupos[id], ...data }; return Promise.resolve(grupos[id]); }),
+    },
+    opcionModificador: {
+      findUnique: jest.fn(({ where: { id } }: any) => Promise.resolve(opciones.get(id) ?? null)),
+      upsert: jest.fn(({ where: { id }, update, create }: any) => { opciones.set(id, opciones.has(id) ? { ...opciones.get(id), ...update } : { ...create, activo: true }); return Promise.resolve({}); }),
+      create: jest.fn(({ data }: any) => { opciones.set(`nueva-${opciones.size}`, { ...data, activo: true }); return Promise.resolve({}); }),
+      update: jest.fn(({ where: { id }, data }: any) => { opciones.set(id, { ...opciones.get(id), ...data }); return Promise.resolve({}); }),
+      delete: jest.fn(({ where: { id } }: any) => { opciones.delete(id); return Promise.resolve({}); }),
+    },
+    pedidoItemModificador: { count: jest.fn(({ where: { opcionModificadorId } }: any) => Promise.resolve(usos[opcionModificadorId] ?? 0)) },
+  };
+  tx.$transaction = jest.fn((fn: any) => fn(tx));
+  return { tx, opciones, grupos };
+}
+
+describe("CatalogoService.editarModificadorDesdeTerminal", () => {
+  const EDICION = {
+    id: "mod-1", empresaId: "emp-1", nombre: " Tipo de leche ", tipo: "SELECCION_UNICA", obligatorio: true,
+    opciones: [{ id: "op-1", nombre: "Entera", precioExtra: 0 }, { id: "op-2", nombre: "Avena", precioExtra: 15 }, { nombre: "Almendra", precioExtra: 12 }],
+  };
+
+  it("cambia el grupo, los precios, agrega opciones nuevas y quita la que ya no viene", async () => {
+    const { tx, opciones, grupos } = prismaEdicion();
+    const r = await new CatalogoService(tx).editarModificadorDesdeTerminal(EDICION);
+
+    expect(r).toEqual({ id: "mod-1", opciones: 3, quitadas: 1 });
+    expect(grupos["mod-1"]).toMatchObject({ nombre: "Tipo de leche", obligatorio: true });
+    expect(opciones.get("op-2")).toMatchObject({ precioExtra: 15, orden: 2 });
+    expect([...opciones.values()].some((o) => o.nombre === "Almendra" && o.modificadorId === "mod-1")).toBe(true);
+    expect(opciones.has("op-3")).toBe(false); // Soya nunca se vendió: se borra
+  });
+
+  it("una opción quitada que ya se vendió se apaga, no se borra", async () => {
+    const { tx, opciones } = prismaEdicion({ "op-3": 4 });
+    await new CatalogoService(tx).editarModificadorDesdeTerminal(EDICION);
+    expect(opciones.get("op-3")).toMatchObject({ activo: false });
+  });
+
+  it("rechaza un grupo inexistente, de otra empresa o con una opción de otro grupo", async () => {
+    const { tx } = prismaEdicion();
+    const s = new CatalogoService(tx);
+    await expect(s.editarModificadorDesdeTerminal({ ...EDICION, id: "nadie" })).rejects.toThrow("no existe");
+    await expect(s.editarModificadorDesdeTerminal({ ...EDICION, id: "mod-ajeno" })).rejects.toThrow("otra empresa");
+    await expect(s.editarModificadorDesdeTerminal({ ...EDICION, opciones: [{ id: "op-otro", nombre: "X", precioExtra: 0 }] })).rejects.toThrow("otro modificador");
+    expect(tx.modificador.update).not.toHaveBeenCalled();
+  });
+
+  it("no deja un grupo sin opciones", async () => {
+    const { tx } = prismaEdicion();
+    await expect(new CatalogoService(tx).editarModificadorDesdeTerminal({ ...EDICION, opciones: [] })).rejects.toThrow("al menos una opción");
+  });
+});
+
+describe("CatalogoService.editarDatosProducto", () => {
+  it("cambia nombre y categoría, y no toca nada si no llega nada", async () => {
+    const { cliente, productos } = crearPrismaFalso();
+    productos.set("p-1", { id: "p-1", empresaId: "emp-1", nombre: "Latte" });
+    const s = new CatalogoService(cliente);
+    expect(await s.editarDatosProducto("emp-1", "p-1", { nombre: " Latte Vainilla ", categoriaId: "cat-1" })).toEqual({ id: "p-1", cambios: 2 });
+    expect(productos.get("p-1")).toMatchObject({ nombre: "Latte Vainilla", categoriaId: "cat-1" });
+    expect(await s.editarDatosProducto("emp-1", "p-1", {})).toEqual({ id: "p-1", cambios: 0 });
+  });
+
+  it("rechaza producto ajeno, nombre vacío y categoría de otra empresa", async () => {
+    const { cliente, productos } = crearPrismaFalso();
+    productos.set("p-1", { id: "p-1", empresaId: "emp-1" });
+    productos.set("p-2", { id: "p-2", empresaId: "emp-2" });
+    const s = new CatalogoService(cliente);
+    await expect(s.editarDatosProducto("emp-1", "p-2", { nombre: "X" })).rejects.toThrow("otra empresa");
+    await expect(s.editarDatosProducto("emp-1", "p-1", { nombre: "  " })).rejects.toThrow("no tiene nombre");
+    await expect(s.editarDatosProducto("emp-1", "p-1", { categoriaId: "cat-ajena" })).rejects.toThrow("no existe");
+  });
+});

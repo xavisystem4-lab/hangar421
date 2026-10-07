@@ -7,6 +7,8 @@ import type { ModificadorNuevo } from "../caja/nuevoModificador";
 /** Alta/edición de catálogo desde la terminal.
  *
  *  - Precio/disponibilidad de un producto: `SyncEntidad.PRODUCTO_SUCURSAL` (por sucursal).
+ *  - Nombre y categoría de un producto: `SyncEntidad.PRODUCTO` / UPDATE.
+ *  - Crear o editar un grupo de modificadores (opciones, precios): `SyncEntidad.MODIFICADOR`.
  *  - Alta de un producto, con los modificadores que debe preguntar: `SyncEntidad.PRODUCTO` /
  *    CREATE. Viaja con el mismo id que aquí; el ERP lo crea, lo pone en venta en esta sucursal
  *    y en standby en las demás (ver catalogo.service.ts::altaProductoDesdeTerminal). Cambiar los
@@ -61,6 +63,42 @@ export async function crearModificadorLocal(db: SQLiteDatabase, datos: Modificad
     });
   });
   return id;
+}
+
+/** Edita un grupo de modificadores (renombrar, tipo/obligatorio, agregar/quitar opciones, cambiar
+ *  precios) y manda MODIFICADOR / UPDATE con la lista COMPLETA de opciones. Las opciones sin `id`
+ *  son nuevas (se les asigna uno aquí); las que existían y ya no vienen se borran en local: las
+ *  ventas guardan el nombre y el precio, así que el historial no depende de la fila. El cambio
+ *  afecta a TODOS los productos que usan el grupo. */
+export async function editarModificadorLocal(db: SQLiteDatabase, id: string, datos: ModificadorNuevo, usuarioId?: string): Promise<void> {
+  const opciones = datos.opciones.map((o, i) => ({ id: o.id ?? uuid7(), nombre: o.nombre, precioExtra: o.precioExtra, orden: i + 1 }));
+  const [sucursalId, dispositivoId] = await Promise.all([obtenerOCrearSucursalIdLocal(db), obtenerOCrearDispositivoId(db)]);
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      "UPDATE modificadores SET nombre = ?, tipo = ?, obligatorio = ?, synced_at = NULL WHERE id = ?",
+      datos.nombre, datos.tipo, datos.obligatorio ? 1 : 0, id,
+    );
+    await db.runAsync(
+      `DELETE FROM opciones_modificador WHERE modificador_id = ? AND id NOT IN (${opciones.map(() => "?").join(",")})`,
+      id, ...opciones.map((o) => o.id),
+    );
+    for (const o of opciones) {
+      await db.runAsync(
+        `INSERT INTO opciones_modificador (id, modificador_id, nombre, precio_extra, orden) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET nombre = excluded.nombre, precio_extra = excluded.precio_extra, orden = excluded.orden`,
+        o.id, id, o.nombre, o.precioExtra, o.orden,
+      );
+    }
+    await encolarSync(db, {
+      entidad: SyncEntidad.MODIFICADOR,
+      operacion: SyncOperacion.UPDATE,
+      entidadId: id,
+      sucursalId,
+      dispositivoId,
+      usuarioId,
+      payload: { nombre: datos.nombre, tipo: datos.tipo, obligatorio: datos.obligatorio, opciones },
+    });
+  });
 }
 
 export async function crearCategoria(db: SQLiteDatabase, datos: NuevaCategoria): Promise<string> {
@@ -140,21 +178,43 @@ async function guardarModificadoresLocales(db: SQLiteDatabase, productoId: strin
   }
 }
 
-/** El nombre se edita local únicamente (no hay ruta de sync para renombrar un Producto, solo
- *  para su precio/disponibilidad por sucursal) — el precio SÍ se encola como PRODUCTO_SUCURSAL.
- *  Si `id` es de un producto creado aquí mismo (nunca sincronizado), el push fallará server-side
- *  con "producto no encontrado" y quedará en ERROR — esperado, no silenciosamente incorrecto. */
-export async function editarProducto(db: SQLiteDatabase, id: string, datos: { nombre: string; precioBase: number }, usuarioId: string): Promise<void> {
-  await db.runAsync("UPDATE productos SET nombre = ?, precio_base = ?, synced_at = NULL WHERE id = ?", datos.nombre, datos.precioBase, id);
+/** Edita nombre, precio y categoría de un producto (nuevo o del ERP). Todo viaja al ERP: el precio
+ *  como PRODUCTO_SUCURSAL (por sucursal) y el nombre/categoría como PRODUCTO / UPDATE. Los
+ *  modificadores se cambian aparte (fijarModificadoresDeProducto / editarModificadorLocal). Si el
+ *  producto se creó aquí y aún no sube, su PRODUCTO / CREATE va antes en el outbox, así que estos
+ *  cambios llegan en orden. */
+export async function editarProducto(
+  db: SQLiteDatabase,
+  id: string,
+  datos: { nombre: string; precioBase: number; categoriaId?: string },
+  usuarioId: string,
+): Promise<void> {
   const [sucursalId, dispositivoId] = await Promise.all([obtenerOCrearSucursalIdLocal(db), obtenerOCrearDispositivoId(db)]);
-  await encolarSync(db, {
-    entidad: SyncEntidad.PRODUCTO_SUCURSAL,
-    operacion: SyncOperacion.UPDATE,
-    entidadId: id,
-    sucursalId,
-    dispositivoId,
-    usuarioId,
-    payload: { productoId: id, precio: datos.precioBase },
+  await db.withTransactionAsync(async () => {
+    if (datos.categoriaId) {
+      await db.runAsync("UPDATE productos SET nombre = ?, precio_base = ?, categoria_id = ?, synced_at = NULL WHERE id = ?", datos.nombre, datos.precioBase, datos.categoriaId, id);
+    } else {
+      await db.runAsync("UPDATE productos SET nombre = ?, precio_base = ?, synced_at = NULL WHERE id = ?", datos.nombre, datos.precioBase, id);
+    }
+    await db.runAsync("UPDATE precios_sucursal SET precio = ? WHERE producto_id = ? AND sucursal_id = ?", datos.precioBase, id, sucursalId);
+    await encolarSync(db, {
+      entidad: SyncEntidad.PRODUCTO,
+      operacion: SyncOperacion.UPDATE,
+      entidadId: id,
+      sucursalId,
+      dispositivoId,
+      usuarioId,
+      payload: { nombre: datos.nombre, ...(datos.categoriaId ? { categoriaId: datos.categoriaId } : {}) },
+    });
+    await encolarSync(db, {
+      entidad: SyncEntidad.PRODUCTO_SUCURSAL,
+      operacion: SyncOperacion.UPDATE,
+      entidadId: id,
+      sucursalId,
+      dispositivoId,
+      usuarioId,
+      payload: { productoId: id, precio: datos.precioBase },
+    });
   });
 }
 
