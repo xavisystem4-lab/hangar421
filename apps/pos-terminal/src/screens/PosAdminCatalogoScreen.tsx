@@ -17,6 +17,8 @@ import {
   editarModificadorLocal,
 } from "../db/catalogoAdminRepo";
 import type { ModificadorNuevo } from "../caja/nuevoModificador";
+import { PromocionesAdmin } from "../components/PromocionesAdmin";
+import { PERMISOS_TERMINAL, tienePermiso } from "../auth/permisosTerminal";
 import { ModalModificadoresProducto } from "../components/ModalModificadoresProducto";
 import { sincronizarPronto } from "../sync/syncEngine";
 
@@ -28,6 +30,10 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
   const colores = usarColores();
   const estilos = crearEstilos(colores);
   const { usuario } = useAuthLocalStore();
+  // Esta pantalla agrupa dos permisos: Catálogo (productos, categorías, modificadores) y
+  // Promociones (precios especiales). Cada persona ve solo lo que le toca.
+  const puedeCatalogo = tienePermiso(usuario, PERMISOS_TERMINAL.ADMIN_CATALOGO);
+  const puedePromociones = tienePermiso(usuario, PERMISOS_TERMINAL.ADMIN_PROMOCIONES);
   const [categorias, setCategorias] = useState<CategoriaLocal[]>([]);
   const [productos, setProductos] = useState<ProductoLocal[]>([]);
   const [cambiosLocales, setCambiosLocales] = useState(0);
@@ -165,6 +171,11 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
         <TouchableOpacity onPress={onCerrar}><Text style={estilos.cerrar}>✕</Text></TouchableOpacity>
       </View>
 
+      {/* Promociones: primero, porque es lo que más se cambia día a día. */}
+      {puedePromociones && <PromocionesAdmin productos={productos} usuarioId={usuario?.id} />}
+
+      {puedeCatalogo && (
+        <>
       {cambiosLocales > 0 && (
         <Text style={estilos.avisoLocal}>⚠ {cambiosLocales} cambio(s) pendientes de confirmar por el ERP: productos nuevos, precios, disponibilidad y modificadores se envían al conectar. Las categorías nuevas se quedan solo en este dispositivo.</Text>
       )}
@@ -269,6 +280,8 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
           ))}
         </View>
       ))}
+        </>
+      )}
 
       {eligiendoMods && (
         <ModalModificadoresProducto

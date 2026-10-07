@@ -35,6 +35,9 @@ export class ItemPedidoDto {
   @ValidateNested({ each: true })
   @Type(() => ModificadorSeleccionadoDto)
   modificadores?: ModificadorSeleccionadoDto[];
+  /** Promoción (precio especial) con la que la terminal vendió esta línea. El servidor recalcula
+   *  el precio con la definición que él tiene; si no la encuentra, cobra el precio de catálogo. */
+  @ApiPropertyOptional() @IsOptional() @IsString() promocionId?: string;
   /** Descuento "por producto": solo esta línea. */
   @ApiPropertyOptional({ type: DescuentoTerminalDto })
   @IsOptional()

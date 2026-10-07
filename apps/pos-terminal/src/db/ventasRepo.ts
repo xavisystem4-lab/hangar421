@@ -115,14 +115,16 @@ export async function confirmarVenta(
       productoId: string;
       cantidad: number;
       notas?: string;
+      /** Promoción con la que se vendió: el ERP recalcula el precio especial con su definición. */
+      promocionId?: string;
       modificadores: { opcionModificadorId: string }[];
       descuento?: { tipo: string; valor: number; motivo: string };
     }[] = [];
     for (const [indice, item] of datos.items.entries()) {
       const itemId = uuid7();
       await db.runAsync(
-        "INSERT INTO venta_items (id, venta_id, producto_id, nombre_snapshot, precio_unit_snapshot, cantidad, descuento_item, notas) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        itemId, ventaId, item.productoId, item.nombreProducto, item.precioUnitario, item.cantidad, calculoDescuentos?.porLinea[indice] ?? 0, item.notas ?? null,
+        "INSERT INTO venta_items (id, venta_id, producto_id, nombre_snapshot, precio_unit_snapshot, cantidad, descuento_item, notas, promocion_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        itemId, ventaId, item.productoId, item.nombreProducto, item.precioUnitario, item.cantidad, calculoDescuentos?.porLinea[indice] ?? 0, item.notas ?? null, item.promocionId ?? null,
       );
       const descuentoLinea = opciones.descuentos?.porProducto[item.id];
       if (descuentoLinea && (calculoDescuentos?.porLinea[indice] ?? 0) > 0) {
@@ -145,6 +147,7 @@ export async function confirmarVenta(
         productoId: item.productoId,
         cantidad: item.cantidad,
         notas: item.notas,
+        ...(item.promocionId ? { promocionId: item.promocionId } : {}),
         // El backend resuelve precio y nombre por su cuenta desde OpcionModificador (ver
         // PedidosService.resolverItem), así que solo necesita el id — igual que manda el
         // Comandero.

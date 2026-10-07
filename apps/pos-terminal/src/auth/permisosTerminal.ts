@@ -28,6 +28,7 @@ export const PERMISOS_TERMINAL = {
   ADMIN_PAGOS: "admin:pagos",
   ADMIN_IMPRESORA: "admin:impresora",
   ADMIN_PLATAFORMAS: "admin:plataformas",
+  ADMIN_PROMOCIONES: "admin:promociones",
 } as const;
 
 export type PermisoTerminal = (typeof PERMISOS_TERMINAL)[keyof typeof PERMISOS_TERMINAL];
@@ -69,6 +70,7 @@ export const GRUPOS_PERMISOS: { titulo: string; permisos: { clave: PermisoTermin
       { clave: P.ADMIN_PAGOS, etiqueta: "Pagos" },
       { clave: P.ADMIN_IMPRESORA, etiqueta: "Impresora" },
       { clave: P.ADMIN_PLATAFORMAS, etiqueta: "Delivery" },
+      { clave: P.ADMIN_PROMOCIONES, etiqueta: "Promociones (dentro de Catálogo)", ayuda: "Crear y editar precios especiales por día, horario y fechas" },
     ],
   },
 ];
@@ -91,6 +93,8 @@ const OPERACION_BASICA: PermisoTerminal[] = [
   P.VENTA_COBRAR, P.VENTA_CORTESIA, P.VENTA_CANCELAR,
   P.CAJA_ABRIR, P.CAJA_MOVIMIENTOS, P.CAJA_CERRAR,
   P.VENTAS_CONSULTAR, P.ERP_SUBIR,
+  // Cualquiera puede crear y editar promociones; el administrador puede quitárselo a alguien.
+  P.ADMIN_PROMOCIONES,
 ];
 
 export const PERMISOS_DEFECTO_POR_ROL: Record<string, PermisoTerminal[]> = {

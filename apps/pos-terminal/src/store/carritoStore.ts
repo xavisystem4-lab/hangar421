@@ -18,6 +18,11 @@ export interface ItemCarrito {
   /** Nombre de la categoría del producto ("DIDI", "Bebidas"…): con él se reconoce una venta del
    *  grupo DIDI al cobrar. */
   categoria?: string;
+  /** Promoción (precio especial) aplicada al agregar el producto: `precioUnitario` ya es el precio
+   *  con promoción y `precioLista` el de catálogo, para mostrar "antes $X". */
+  promocionId?: string;
+  nombrePromocion?: string;
+  precioLista?: number;
   /** Lo elegido en el modal de personalización. Vacío en un producto sin modificadores. */
   modificadores: SeleccionModificador[];
 }

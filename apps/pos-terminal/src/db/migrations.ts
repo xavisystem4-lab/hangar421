@@ -602,6 +602,41 @@ export const MIGRACIONES: Migracion[] = [
       `);
     },
   },
+  {
+    version: 16,
+    nombre: "promociones",
+    up: async (db) => {
+      // Promociones de catálogo (ver packages/shared/src/promociones.ts): precio especial (directo
+      // o %) en los productos elegidos, con días, horario y fechas. `dias` es una lista separada
+      // por comas ("1,2,3"; vacío = todos los días). `synced_at` NULL = todavía sin confirmar por el ERP.
+      await db.execAsync(`
+        CREATE TABLE promociones (
+          id TEXT PRIMARY KEY,
+          nombre TEXT NOT NULL,
+          tipo TEXT NOT NULL CHECK(tipo IN ('PRECIO','PORCENTAJE')),
+          valor REAL NOT NULL,
+          dias TEXT NOT NULL DEFAULT '',
+          hora_inicio TEXT,
+          hora_fin TEXT,
+          fecha_inicio TEXT,
+          fecha_fin TEXT,
+          sucursal_id TEXT,
+          activo INTEGER NOT NULL DEFAULT 1,
+          synced_at TEXT
+        );
+
+        CREATE TABLE promocion_productos (
+          promocion_id TEXT NOT NULL,
+          producto_id TEXT NOT NULL,
+          PRIMARY KEY (promocion_id, producto_id)
+        );
+        CREATE INDEX idx_promocion_productos_producto ON promocion_productos(producto_id);
+
+        -- Con qué promoción se vendió cada línea (el precio ya viene en precio_unit_snapshot).
+        ALTER TABLE venta_items ADD COLUMN promocion_id TEXT;
+      `);
+    },
+  },
 ];
 
 /** Corre, en orden, toda migración con `version` mayor a la ya aplicada — cada una dentro de su

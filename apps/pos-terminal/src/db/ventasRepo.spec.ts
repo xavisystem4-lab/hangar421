@@ -173,3 +173,28 @@ describe("cancelarVenta — crédito de empleado", () => {
     expect(de("DELETE FROM monedero_movimientos")[0].params).toEqual(["venta-x"]);
   });
 });
+
+describe("confirmarVenta — promociones", () => {
+  // Latte con promoción: ya viene a $49 (precio de lista $85); Pan sin promoción a $50.
+  const conPromo: ItemCarrito[] = [
+    { ...item("a", "Latte", 49, 2), promocionId: "pr-1", nombrePromocion: "Latte a $49", precioLista: 85 },
+    item("b", "Pan", 50, 1),
+  ];
+  const totales = { subtotal: 148, descuentoTotal: 0, impuesto: 0, total: 148 };
+
+  it("cobra al precio de la promoción y guarda cuál fue en cada línea", async () => {
+    const { db, de } = baseFalsa();
+    const venta = await confirmarVenta(db, { items: conPromo, pagos: [{ metodo: "EFECTIVO", monto: 148 }], totales, turnoId: "t-1", usuarioId: "u-1" });
+    expect(venta.total).toBe(148);
+    const filas = de("INSERT INTO venta_items");
+    expect(filas.map((f) => [f.params[4], f.params[8]])).toEqual([[49, "pr-1"], [50, null]]); // precio_unit_snapshot, promocion_id
+  });
+
+  it("manda al ERP el promocionId solo de las líneas con promoción, para que recalcule el precio", async () => {
+    const { db } = baseFalsa();
+    await confirmarVenta(db, { items: conPromo, pagos: [{ metodo: "EFECTIVO", monto: 148 }], totales, turnoId: "t-1", usuarioId: "u-1" });
+    const pedido = encolados.find((e) => e.entidad === "PEDIDO").payload;
+    expect(pedido.items[0].promocionId).toBe("pr-1");
+    expect(pedido.items[1]).not.toHaveProperty("promocionId");
+  });
+});

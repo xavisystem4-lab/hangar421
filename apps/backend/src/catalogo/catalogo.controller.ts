@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { RolUsuario } from "@hangar421/shared";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
@@ -59,6 +59,12 @@ export class CatalogoController {
   @Audit("PRODUCTO_SUCURSAL", "ACTUALIZAR_DISPONIBILIDAD")
   fijarDisponibilidad(@Param("id") id: string, @Body() body: { sucursalId: string; disponible: boolean }) {
     return this.catalogo.fijarDisponibilidad(id, body.sucursalId, body.disponible);
+  }
+
+  /** Promociones de la empresa del usuario autenticado (la empresa sale del token, no de la URL). */
+  @Get("promociones")
+  listarPromociones(@Req() req: any) {
+    return this.catalogo.listarPromociones(req.user.empresaId);
   }
 
   @Get("modificadores")

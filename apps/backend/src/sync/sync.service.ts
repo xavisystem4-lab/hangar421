@@ -383,6 +383,26 @@ export class SyncService {
         break;
       }
 
+      // Promoción (precio especial) creada o editada en la tablet: definición completa, upsert.
+      case SyncEntidad.PROMOCION:
+        await this.catalogo.guardarPromocionDesdeTerminal({
+          id: item.id,
+          empresaId,
+          usuarioId: item.usuarioId,
+          sucursalId: p.sucursalId,
+          nombre: p.nombre,
+          tipo: p.tipo,
+          valor: p.valor,
+          productoIds: p.productoIds,
+          dias: p.dias,
+          horaInicio: p.horaInicio,
+          horaFin: p.horaFin,
+          fechaInicio: p.fechaInicio,
+          fechaFin: p.fechaFin,
+          activo: p.activo,
+        });
+        break;
+
       case SyncEntidad.PRODUCTO_SUCURSAL:
         if (p.precio != null) {
           await this.catalogo.fijarPrecioSucursal(p.productoId, item.sucursalId, p.precio, p.disponible ?? true);

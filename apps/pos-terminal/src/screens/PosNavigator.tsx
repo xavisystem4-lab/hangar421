@@ -43,8 +43,10 @@ const TABS: { id: Pantalla; etiqueta: string }[] = [
 
 /** Subpantallas de Admin y el permiso que abre cada una. Usuarios no lleva permiso: gestionar
  *  quién puede hacer qué es solo de administradores, si no un cajero podría darse todo. */
-const SECCIONES_ADMIN: { id: PantallaAdmin; etiqueta: string; permiso: PermisoTerminal | null }[] = [
-  { id: "catalogo", etiqueta: "Catálogo", permiso: PERMISOS_TERMINAL.ADMIN_CATALOGO },
+const SECCIONES_ADMIN: { id: PantallaAdmin; etiqueta: string; permiso: PermisoTerminal | null; tambien?: PermisoTerminal }[] = [
+  // Catálogo también abre con el permiso de Promociones: ahí viven, aunque la persona no pueda
+  // editar productos ni categorías (la pantalla muestra solo lo que le corresponde).
+  { id: "catalogo", etiqueta: "Catálogo", permiso: PERMISOS_TERMINAL.ADMIN_CATALOGO, tambien: PERMISOS_TERMINAL.ADMIN_PROMOCIONES },
   { id: "inventario", etiqueta: "Inventario", permiso: PERMISOS_TERMINAL.ADMIN_INVENTARIO },
   { id: "reportes", etiqueta: "Reportes", permiso: PERMISOS_TERMINAL.ADMIN_REPORTES },
   { id: "usuarios", etiqueta: "Usuarios", permiso: null },
@@ -69,7 +71,7 @@ export function PosNavigator() {
   const estilos = crearEstilos(colores);
   const { exigir, modalPermiso, puede } = useExigirPermiso();
   // Las secciones de Admin se ocultan (no piden PIN): son navegación, no una acción puntual.
-  const seccionesAdmin = SECCIONES_ADMIN.filter((s) => (s.permiso ? puede(s.permiso) : esRolAdmin(usuario?.rol)));
+  const seccionesAdmin = SECCIONES_ADMIN.filter((s) => (s.permiso ? puede(s.permiso) || (!!s.tambien && puede(s.tambien)) : esRolAdmin(usuario?.rol)));
   const tabs = [
     ...TABS,
     ...(puede(PERMISOS_TERMINAL.VENTAS_CONSULTAR) ? [{ id: "consultar" as Pantalla, etiqueta: "Ventas" }] : []),

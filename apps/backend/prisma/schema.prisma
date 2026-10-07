@@ -224,6 +224,7 @@ enum EstadoSincronizacionOrdenPlataforma {
 // ---------------------------------------------------------------------------
 
 model Empresa {
+  promociones Promocion[]
   id         String   @id @default(uuid())
   nombre     String
   rfc        String?
@@ -494,6 +495,7 @@ model CategoriaProducto {
 }
 
 model Producto {
+  promociones PromocionProducto[]
   id                      String               @id @default(uuid())
   empresaId               String
   categoriaId             String
@@ -748,6 +750,9 @@ model PedidoItem {
   notas            String?
   estado           EstadoPedidoItem @default(NUEVO)
   estacionCocinaId String?
+  // Promoción con la que se vendió (precio especial); sin FK a propósito: la promoción se puede
+  // apagar o editar después y la venta histórica no debe depender de ella.
+  promocionId      String?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 
@@ -1471,4 +1476,44 @@ model MovimientoMonedero {
 
   @@index([usuarioId, createdAt])
   @@map("movimientos_monedero")
+}
+
+/// Promoción de catálogo: precio especial (directo o %) en los productos elegidos, con días de la
+/// semana, horario y fechas. Se crea y edita desde la terminal (Admin → Catálogo → Promociones).
+model Promocion {
+  id           String   @id @default(uuid())
+  empresaId    String
+  // null = todas las sucursales de la empresa
+  sucursalId   String?
+  nombre       String
+  tipo         String // PRECIO | PORCENTAJE
+  valor        Decimal  @db.Decimal(10, 2)
+  // 0 = domingo … 6 = sábado. Vacío = todos los días.
+  dias         Int[]
+  horaInicio   String? // "HH:MM"
+  horaFin      String?
+  fechaInicio  String? // "YYYY-MM-DD"
+  fechaFin     String?
+  activo       Boolean  @default(true)
+  creadaPorId  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  empresa   Empresa             @relation(fields: [empresaId], references: [id])
+  productos PromocionProducto[]
+
+  @@index([empresaId])
+  @@map("promociones")
+}
+
+model PromocionProducto {
+  promocionId String
+  productoId  String
+
+  promocion Promocion @relation(fields: [promocionId], references: [id], onDelete: Cascade)
+  producto  Producto  @relation(fields: [productoId], references: [id])
+
+  @@id([promocionId, productoId])
+  @@index([productoId])
+  @@map("promocion_productos")
 }
