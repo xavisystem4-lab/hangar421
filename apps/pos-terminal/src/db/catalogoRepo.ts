@@ -91,3 +91,37 @@ export async function modificadoresDeProducto(db: SQLiteDatabase, productoId: st
       .map((o) => ({ id: o.id, nombre: o.nombre, precioExtra: o.precio_extra, orden: o.orden })),
   }));
 }
+
+/** Todos los modificadores activos del catálogo con sus opciones (para elegir cuáles pregunta un
+ *  producto en Admin → Catálogo). Los del ERP primero; los sembrados localmente solo mientras la
+ *  terminal no se ha enlazado (en cuanto llega el catálogo del ERP se desactivan). */
+export async function listarModificadores(db: SQLiteDatabase): Promise<ModificadorLocal[]> {
+  const mods = await db.getAllAsync<any>(
+    "SELECT id, nombre, tipo, obligatorio FROM modificadores WHERE activo = 1 ORDER BY CASE origen WHEN 'ERP' THEN 0 ELSE 1 END, nombre",
+  );
+  if (mods.length === 0) return [];
+  const opciones = await db.getAllAsync<any>(
+    `SELECT id, modificador_id, nombre, precio_extra, orden FROM opciones_modificador
+     WHERE modificador_id IN (${mods.map(() => "?").join(",")}) ORDER BY orden, nombre`,
+    ...mods.map((m) => m.id),
+  );
+  return mods.map((m) => ({
+    id: m.id,
+    nombre: m.nombre,
+    tipo: m.tipo,
+    obligatorio: !!m.obligatorio,
+    opciones: opciones.filter((o) => o.modificador_id === m.id).map((o) => ({ id: o.id, nombre: o.nombre, precioExtra: o.precio_extra, orden: o.orden })),
+  }));
+}
+
+/** Ids de los modificadores que pregunta cada producto, para pintar "⚙ 3" en Admin → Catálogo
+ *  sin una consulta por producto. */
+export async function modificadoresPorProducto(db: SQLiteDatabase): Promise<Map<string, string[]>> {
+  const filas = await db.getAllAsync<{ producto_id: string; modificador_id: string }>(
+    `SELECT pm.producto_id, pm.modificador_id FROM producto_modificadores pm
+     JOIN modificadores m ON m.id = pm.modificador_id WHERE m.activo = 1 ORDER BY pm.producto_id, pm.orden`,
+  );
+  const mapa = new Map<string, string[]>();
+  for (const f of filas) mapa.set(f.producto_id, [...(mapa.get(f.producto_id) ?? []), f.modificador_id]);
+  return mapa;
+}

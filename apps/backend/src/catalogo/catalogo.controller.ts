@@ -61,6 +61,11 @@ export class CatalogoController {
     return this.catalogo.fijarDisponibilidad(id, body.sucursalId, body.disponible);
   }
 
+  @Get("modificadores")
+  listarModificadores(@Query("empresaId") empresaId: string) {
+    return this.catalogo.listarModificadores(empresaId);
+  }
+
   @Post("modificadores")
   @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
   @Audit("MODIFICADOR", "CREAR")

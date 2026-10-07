@@ -238,6 +238,11 @@ export enum SyncEntidad {
   SOLICITUD_PRODUCTO = "SOLICITUD_PRODUCTO",
   /** Venta cerrada de un POS de Windows standalone, subida a la nube (ver VentaHub). */
   VENTA_HUB = "VENTA_HUB",
+  /** Alta de un producto hecha en una terminal (Admin → Catálogo del APK), con los modificadores
+   *  que debe preguntar. Viaja con el MISMO id que tiene en la terminal (uuid7): el ERP lo crea
+   *  con ese id, lo pone en venta en la sucursal que lo dio de alta y en standby en las demás.
+   *  UPDATE solo cambia qué modificadores pregunta. Usado por apps/pos-terminal. */
+  PRODUCTO = "PRODUCTO",
 }
 
 export enum EstadoSolicitudProducto {

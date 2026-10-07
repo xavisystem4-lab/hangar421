@@ -43,18 +43,7 @@ export async function upsertCatalogo(db: SQLiteDatabase, categorias: CategoriaRe
       await db.runAsync("DELETE FROM producto_modificadores WHERE producto_id = ?", p.id);
       let ordenModificador = 1;
       for (const m of p.modificadores ?? []) {
-        await db.runAsync(
-          `INSERT INTO modificadores (id, nombre, tipo, obligatorio, activo, origen, synced_at) VALUES (?, ?, ?, ?, 1, 'ERP', ?)
-           ON CONFLICT(id) DO UPDATE SET nombre = excluded.nombre, tipo = excluded.tipo, obligatorio = excluded.obligatorio, activo = 1, synced_at = excluded.synced_at`,
-          m.id, m.nombre, m.tipo, m.obligatorio ? 1 : 0, ahora,
-        );
-        for (const o of m.opciones ?? []) {
-          await db.runAsync(
-            `INSERT INTO opciones_modificador (id, modificador_id, nombre, precio_extra, orden) VALUES (?, ?, ?, ?, ?)
-             ON CONFLICT(id) DO UPDATE SET modificador_id = excluded.modificador_id, nombre = excluded.nombre, precio_extra = excluded.precio_extra, orden = excluded.orden`,
-            o.id, m.id, o.nombre, Number(o.precioExtra), o.orden ?? 0,
-          );
-        }
+        await upsertModificador(db, m, ahora);
         await db.runAsync(
           "INSERT INTO producto_modificadores (producto_id, modificador_id, orden) VALUES (?, ?, ?)",
           p.id, m.id, ordenModificador++,
@@ -79,6 +68,32 @@ export async function upsertCatalogo(db: SQLiteDatabase, categorias: CategoriaRe
 }
 
 interface MesaRemota { id: string; nombre: string; estado: string; orden?: number }
+
+/** Un modificador del ERP con sus opciones, por id (idempotente). */
+async function upsertModificador(db: SQLiteDatabase, m: ModificadorRemoto, ahora: string): Promise<void> {
+  await db.runAsync(
+    `INSERT INTO modificadores (id, nombre, tipo, obligatorio, activo, origen, synced_at) VALUES (?, ?, ?, ?, 1, 'ERP', ?)
+     ON CONFLICT(id) DO UPDATE SET nombre = excluded.nombre, tipo = excluded.tipo, obligatorio = excluded.obligatorio, activo = 1, synced_at = excluded.synced_at`,
+    m.id, m.nombre, m.tipo, m.obligatorio ? 1 : 0, ahora,
+  );
+  for (const o of m.opciones ?? []) {
+    await db.runAsync(
+      `INSERT INTO opciones_modificador (id, modificador_id, nombre, precio_extra, orden) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET modificador_id = excluded.modificador_id, nombre = excluded.nombre, precio_extra = excluded.precio_extra, orden = excluded.orden`,
+      o.id, m.id, o.nombre, Number(o.precioExtra), o.orden ?? 0,
+    );
+  }
+}
+
+/** Todos los modificadores de la empresa (GET /catalogo/modificadores), incluidos los que ningún
+ *  producto pregunta todavía: así Admin → Catálogo puede ofrecerlos al dar de alta un producto.
+ *  Los vínculos producto→modificador no se tocan aquí; eso lo hace upsertCatalogo. */
+export async function upsertModificadores(db: SQLiteDatabase, modificadores: ModificadorRemoto[]): Promise<void> {
+  const ahora = new Date().toISOString();
+  await db.withTransactionAsync(async () => {
+    for (const m of modificadores) await upsertModificador(db, m, ahora);
+  });
+}
 
 export async function upsertMesas(db: SQLiteDatabase, mesas: MesaRemota[]): Promise<void> {
   await db.withTransactionAsync(async () => {

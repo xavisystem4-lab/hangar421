@@ -88,6 +88,13 @@ export class AlcanceSync {
         return (await this.deOtraEmpresa("insumo", p.insumoId)) ? "El insumo pertenece a otra empresa" : null;
       case SyncEntidad.PRODUCTO_SUCURSAL:
         return (await this.deOtraEmpresa("producto", p.productoId)) ? "El producto pertenece a otra empresa" : null;
+      case SyncEntidad.PRODUCTO:
+        if (await this.deOtraEmpresa("producto", item.id)) return "El producto pertenece a otra empresa";
+        if (await this.deOtraEmpresa("categoriaProducto", p.categoriaId)) return "La categoría pertenece a otra empresa";
+        for (const modificadorId of Array.isArray(p.modificadorIds) ? p.modificadorIds : []) {
+          if (await this.deOtraEmpresa("modificador", modificadorId)) return "El modificador pertenece a otra empresa";
+        }
+        return null;
       case SyncEntidad.VENTA_HUB:
         return (await this.deOtraSucursal("pedido", item.id, suc)) ? "La venta pertenece a otra sucursal" : null;
       case SyncEntidad.SOLICITUD_PRODUCTO:
@@ -106,7 +113,7 @@ export class AlcanceSync {
     return !!fila && fila.sucursalId !== sucursalId;
   }
 
-  private async deOtraEmpresa(modelo: "insumo" | "producto", id: string | undefined): Promise<boolean> {
+  private async deOtraEmpresa(modelo: "insumo" | "producto" | "categoriaProducto" | "modificador", id: string | undefined): Promise<boolean> {
     if (!id) return false;
     const fila = await (this.prisma[modelo] as any).findUnique({ where: { id }, select: { empresaId: true } });
     return !!fila && fila.empresaId !== this.sesion.empresaId;
