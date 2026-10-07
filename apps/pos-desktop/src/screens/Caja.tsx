@@ -15,7 +15,7 @@ interface ResumenDto {
 }
 
 const ETIQUETA_METODO: Record<string, string> = {
-  EFECTIVO: "Efectivo", TARJETA: "Tarjeta", TRANSFERENCIA: "Transferencia", QR: "QR", OTRO: "Otro",
+  EFECTIVO: "Efectivo", TARJETA: "Tarjeta", TRANSFERENCIA: "Transferencia", QR: "QR", OTRO: "Otro", EN_LINEA: "Pagado en línea",
 };
 
 // Denominaciones vigentes de billetes/monedas MXN y billetes USD — el desglose es lo que se

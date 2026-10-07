@@ -15,6 +15,7 @@ const ETIQUETA: Record<MetodoPago, string> = {
   [MetodoPago.TRANSFERENCIA]: "Transferencia",
   [MetodoPago.QR]: "QR",
   [MetodoPago.OTRO]: "Otro",
+  [MetodoPago.EN_LINEA]: "Pagado en línea",
 };
 
 export { ETIQUETA as etiquetaMetodoPago };

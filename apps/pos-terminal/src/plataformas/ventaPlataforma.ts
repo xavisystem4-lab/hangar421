@@ -142,8 +142,8 @@ export function notasPedidoPlataforma(pedido: PedidoEntrante): string {
  * precios y totales del ERP, no los del catálogo de la tablet: el cobro que sube después por
  * /sync/push se valida contra el total del ERP y tiene que cuadrar al centavo.
  *
- * Se paga con MetodoPago.OTRO: la plataforma ya le cobró al cliente, en el cajón no entra
- * efectivo (el corte solo suma EFECTIVO). La referencia dice qué plataforma y qué orden.
+ * Se paga con MetodoPago.EN_LINEA ("Pagado en línea"): la plataforma ya le cobró al cliente, en
+ * el cajón no entra efectivo (el corte solo suma EFECTIVO). La referencia dice qué plataforma y qué orden.
  */
 export function ventaDesdePedidoErp(
   pedidoErp: PedidoErp,
@@ -173,7 +173,7 @@ export function ventaDesdePedidoErp(
       impuesto: round2(num(pedidoErp.impuesto)),
       total,
     },
-    pagos: [{ metodo: MetodoPago.OTRO, monto: total, referencia: `${pedido.nombreVisible} #${pedido.ordenExternaId}` }],
+    pagos: [{ metodo: MetodoPago.EN_LINEA, monto: total, referencia: `${pedido.nombreVisible} #${pedido.ordenExternaId}` }],
     opciones: {
       ventaId: pedidoErp.id,
       canalOrigen: CanalOrigen.PLATAFORMA_DELIVERY,
