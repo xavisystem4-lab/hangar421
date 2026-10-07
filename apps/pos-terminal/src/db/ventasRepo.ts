@@ -1,5 +1,7 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 import { uuid7, round2, validarPagoSuficiente, CanalOrigen, SyncEntidad, SyncOperacion, TipoPedido, type TotalesPedido } from "@hangar421/shared";
+import { motivoDescuentoGeneral, motivoDescuentoProducto, totalesConDescuentos, type DescuentosVenta } from "../caja/descuentoVenta";
+import { registrarConsumoMonedero, revertirConsumoMonedero } from "./monederoRepo";
 import type { ItemCarrito } from "../store/carritoStore";
 import type { CodigoOrigen } from "../caja/origenVenta";
 import { normalizarNombreCliente, notasConNombreCliente } from "../caja/nombreCliente";
@@ -17,6 +19,8 @@ export interface PagoVenta {
   /** Solo EFECTIVO_USD: dólares entregados y pesos por dólar. */
   montoUsd?: number;
   tipoCambio?: number;
+  /** Solo MONEDERO_EMPLEADO: la empleada (usuario) a cuyo monedero se carga. */
+  empleadoId?: string;
 }
 
 /** Para ventas que no nacen en el carrito de mostrador (pedidos de DiDi/Uber/Rappi aceptados en
@@ -34,6 +38,10 @@ export interface OpcionesVenta {
   /** Cortesía autorizada con PIN de supervisor (ver caja/cortesia.ts). Los totales que recibe
    *  confirmarVenta ya vienen con lo regalado como descuento; aquí se deja el registro. */
   cortesia?: { motivo: string; autorizadoPorId: string };
+  /** Descuentos del cajero (general y/o por producto, sin PIN). Los totales de la venta SE
+   *  RECALCULAN desde aquí con la misma función que el backend, así lo guardado, lo que se manda
+   *  al ERP y lo que se cobra no pueden discrepar. No se combina con `cortesia`. */
+  descuentos?: DescuentosVenta;
 }
 
 export interface VentaConfirmada {
@@ -63,8 +71,14 @@ export async function confirmarVenta(
   opciones: OpcionesVenta = {},
 ): Promise<VentaConfirmada> {
   if (datos.items.length === 0) throw new Error("El carrito está vacío");
+  if (opciones.descuentos && opciones.cortesia) throw new Error("Una venta no puede llevar descuento y cortesía a la vez");
 
-  const { suficiente, faltante } = validarPagoSuficiente(datos.pagos, datos.totales.total);
+  const calculoDescuentos = opciones.descuentos ? totalesConDescuentos(datos.items, opciones.descuentos) : null;
+  const totales: TotalesPedido = calculoDescuentos
+    ? { subtotal: calculoDescuentos.subtotal, descuentoTotal: calculoDescuentos.descuentoTotal, impuesto: 0, total: calculoDescuentos.total }
+    : datos.totales;
+
+  const { suficiente, faltante } = validarPagoSuficiente(datos.pagos, totales.total);
   if (!suficiente) throw new Error(`El total pagado no cubre el importe a pagar (faltan $${faltante.toFixed(2)})`);
 
   const nombreCliente = normalizarNombreCliente(datos.nombreCliente);
@@ -93,17 +107,30 @@ export async function confirmarVenta(
       `INSERT INTO ventas
          (id, sucursal_id, folio_local, mesa_id, cliente_id, estado, subtotal, descuento_monto, impuestos, total, canal_origen, turno_id, usuario_id, notas, created_at, updated_at, idempotency_key, nombre_cliente, plataforma)
        VALUES (?, ?, ?, NULL, NULL, 'COBRADA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ventaId, sucursalId, folioLocal, datos.totales.subtotal, datos.totales.descuentoTotal, datos.totales.impuesto, datos.totales.total,
+      ventaId, sucursalId, folioLocal, totales.subtotal, totales.descuentoTotal, totales.impuesto, totales.total,
       canalOrigen, datos.turnoId, datos.usuarioId, opciones.notas ?? null, ahora, ahora, idempotencyKeyVenta, nombreCliente, opciones.plataforma ?? null,
     );
 
-    const itemsPayload: { productoId: string; cantidad: number; notas?: string; modificadores: { opcionModificadorId: string }[] }[] = [];
-    for (const item of datos.items) {
+    const itemsPayload: {
+      productoId: string;
+      cantidad: number;
+      notas?: string;
+      modificadores: { opcionModificadorId: string }[];
+      descuento?: { tipo: string; valor: number; motivo: string };
+    }[] = [];
+    for (const [indice, item] of datos.items.entries()) {
       const itemId = uuid7();
       await db.runAsync(
-        "INSERT INTO venta_items (id, venta_id, producto_id, nombre_snapshot, precio_unit_snapshot, cantidad, descuento_item, notas) VALUES (?, ?, ?, ?, ?, ?, 0, ?)",
-        itemId, ventaId, item.productoId, item.nombreProducto, item.precioUnitario, item.cantidad, item.notas ?? null,
+        "INSERT INTO venta_items (id, venta_id, producto_id, nombre_snapshot, precio_unit_snapshot, cantidad, descuento_item, notas) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        itemId, ventaId, item.productoId, item.nombreProducto, item.precioUnitario, item.cantidad, calculoDescuentos?.porLinea[indice] ?? 0, item.notas ?? null,
       );
+      const descuentoLinea = opciones.descuentos?.porProducto[item.id];
+      if (descuentoLinea && (calculoDescuentos?.porLinea[indice] ?? 0) > 0) {
+        await db.runAsync(
+          "INSERT INTO descuentos (id, venta_id, tipo, valor, motivo, autorizado_por_id, created_at) VALUES (?, ?, ?, ?, ?, NULL, ?)",
+          uuid7(), ventaId, descuentoLinea.tipo, descuentoLinea.valor, motivoDescuentoProducto(item.nombreProducto, descuentoLinea), ahora,
+        );
+      }
 
       // Snapshot del nombre y del precio extra, no solo el id: el ticket y el historial deben
       // seguir leyéndose aunque el modificador se renombre o desaparezca del catálogo.
@@ -122,28 +149,48 @@ export async function confirmarVenta(
         // PedidosService.resolverItem), así que solo necesita el id — igual que manda el
         // Comandero.
         modificadores: (item.modificadores ?? []).map((m) => ({ opcionModificadorId: m.opcionModificadorId })),
+        ...(descuentoLinea && (calculoDescuentos?.porLinea[indice] ?? 0) > 0
+          ? { descuento: { tipo: descuentoLinea.tipo, valor: descuentoLinea.valor, motivo: motivoDescuentoProducto(item.nombreProducto, descuentoLinea) } }
+          : {}),
       });
     }
 
-    if (opciones.cortesia && datos.totales.descuentoTotal > 0) {
+    // Descuento general: una fila aparte. El ERP lo recalcula con sus precios sobre lo que queda
+    // tras los descuentos por producto (calcularDescuentosVenta, el mismo orden que usa la tablet).
+    const descuentoGeneral = opciones.descuentos?.general;
+    if (descuentoGeneral && (calculoDescuentos?.descuentoGeneral ?? 0) > 0) {
+      await db.runAsync(
+        "INSERT INTO descuentos (id, venta_id, tipo, valor, motivo, autorizado_por_id, created_at) VALUES (?, ?, ?, ?, ?, NULL, ?)",
+        uuid7(), ventaId, descuentoGeneral.tipo, descuentoGeneral.valor, motivoDescuentoGeneral(descuentoGeneral), ahora,
+      );
+    }
+
+    if (opciones.cortesia && totales.descuentoTotal > 0) {
       await db.runAsync(
         "INSERT INTO descuentos (id, venta_id, tipo, valor, motivo, autorizado_por_id, created_at) VALUES (?, ?, 'MONTO', ?, ?, ?, ?)",
-        uuid7(), ventaId, round2(datos.totales.descuentoTotal), opciones.cortesia.motivo, opciones.cortesia.autorizadoPorId, ahora,
+        uuid7(), ventaId, round2(totales.descuentoTotal), opciones.cortesia.motivo, opciones.cortesia.autorizadoPorId, ahora,
       );
     }
 
     const pagosPayload: PagoVenta[] = [];
     for (const pago of datos.pagos) {
       await db.runAsync(
-        "INSERT INTO pagos (id, venta_id, metodo, monto, referencia, created_at, idempotency_key, monto_recibido, monto_usd, tipo_cambio) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO pagos (id, venta_id, metodo, monto, referencia, created_at, idempotency_key, monto_recibido, monto_usd, tipo_cambio, empleado_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         uuid7(), ventaId, pago.metodo, round2(pago.monto), pago.referencia ?? null, ahora, uuid7(),
-        pago.montoRecibido != null ? round2(pago.montoRecibido) : null, pago.montoUsd ?? null, pago.tipoCambio ?? null,
+        pago.montoRecibido != null ? round2(pago.montoRecibido) : null, pago.montoUsd ?? null, pago.tipoCambio ?? null, pago.empleadoId ?? null,
       );
+      // Crédito de empleado: el consumo baja el saldo YA (dentro de la misma transacción), sin
+      // esperar al ERP. Su id es el de la venta, el mismo con que el ERP lo registrará.
+      if (pago.metodo === "MONEDERO_EMPLEADO") {
+        if (!pago.empleadoId) throw new Error("El pago con crédito de empleado necesita la empleada");
+        await registrarConsumoMonedero(db, { ventaId, usuarioId: pago.empleadoId, monto: round2(pago.monto), fecha: ahora });
+      }
       pagosPayload.push({
         metodo: pago.metodo,
         monto: round2(pago.monto),
         referencia: pago.referencia,
         ...(pago.montoUsd != null ? { montoUsd: round2(pago.montoUsd), tipoCambio: pago.tipoCambio } : {}),
+        ...(pago.empleadoId ? { empleadoId: pago.empleadoId } : {}),
       });
     }
 
@@ -168,7 +215,10 @@ export async function confirmarVenta(
         // El nombre del cliente viaja en las notas del pedido: así lo ve también el ERP/cocina.
         notasGenerales: notasConNombreCliente(nombreCliente, opciones.notas),
         // El ERP recalcula con sus precios; lo que se respeta es lo que pagó el cliente.
-        cortesia: opciones.cortesia ? { totalACobrar: datos.totales.total, motivo: opciones.cortesia.motivo } : undefined,
+        cortesia: opciones.cortesia ? { totalACobrar: totales.total, motivo: opciones.cortesia.motivo } : undefined,
+        descuentoGeneral: descuentoGeneral && (calculoDescuentos?.descuentoGeneral ?? 0) > 0
+          ? { tipo: descuentoGeneral.tipo, valor: descuentoGeneral.valor, motivo: motivoDescuentoGeneral(descuentoGeneral) }
+          : undefined,
         cortesiaAutorizadaPorId: opciones.cortesia?.autorizadoPorId,
         idempotencyKey: idempotencyKeyVenta,
         // El turno viaja con la venta: es lo que permite al ERP saber qué ventas pertenecen a
@@ -190,7 +240,7 @@ export async function confirmarVenta(
     });
   });
 
-  return { id: ventaId, folioLocal, total: datos.totales.total };
+  return { id: ventaId, folioLocal, total: totales.total };
 }
 
 export interface DatosCancelacion {
@@ -234,6 +284,8 @@ export async function cancelarVenta(db: SQLiteDatabase, datos: DatosCancelacion)
       ahora, datos.motivo, datos.solicitadaPorId, datos.autorizadaPorId, datos.autorizadaPorNombre,
       ahora, datos.ventaId,
     );
+    // Si se había pagado con crédito de empleado, el saldo vuelve a la empleada.
+    await revertirConsumoMonedero(db, datos.ventaId);
 
     await encolarSync(db, {
       entidad: SyncEntidad.PEDIDO,

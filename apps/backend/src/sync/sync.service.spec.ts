@@ -374,3 +374,36 @@ describe("SyncService.push — SOLICITUD_PRODUCTO", () => {
     expect(solicitudes.crear).not.toHaveBeenCalled();
   });
 });
+
+describe("SyncService.push — descuentos y crédito de empleado del APK", () => {
+  const sobre = (entidad: SyncEntidad, payload: any) => ({
+    id: "venta-1", entidad, operacion: SyncOperacion.CREATE,
+    idempotencyKey: `k-${Math.random()}`, dispositivoId: "dev-1", sucursalId: "suc-1", usuarioId: "user-1",
+    createdAtLocal: new Date().toISOString(), payload,
+  });
+
+  // El pedido se reconstruye campo por campo desde el payload: si un campo no se nombra, se pierde
+  // EN SILENCIO y el ERP registra la venta a precio completo mientras la tablet cobró con descuento.
+  it("el pedido llega al servicio con el descuento general y el de cada producto", async () => {
+    const { push, pedidos } = crearServicio();
+    const descuentoGeneral = { tipo: "PORCENTAJE", valor: 10, motivo: "Descuento general 10%" };
+    const items = [{ productoId: "p1", cantidad: 2, descuento: { tipo: "MONTO", valor: 40, motivo: "Descuento $40.00: Latte" } }, { productoId: "p2", cantidad: 1 }];
+
+    await push([sobre(SyncEntidad.PEDIDO, { empresaId: "emp-1", tipo: "MOSTRADOR", items, descuentoGeneral })]);
+
+    expect(pedidos.crear).toHaveBeenCalledWith(expect.objectContaining({ descuentoGeneral, items }));
+  });
+
+  it("el pago con crédito de empleado llega con la empleada", async () => {
+    const { push, pedidos } = crearServicio();
+    (pedidos as any).cobrar = jest.fn(() => Promise.resolve({}));
+    const pagos = [
+      { metodo: "MONEDERO_EMPLEADO", monto: 150, referencia: "Crédito empleado: Diana", empleadoId: "u-diana" },
+      { metodo: "EFECTIVO", monto: 100 },
+    ];
+
+    await push([sobre(SyncEntidad.PAGO, { pedidoId: "venta-1", pagos, cajeroId: "user-1" })]);
+
+    expect((pedidos as any).cobrar).toHaveBeenCalledWith("venta-1", expect.objectContaining({ pagos }), expect.anything());
+  });
+});

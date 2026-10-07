@@ -18,6 +18,13 @@ export class ModificadorSeleccionadoDto {
   @ApiProperty() @IsString() opcionModificadorId!: string;
 }
 
+/** Descuento decidido en la terminal (sin PIN: lo aplica el cajero). Un monto fijo o un porcentaje. */
+export class DescuentoTerminalDto {
+  @ApiProperty({ enum: TipoDescuento }) @IsEnum(TipoDescuento) tipo!: TipoDescuento;
+  @ApiProperty() @IsNumber() @Min(0) valor!: number;
+  @ApiPropertyOptional() @IsOptional() @IsString() motivo?: string;
+}
+
 export class ItemPedidoDto {
   @ApiProperty() @IsString() productoId!: string;
   @ApiProperty() @IsInt() @Min(1) cantidad!: number;
@@ -28,6 +35,12 @@ export class ItemPedidoDto {
   @ValidateNested({ each: true })
   @Type(() => ModificadorSeleccionadoDto)
   modificadores?: ModificadorSeleccionadoDto[];
+  /** Descuento "por producto": solo esta línea. */
+  @ApiPropertyOptional({ type: DescuentoTerminalDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DescuentoTerminalDto)
+  descuento?: DescuentoTerminalDto;
 }
 
 /** Cortesía decidida en la terminal (con el PIN de un supervisor ya validado allí, igual que una
@@ -72,6 +85,13 @@ export class CrearPedidoDto {
   cortesia?: CortesiaTerminalDto;
   /** Supervisor que autorizó la cortesía en la terminal. */
   @ApiPropertyOptional() @IsOptional() @IsString() cortesiaAutorizadaPorId?: string;
+
+  /** Descuento "general": toda la cuenta, después de los descuentos por producto. Con cortesía no aplica. */
+  @ApiPropertyOptional({ type: DescuentoTerminalDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DescuentoTerminalDto)
+  descuentoGeneral?: DescuentoTerminalDto;
 }
 
 export class AgregarItemsDto {
@@ -104,6 +124,8 @@ export class PagoDto {
   /** Solo EFECTIVO_USD: dólares entregados y pesos por dólar (el cambio se da en pesos). */
   @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(0) montoUsd?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(0) tipoCambio?: number;
+  /** Solo MONEDERO_EMPLEADO: la empleada (usuario) a cuyo monedero se carga el consumo. */
+  @ApiPropertyOptional() @IsOptional() @IsString() empleadoId?: string;
 }
 
 export class CobrarPedidoDto {

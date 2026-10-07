@@ -11,6 +11,7 @@ import {
   calcularMontoDescuento,
   calcularTotalesPedido,
   calcularCortesia,
+  calcularDescuentosVenta,
   validarPagoSuficiente,
 } from "@hangar421/shared";
 import { Prisma } from "@prisma/client";
@@ -272,7 +273,12 @@ export class PedidosService {
     const { subtotal, impuesto } = base;
     // Cortesía de la terminal: se registra como descuento MONTO por lo regalado (calcularCortesia).
     const cortesia = dto.cortesia ? calcularCortesia(subtotal, Number(dto.cortesia.totalACobrar) || 0) : null;
-    const total = cortesia ? cortesia.total : base.total;
+    // Descuentos de la terminal (por producto y/o general). Se recalculan aquí con los precios del
+    // ERP con la MISMA función que usa la tablet (calcularDescuentosVenta); incompatibles con la
+    // cortesía, que ya regala la venta completa.
+    const descuentosTerminal = cortesia ? null : this.armarDescuentosTerminal(dto, itemsResueltos);
+    const descuentoTotal = cortesia ? cortesia.montoCortesia : descuentosTerminal?.calculo.descuentoTotal ?? 0;
+    const total = cortesia ? cortesia.total : descuentosTerminal ? descuentosTerminal.calculo.total : base.total;
     const cortesiaAutorizadaPorId = cortesia ? await this.resolverUsuarioExistente(dto.cortesiaAutorizadaPorId) : undefined;
 
     // El POS manda su propia huella de instalación como "dispositivoId" (ver electron/db.ts ->
@@ -335,7 +341,9 @@ export class PedidosService {
                   }],
                 },
               }
-            : {}),
+            : descuentosTerminal && descuentoTotal > 0
+              ? { descuentoTotal, descuentos: { create: descuentosTerminal.filas } }
+              : {}),
           estado: dto.enviarInmediato ? EstadoPedido.ENVIADO : EstadoPedido.ABIERTO,
           items: {
             create: itemsResueltos.map((it) => ({
@@ -556,6 +564,23 @@ export class PedidosService {
             usuarioId: cajeroId,
           })),
         });
+        // Crédito de empleado: el consumo queda en el monedero de la empleada. Un solo movimiento
+        // por venta (su id es el del pedido), así que un reintento no lo duplica.
+        const montoMonedero = dto.pagos.filter((p) => p.metodo === MetodoPago.MONEDERO_EMPLEADO).reduce((acc, p) => acc + p.monto, 0);
+        if (montoMonedero > 0) {
+          const empleadoId = dto.pagos.find((p) => p.metodo === MetodoPago.MONEDERO_EMPLEADO && p.empleadoId)?.empleadoId;
+          const monedero = empleadoId ? await tx.monederoEmpleado.findUnique({ where: { usuarioId: empleadoId } }) : null;
+          if (monedero) {
+            await tx.movimientoMonedero.upsert({
+              where: { pedidoId },
+              create: { id: pedidoId, usuarioId: monedero.usuarioId, sucursalId: pedido.sucursalId, pedidoId, monto: montoMonedero, createdAt: cobradoEn },
+              update: {},
+            });
+          } else {
+            // No se rechaza el cobro: la venta ya ocurrió y perderla es peor que perder el cargo.
+            this.logger.warn(`Cobro del pedido ${pedidoId}: pago con crédito de empleado sin monedero válido (empleadoId=${empleadoId ?? "—"}); no se registró el movimiento.`);
+          }
+        }
         await tx.pedido.update({
           where: { id: pedidoId },
           data: { estado: EstadoPedido.COBRADO, cajeroId, turnoId },
@@ -614,6 +639,8 @@ export class PedidosService {
     await this.prisma.$transaction(async (tx) => {
       await tx.pedido.update({ where: { id: pedidoId }, data: { estado: EstadoPedido.CANCELADO } });
       await tx.pedidoItem.updateMany({ where: { pedidoId }, data: { estado: EstadoPedidoItem.CANCELADO } });
+      // Una venta pagada con crédito de empleado devuelve el saldo a la empleada al cancelarse.
+      await tx.movimientoMonedero.deleteMany({ where: { pedidoId } });
       if (pedido.mesaId) {
         await tx.mesa.update({ where: { id: pedido.mesaId }, data: { estado: EstadoMesa.LIBRE } });
       }
@@ -696,6 +723,36 @@ export class PedidosService {
     return usuario?.id;
   }
 
+  /** Descuentos por producto + general que mandó la terminal, ya calculados con los precios del
+   *  ERP, y las filas de `descuentos` a guardar (una por línea con descuento y una general). */
+  private armarDescuentosTerminal(
+    dto: CrearPedidoDto,
+    itemsResueltos: { nombreProducto: string; precioUnitario: number; cantidad: number; modificadoresPrecio: number }[],
+  ) {
+    const general = dto.descuentoGeneral ?? null;
+    if (!general && !dto.items.some((i) => i.descuento)) return null;
+    const calculo = calcularDescuentosVenta(
+      itemsResueltos.map((it, i) => ({
+        precioUnitario: it.precioUnitario,
+        cantidad: it.cantidad,
+        modificadoresPrecio: it.modificadoresPrecio,
+        descuento: dto.items[i]?.descuento ?? null,
+      })),
+      general,
+    );
+    const filas: { tipo: TipoDescuento; valor: number; montoAplicado: number; motivo: string }[] = [];
+    itemsResueltos.forEach((it, i) => {
+      const d = dto.items[i]?.descuento;
+      if (d && calculo.porLinea[i] > 0) {
+        filas.push({ tipo: d.tipo, valor: d.valor, montoAplicado: calculo.porLinea[i], motivo: d.motivo?.trim() || `Descuento: ${it.nombreProducto}` });
+      }
+    });
+    if (general && calculo.descuentoGeneral > 0) {
+      filas.push({ tipo: general.tipo, valor: general.valor, montoAplicado: calculo.descuentoGeneral, motivo: general.motivo?.trim() || "Descuento general" });
+    }
+    return { calculo, filas };
+  }
+
   private async resolverItem(item: { productoId: string; cantidad: number; notas?: string; modificadores?: { opcionModificadorId: string }[] }) {
     // findUniqueOrThrow revienta con un NotFoundError si el productoId no existe (ej. el POS
     // tenía el catálogo cacheado y alguien borró/desactivó ese producto entre medias) — sin este
@@ -717,6 +774,7 @@ export class PedidosService {
 
     return {
       productoId: item.productoId,
+      nombreProducto: producto.nombre,
       cantidad: item.cantidad,
       notas: item.notas,
       precioUnitario: Number(producto.precioBase),

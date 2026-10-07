@@ -58,6 +58,8 @@ export async function construirTicketPayload(db: SQLiteDatabase, ventaId: string
   const debiaPagar = venta.total + propina;
   const etiquetaPago = (p: any): string => {
     if (p.metodo === "OTRO" && p.referencia) return p.referencia;
+    // "Crédito empleado: Diana" — la referencia ya trae a quién se cargó.
+    if (p.metodo === "MONEDERO_EMPLEADO") return p.referencia || "Crédito empleado";
     if (p.metodo === "EFECTIVO_USD" && p.monto_usd != null) return `Dólares US$${Number(p.monto_usd).toFixed(2)} × $${Number(p.tipo_cambio).toFixed(2)}`;
     return p.metodo;
   };

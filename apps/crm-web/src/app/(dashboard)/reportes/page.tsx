@@ -12,7 +12,7 @@ interface VentaPorProducto { productoId: string; _sum: { cantidad: number | null
 interface VentaPorMetodo { metodo: string; _sum: { monto: string | null }; _count: number }
 
 const ETIQUETA_METODO: Record<string, string> = {
-  EFECTIVO: "Efectivo", EFECTIVO_USD: "Dólares", TARJETA: "Tarjeta", TRANSFERENCIA: "Transferencia", QR: "QR", OTRO: "Otro", EN_LINEA: "Pagado en línea",
+  EFECTIVO: "Efectivo", EFECTIVO_USD: "Dólares", TARJETA: "Tarjeta", TRANSFERENCIA: "Transferencia", QR: "QR", OTRO: "Otro", EN_LINEA: "Pagado en línea", MONEDERO_EMPLEADO: "Crédito empleado",
 };
 
 function fechaISO(d: Date): string {

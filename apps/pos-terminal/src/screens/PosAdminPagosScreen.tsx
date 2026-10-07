@@ -13,6 +13,7 @@ const ICONO: Record<MetodoPago, string> = {
   [MetodoPago.QR]: "▦",
   [MetodoPago.OTRO]: "•",
   [MetodoPago.EN_LINEA]: "📱",
+  [MetodoPago.MONEDERO_EMPLEADO]: "👛",
 };
 
 const DESCRIPCION: Record<MetodoPago, string> = {
@@ -23,6 +24,7 @@ const DESCRIPCION: Record<MetodoPago, string> = {
   [MetodoPago.QR]: "Requiere un proveedor configurado.",
   [MetodoPago.OTRO]: "Vales, cortesías, cualquier caso que no encaje arriba.",
   [MetodoPago.EN_LINEA]: "El cliente ya pagó en la app de DiDi. Solo aparece al cobrar el grupo DIDI.",
+  [MetodoPago.MONEDERO_EMPLEADO]: "Crédito de empleado: se carga al monedero de la empleada desde el botón del cobro. No se configura aquí.",
 };
 
 /** Métodos de pago habilitados — los mismos que ofrece la pantalla de cobro.

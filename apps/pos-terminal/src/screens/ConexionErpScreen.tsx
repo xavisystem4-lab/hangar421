@@ -6,7 +6,7 @@ import { decodificarJwt } from "../auth/jwt";
 import { abrirBaseDeDatos } from "../db/database";
 import { guardarSucursalErp, guardarEmpresaErp, obtenerOCrearDispositivoId } from "../db/dispositivoLocal";
 import { refrescarCatalogo, ejecutarPull } from "../sync/pullEngine";
-import { refrescarTerminalMultisucursal } from "../sync/terminalErp";
+import { refrescarMonederos, refrescarTerminalMultisucursal } from "../sync/terminalErp";
 import { guardarAlcanceTerminal } from "../db/multisucursalRepo";
 import { obtenerDatosFiscales } from "../db/configFiscalRepo";
 import { contarPendientes } from "../db/outboxRepo";
@@ -71,6 +71,7 @@ export function ConexionErpScreen({ onConectado, onCerrar }: { onConectado: () =
     await guardarEmpresaErp(db, empresaId);
     await guardarAlcanceTerminal(db, alcance);
     await refrescarTerminalMultisucursal().catch(() => undefined);
+    await refrescarMonederos().catch(() => undefined);
     await refrescarCatalogo().catch(() => undefined); // best-effort, no bloquea la conexión
     await ejecutarPull().catch(() => undefined);
     onConectado();

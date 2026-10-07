@@ -4,7 +4,7 @@ import { pendientesParaDrenar, marcarSincronizado, marcarError, contarPendientes
 import { erpFetch, obtenerTokensErp } from "../api/erpHttp";
 import { useSyncStatusStore } from "../store/syncStatusStore";
 import { refrescarCatalogo, refrescarInventario, ejecutarPull } from "./pullEngine";
-import { asegurarSesionEnSucursalActiva, refrescarTerminalMultisucursal } from "./terminalErp";
+import { asegurarSesionEnSucursalActiva, refrescarMonederos, refrescarTerminalMultisucursal } from "./terminalErp";
 import { obtenerOCrearDispositivoId, obtenerSucursalErp } from "../db/dispositivoLocal";
 import { encolarUsuariosSinRegistrarEnErp, mapaUsuariosErp, marcarRegistradoEnErp } from "../db/usuariosLocalesRepo";
 
@@ -27,6 +27,7 @@ let intervaloCatalogo: ReturnType<typeof setInterval> | null = null;
 async function refrescarCatalogoEnSegundoPlano(): Promise<void> {
   // Terminal multisucursal: sucursales, personas asignadas y precios de todas (no-op si no lo es).
   await refrescarTerminalMultisucursal().catch(() => undefined);
+  await refrescarMonederos().catch(() => undefined);
   await refrescarCatalogo().catch(() => undefined);
   await refrescarInventario().catch(() => undefined);
   await ejecutarPull().catch(() => undefined);

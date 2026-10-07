@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { CanalOrigen, MetodoPago, TipoPedido, cobroEnDolares, round2 } from "@hangar421/shared";
+import { CanalOrigen, MetodoPago, TipoPedido, calcularUsoMonedero, cobroEnDolares, round2, type TotalesPedido } from "@hangar421/shared";
 import { carritoMezclaDidi, esVentaDidi } from "../caja/origenVenta";
 import { useCarritoStore } from "../store/carritoStore";
 import { useAuthLocalStore } from "../store/authLocalStore";
@@ -16,6 +16,13 @@ import { ModalAutorizacion } from "../components/ModalAutorizacion";
 import type { Autorizador } from "../auth/autorizacion";
 import { extrasCobrables, motivoCortesia, totalesConCortesia } from "../caja/cortesia";
 import { PERMISOS_TERMINAL, tienePermiso } from "../auth/permisosTerminal";
+import { SIN_DESCUENTOS, etiquetaDescuento, hayDescuentos, totalesConDescuentos, type DescuentosVenta } from "../caja/descuentoVenta";
+import type { EmpleadaConCredito } from "../caja/creditoEmpleado";
+import { textoReinicio } from "../caja/creditoEmpleado";
+import { listarMonederosConSaldo } from "../db/monederoRepo";
+import { refrescarMonederos } from "../sync/terminalErp";
+import { ModalDescuento } from "../components/ModalDescuento";
+import { ModalCreditoEmpleado } from "../components/ModalCreditoEmpleado";
 
 const ICONO: Record<MetodoPago, string> = {
   [MetodoPago.EFECTIVO]: "💵",
@@ -25,6 +32,7 @@ const ICONO: Record<MetodoPago, string> = {
   [MetodoPago.QR]: "▦",
   [MetodoPago.OTRO]: "•",
   [MetodoPago.EN_LINEA]: "📱",
+  [MetodoPago.MONEDERO_EMPLEADO]: "👛",
 };
 
 // Orden de calculadora/cajero: 1-2-3 arriba y la fila final punto-cero-borrar, con el
@@ -55,7 +63,31 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
   const [pidiendoPinCortesia, setPidiendoPinCortesia] = useState(false);
   const [extrasCobrados, setExtrasCobrados] = useState<string[]>([]);
   const extras = useMemo(() => extrasCobrables(items), [items]);
-  const t = cortesia ? totalesConCortesia(totalesCarrito, items, extrasCobrados) : totalesCarrito;
+
+  // Descuentos del cajero (general y/o por producto, sin PIN). Incompatibles con la cortesía, que ya
+  // regala la venta: al activar una se quita la otra.
+  const [descuentos, setDescuentos] = useState<DescuentosVenta>(SIN_DESCUENTOS);
+  const [mostrandoDescuento, setMostrandoDescuento] = useState(false);
+  const conDescuentos = hayDescuentos(descuentos);
+  const calculoDescuentos = useMemo(() => totalesConDescuentos(items, descuentos), [items, descuentos]);
+  const totalesBase: TotalesPedido = conDescuentos
+    ? { subtotal: calculoDescuentos.subtotal, descuentoTotal: calculoDescuentos.descuentoTotal, impuesto: 0, total: calculoDescuentos.total }
+    : totalesCarrito;
+  const t = cortesia ? totalesConCortesia(totalesCarrito, items, extrasCobrados) : totalesBase;
+
+  // Crédito de empleado: el monedero de la empleada paga lo que alcance de la cuenta y el resto se
+  // cobra con el método de pago de abajo. El saldo se calcula (límite − consumos desde el último
+  // reinicio), así que siempre sale de lo último guardado en la tablet.
+  const [empleadas, setEmpleadas] = useState<EmpleadaConCredito[]>([]);
+  const [empleadaId, setEmpleadaId] = useState<string | null>(null);
+  const [mostrandoCredito, setMostrandoCredito] = useState(false);
+  const empleada = empleadas.find((e) => e.usuarioId === empleadaId) ?? null;
+  const uso = empleada ? calcularUsoMonedero(t.total, empleada.saldo) : { montoMonedero: 0, restante: t.total };
+  /** Lo que queda por cobrar con efectivo/tarjeta/etc. después del descuento y del monedero. */
+  const totalOtro = uso.restante;
+  /** false = no hay nada que cobrar con un método (cortesía total, monedero que cubre todo o 100% de descuento). */
+  const hayRestante = !((cortesia || empleada || conDescuentos) && totalOtro === 0);
+  const hayAjustes = !!cortesia || conDescuentos || !!empleada;
 
   // Venta del grupo DIDI: se marca como DiDi para separarla en el corte. En ese caso el método
   // de pago no viene preseleccionado: hay que preguntar cómo pagó (efectivo, tarjeta…).
@@ -63,7 +95,7 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
   const esDidi = esVentaDidi(categoriasCarrito);
   const mezclaDidi = carritoMezclaDidi(categoriasCarrito);
   const [metodoElegido, setMetodoElegido] = useState(false);
-  const faltaElegirMetodo = esDidi && !metodoElegido && !(cortesia && totalesCarrito.total === 0);
+  const faltaElegirMetodo = esDidi && !metodoElegido && hayRestante;
 
   const [metodos, setMetodos] = useState<{ valor: MetodoPago; etiqueta: string; icono: string }[]>([]);
   const [metodoActivo, setMetodoActivo] = useState<MetodoPago>(MetodoPago.EFECTIVO);
@@ -106,20 +138,40 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
   const enDolares = metodoActivo === MetodoPago.EFECTIVO_USD;
   const conTeclado = metodoActivo === MetodoPago.EFECTIVO || enDolares;
   // La propina solo se captura con teclado (efectivo en pesos o dólares).
-  const propina = conTeclado ? round2(Number(propinaInput || 0)) : 0;
-  const aPagar = round2(t.total + propina);
+  const propina = conTeclado && hayRestante ? round2(Number(propinaInput || 0)) : 0;
+  const aPagar = round2(totalOtro + propina);
   const cobroUsd = cobroEnDolares(aPagar, recibido, tipoCambio ?? 0);
   // Solo en efectivo cuenta lo tecleado; con tarjeta o transferencia siempre es el total exacto.
   const montoCobrado = metodoActivo === MetodoPago.EFECTIVO && recibido > 0 ? recibido : aPagar;
-  const restante = enDolares ? (cobroUsd.suficiente ? 0 : Math.max(cobroUsd.faltanteMxn, 0.01)) : Math.max(0, aPagar - montoCobrado);
+  const restante = !hayRestante ? 0 : enDolares ? (cobroUsd.suficiente ? 0 : Math.max(cobroUsd.faltanteMxn, 0.01)) : Math.max(0, aPagar - montoCobrado);
   const cambio = enDolares ? cobroUsd.cambioMxn : Math.max(0, montoCobrado - aPagar);
 
   // En métodos distintos de efectivo el importe es el total exacto: si la cortesía cambia el total,
   // el monto mostrado debe seguirlo.
   useEffect(() => {
-    if (!conTeclado) setMontoInput(t.total.toFixed(2));
+    if (!conTeclado) setMontoInput(totalOtro.toFixed(2));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [t.total]);
+  }, [totalOtro]);
+
+  // Si cambia lo que se debe pagar (descuento o empleada), lo tecleado en "Paga con" ya no aplica.
+  useEffect(() => {
+    if (conTeclado) setMontoInput("0");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [empleadaId, descuentos]);
+
+  async function recargarEmpleadas() {
+    setEmpleadas(await listarMonederosConSaldo(await abrirBaseDeDatos()));
+  }
+  useEffect(() => {
+    recargarEmpleadas().catch(() => undefined);
+  }, []);
+
+  /** Abre el buscador con lo que ya hay y, en paralelo, trae del ERP los consumos hechos en otras
+   *  tablets/sucursales (si hay red) para que el saldo sea lo más al día posible. */
+  function abrirCredito() {
+    setMostrandoCredito(true);
+    refrescarMonederos().then(recargarEmpleadas).catch(() => undefined);
+  }
 
   function alternarCortesia() {
     if (cortesia) {
@@ -139,7 +191,7 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
     setMetodoActivo(metodo);
     // En efectivo el cajero teclea con cuánto le pagan; en los demás métodos el importe es
     // siempre el total exacto, así que no hay nada que teclear.
-    setMontoInput(metodo === MetodoPago.EFECTIVO || metodo === MetodoPago.EFECTIVO_USD ? "0" : t.total.toFixed(2));
+    setMontoInput(metodo === MetodoPago.EFECTIVO || metodo === MetodoPago.EFECTIVO_USD ? "0" : totalOtro.toFixed(2));
     setReferencia("");
     setPropinaInput("0");
     setEditando("paga");
@@ -164,18 +216,34 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
     //
     // `monto` es siempre lo que el pago cubre (el total): lo entregado va aparte, para el ticket.
     // Antes en efectivo se guardaba lo entregado y el corte esperaba de más el cambio devuelto.
+    // El saldo pudo cambiar desde que se eligió a la empleada (otra venta en esta tablet, o un
+    // consumo que llegó del ERP): se vuelve a calcular y, si ya no cuadra, se pide revisar el cobro.
+    if (empleada) {
+      const frescas = await listarMonederosConSaldo(await abrirBaseDeDatos());
+      const actual = frescas.find((e) => e.usuarioId === empleada.usuarioId);
+      const usoActual = actual ? calcularUsoMonedero(t.total, actual.saldo) : null;
+      if (!usoActual || usoActual.montoMonedero !== uso.montoMonedero) {
+        setEmpleadas(frescas);
+        setError("El saldo de la empleada cambió. Revisa el cobro y confirma de nuevo.");
+        return;
+      }
+    }
     const notaPropina = propina > 0 ? `Propina $${propina.toFixed(2)}` : undefined;
     const pago =
       metodoActivo === MetodoPago.EFECTIVO
         ? { metodo: metodoActivo, monto: aPagar, montoRecibido: montoCobrado, referencia: notaPropina }
         : enDolares
           ? { metodo: metodoActivo, monto: aPagar, montoUsd: recibido, tipoCambio: tipoCambio ?? undefined, referencia: notaPropina }
-          : { metodo: metodoActivo, monto: t.total, referencia: referencia.trim() || undefined };
-    if (enDolares && !cobroUsd.suficiente) {
+          : { metodo: metodoActivo, monto: totalOtro, referencia: referencia.trim() || undefined };
+    if (hayRestante && enDolares && !cobroUsd.suficiente) {
       setError(tipoCambio ? `Los dólares no alcanzan: faltan $${cobroUsd.faltanteMxn.toFixed(2)}.` : "Falta el tipo de cambio del dólar: fíjalo en Caja.");
       return;
     }
-    const pagosFinales = aPagar > 0 ? [pago] : [];
+    // Crédito de empleado: un pago con lo que cubre el monedero + (si falta) otro con el método elegido.
+    const pagoMonedero = empleada && uso.montoMonedero > 0
+      ? [{ metodo: MetodoPago.MONEDERO_EMPLEADO, monto: uso.montoMonedero, referencia: `Crédito empleado: ${empleada.nombre}`, empleadoId: empleada.usuarioId }]
+      : [];
+    const pagosFinales = [...pagoMonedero, ...(aPagar > 0 ? [pago] : [])];
     setProcesando(true);
     try {
       const db = await abrirBaseDeDatos();
@@ -186,6 +254,7 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
         { items, pagos: pagosFinales, totales: t, turnoId: turno.id, usuarioId: usuario.id, nombreCliente },
         {
           ...(cortesia ? { cortesia: { motivo: motivoCortesia(cortesia.nombre, items, extrasCobrados), autorizadoPorId: cortesia.id } } : {}),
+          ...(conDescuentos && !cortesia ? { descuentos } : {}),
           // Cobrado desde el grupo DIDI: canal de plataforma + marca DiDi (corte y reportes).
           ...(esDidi ? { canalOrigen: CanalOrigen.PLATAFORMA_DELIVERY, tipo: TipoPedido.DOMICILIO, plataforma: "DIDI" as const, notas: "DiDi (cobrado en el POS)" } : {}),
         },
@@ -249,22 +318,34 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
       <ScrollView contentContainerStyle={{ padding: 16 }}>
         {items.map((item) => (
           <View key={item.id} style={estilos.filaItem}>
-            <Text style={{ color: colores.texto }}>{item.cantidad}× {item.nombreProducto}</Text>
+            <Text style={{ color: colores.texto }}>
+              {item.cantidad}× {item.nombreProducto}
+              {descuentos.porProducto[item.id] ? `  🏷 −${etiquetaDescuento(descuentos.porProducto[item.id])}` : ""}
+            </Text>
             <Text style={{ color: colores.texto }}>${(item.precioUnitario * item.cantidad).toFixed(2)}</Text>
           </View>
         ))}
 
         <View style={estilos.totalesBox}>
+          {hayAjustes && (
+            <View style={estilos.filaTotal}><Text style={{ color: colores.texto }}>Subtotal</Text><Text style={{ color: colores.texto }}>${t.subtotal.toFixed(2)}</Text></View>
+          )}
           {cortesia && (
-            <>
-              <View style={estilos.filaTotal}><Text style={{ color: colores.texto }}>Subtotal</Text><Text style={{ color: colores.texto }}>${t.subtotal.toFixed(2)}</Text></View>
-              <View style={estilos.filaTotal}><Text style={{ color: colores.amber, fontWeight: "700" }}>🎁 Cortesía</Text><Text style={{ color: colores.amber, fontWeight: "700" }}>-${t.descuentoTotal.toFixed(2)}</Text></View>
-            </>
+            <View style={estilos.filaTotal}><Text style={{ color: colores.amber, fontWeight: "700" }}>🎁 Cortesía</Text><Text style={{ color: colores.amber, fontWeight: "700" }}>-${t.descuentoTotal.toFixed(2)}</Text></View>
+          )}
+          {!cortesia && calculoDescuentos.descuentoProductos > 0 && (
+            <View style={estilos.filaTotal}><Text style={{ color: NARANJA, fontWeight: "700" }}>🏷 Descuento por producto</Text><Text style={{ color: NARANJA, fontWeight: "700" }}>-${calculoDescuentos.descuentoProductos.toFixed(2)}</Text></View>
+          )}
+          {!cortesia && descuentos.general && calculoDescuentos.descuentoGeneral > 0 && (
+            <View style={estilos.filaTotal}><Text style={{ color: NARANJA, fontWeight: "700" }}>🏷 Descuento general ({etiquetaDescuento(descuentos.general)})</Text><Text style={{ color: NARANJA, fontWeight: "700" }}>-${calculoDescuentos.descuentoGeneral.toFixed(2)}</Text></View>
+          )}
+          {empleada && uso.montoMonedero > 0 && (
+            <View style={estilos.filaTotal}><Text style={{ color: colores.green, fontWeight: "700" }}>👛 Crédito de {empleada.nombre.split(" ")[0]}</Text><Text style={{ color: colores.green, fontWeight: "700" }}>-${uso.montoMonedero.toFixed(2)}</Text></View>
           )}
           {propina > 0 && (
             <View style={estilos.filaTotal}><Text style={{ color: colores.green, fontSize: 15 }}>Propina</Text><Text style={{ color: colores.green, fontSize: 15, fontWeight: "700" }}>${propina.toFixed(2)}</Text></View>
           )}
-          <View style={estilos.filaTotal}><Text style={[estilos.totalGrande, estilos.totalNaranja]}>{cortesia ? "A cobrar" : "Total"}</Text><Text style={[estilos.totalGrande, estilos.totalNaranja, { fontSize: 28 }]}>${aPagar.toFixed(2)}</Text></View>
+          <View style={estilos.filaTotal}><Text style={[estilos.totalGrande, estilos.totalNaranja]}>{hayAjustes ? "A cobrar" : "Total"}</Text><Text style={[estilos.totalGrande, estilos.totalNaranja, { fontSize: 28 }]}>${aPagar.toFixed(2)}</Text></View>
         </View>
 
         {esDidi && (
@@ -282,9 +363,34 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
             </Text>
           </View>
         )}
-        <Text style={estilos.subtitulo}>{esDidi ? "¿Cómo pagó el cliente?" : "Método de pago"}</Text>
+        {!cortesia && (
+          <>
+            <Text style={estilos.subtitulo}>Descuento y crédito</Text>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+              <TouchableOpacity onPress={() => setMostrandoDescuento(true)} style={[estilos.botonChip, conDescuentos && estilos.botonChipActivo]} accessibilityLabel="Descuento">
+                <Text style={[estilos.botonChipTexto, conDescuentos && { color: "#fff" }]}>🏷 DESCUENTO{conDescuentos ? " ✓" : ""}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={abrirCredito} style={[estilos.botonChip, empleada && estilos.botonChipActivo]} accessibilityLabel="Crédito de empleado">
+                <Text style={[estilos.botonChipTexto, empleada && { color: "#fff" }]}>👛 CRÉDITO EMPLEADO{empleada ? " ✓" : ""}</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+        {empleada && (
+          <View style={[estilos.cortesiaBox, { borderColor: NARANJA }]}>
+            <Text style={estilos.cortesiaTitulo}>👛 Crédito de {empleada.nombre}{empleada.sucursalNombre ? ` · ${empleada.sucursalNombre}` : ""}</Text>
+            <Text style={estilos.cortesiaAyuda}>
+              Saldo ${empleada.saldo.toFixed(2)} de ${empleada.limite.toFixed(0)} · se renueva {textoReinicio(empleada.proximoReinicio)} (no se acumula).
+            </Text>
+            <Text style={[estilos.cortesiaAyuda, { color: colores.texto, fontWeight: "700" }]}>
+              Se cargan ${uso.montoMonedero.toFixed(2)} al monedero · le quedan ${(empleada.saldo - uso.montoMonedero).toFixed(2)}.
+              {uso.restante > 0 ? ` Faltan $${uso.restante.toFixed(2)}: elige abajo cómo se paga el resto.` : ""}
+            </Text>
+          </View>
+        )}
+        <Text style={estilos.subtitulo}>{esDidi ? "¿Cómo pagó el cliente?" : empleada && uso.restante > 0 ? "Método de pago para el resto" : "Método de pago"}</Text>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-          {(!cortesia || t.total > 0) && metodosDelCobro.map((m) => (
+          {hayRestante && metodosDelCobro.map((m) => (
             <TouchableOpacity key={m.valor} onPress={() => elegirMetodo(m.valor)} style={[estilos.botonChip, metodoActivo === m.valor && !faltaElegirMetodo && estilos.botonChipActivo]}>
               <Text style={[estilos.botonChipTexto, metodoActivo === m.valor && !faltaElegirMetodo && { color: "#fff" }]}>{m.icono} {m.etiqueta.toUpperCase()}</Text>
             </TouchableOpacity>
@@ -325,7 +431,7 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
           </View>
         )}
 
-        {(!cortesia || t.total > 0) && (
+        {hayRestante && (
         <>
         {!conTeclado ? (
           // Sin integración con terminal: el cajero cobra en la terminal del banco y aquí solo
@@ -333,10 +439,10 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
           <View style={estilos.tecladoContenedor}>
             <Text style={estilos.etiquetaMonto}>
               {metodoActivo === MetodoPago.TARJETA
-                ? `Cobra $${t.total.toFixed(2)} en la terminal del banco y confirma aquí.`
+                ? `Cobra $${totalOtro.toFixed(2)} en la terminal del banco y confirma aquí.`
                 : metodoActivo === MetodoPago.EN_LINEA
-                  ? `El cliente ya pagó $${t.total.toFixed(2)} en la app de DiDi. No entra dinero al cajón.`
-                  : `Registra el pago de $${t.total.toFixed(2)} y confirma aquí.`}
+                  ? `El cliente ya pagó $${totalOtro.toFixed(2)} en la app de DiDi. No entra dinero al cajón.`
+                  : `Registra el pago de $${totalOtro.toFixed(2)} y confirma aquí.`}
             </Text>
             <TextInput
               value={referencia}
@@ -421,7 +527,17 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
             style={[estilos.botonAccion, { flex: 2, backgroundColor: restante > 0 || faltaElegirMetodo ? colores.gray200 : colores.green }]}
           >
             <Text style={{ color: restante > 0 || faltaElegirMetodo ? colores.texto : "#fff", fontWeight: "800", fontSize: 17 }}>
-              {procesando ? "Procesando…" : faltaElegirMetodo ? "Elige el método de pago" : cortesia && t.total === 0 ? "Confirmar cortesía" : `Confirmar pago $${aPagar.toFixed(2)}`}
+              {procesando
+                ? "Procesando…"
+                : faltaElegirMetodo
+                  ? "Elige el método de pago"
+                  : !hayRestante
+                    ? cortesia
+                      ? "Confirmar cortesía"
+                      : empleada
+                        ? `Cargar a crédito de ${empleada.nombre.split(" ")[0]}`
+                        : "Confirmar venta sin cobro"
+                    : `Confirmar pago $${aPagar.toFixed(2)}`}
             </Text>
           </TouchableOpacity>
         </View>
@@ -434,10 +550,30 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
           solicitanteId={usuario.id}
           onCancelar={() => setPidiendoPinCortesia(false)}
           onAutorizado={(autorizador) => {
+            setDescuentos(SIN_DESCUENTOS);
+            setEmpleadaId(null);
             setCortesia(autorizador);
             setExtrasCobrados([]);
             setPidiendoPinCortesia(false);
           }}
+        />
+      )}
+
+      {mostrandoDescuento && (
+        <ModalDescuento
+          items={items}
+          inicial={descuentos}
+          onAplicar={(d) => { setDescuentos(d); setMostrandoDescuento(false); }}
+          onCerrar={() => setMostrandoDescuento(false)}
+        />
+      )}
+      {mostrandoCredito && (
+        <ModalCreditoEmpleado
+          empleadas={empleadas}
+          seleccionadaId={empleadaId}
+          onElegir={(e) => { setEmpleadaId(e.usuarioId); setMostrandoCredito(false); }}
+          onQuitar={() => { setEmpleadaId(null); setMostrandoCredito(false); }}
+          onCerrar={() => setMostrandoCredito(false)}
         />
       )}
     </View>

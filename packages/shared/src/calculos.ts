@@ -172,3 +172,42 @@ export function calcularNivelInventario(existencia: number, minimo: number, maxi
 
   return { porcentaje, nivel };
 }
+
+export interface DescuentoVenta {
+  tipo: TipoDescuento;
+  valor: number;
+}
+
+export interface LineaConDescuento extends ItemParaTotal {
+  /** Descuento propio de esta línea (descuento "por producto"). */
+  descuento?: DescuentoVenta | null;
+}
+
+export interface ResultadoDescuentosVenta extends TotalesPedido {
+  /** Suma de los descuentos por producto. */
+  descuentoProductos: number;
+  /** Descuento general, calculado sobre lo que queda tras los descuentos por producto. */
+  descuentoGeneral: number;
+  /** Descuento aplicado a cada línea, en el mismo orden que `lineas`. */
+  porLinea: number[];
+}
+
+/**
+ * Descuentos de una venta, de dos tipos que se pueden combinar:
+ *  - POR PRODUCTO: sobre el importe de UNA línea (precio + extras) × cantidad. Un monto fijo se
+ *    toma de la línea completa, no por pieza, y nunca excede lo que vale la línea.
+ *  - GENERAL: sobre toda la cuenta, DESPUÉS de los descuentos por producto (así el porcentaje
+ *    general no descuenta dos veces lo que ya se rebajó).
+ * Los precios del catálogo ya son finales, por eso `impuesto` es 0 (ver calcularTotalesPedido).
+ */
+export function calcularDescuentosVenta(lineas: LineaConDescuento[], general?: DescuentoVenta | null): ResultadoDescuentosVenta {
+  const subtotal = calcularSubtotal(lineas);
+  const porLinea = lineas.map((l) => {
+    if (!l.descuento) return 0;
+    return calcularMontoDescuento(l.descuento.tipo, l.descuento.valor, calcularSubtotal([l]));
+  });
+  const descuentoProductos = round2(porLinea.reduce((acc, d) => acc + d, 0));
+  const descuentoGeneral = general ? calcularMontoDescuento(general.tipo, general.valor, round2(subtotal - descuentoProductos)) : 0;
+  const descuentoTotal = round2(descuentoProductos + descuentoGeneral);
+  return { subtotal, descuentoProductos, descuentoGeneral, descuentoTotal, impuesto: 0, total: round2(subtotal - descuentoTotal), porLinea };
+}

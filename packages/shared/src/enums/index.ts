@@ -85,6 +85,10 @@ export enum MetodoPago {
    *  el corte lo muestra aparte y no lo suma al efectivo esperado. En el APK solo se ofrece al
    *  cobrar una venta del grupo DIDI. */
   EN_LINEA = "EN_LINEA",
+  /** Crédito de empleado: la venta se carga al monedero electrónico de una empleada (ver
+   *  monedero.ts). No entra al cajón y el corte lo muestra aparte. Si la cuenta supera el saldo,
+   *  el resto va en otro pago (efectivo, tarjeta…) de la misma venta. */
+  MONEDERO_EMPLEADO = "MONEDERO_EMPLEADO",
 }
 
 export enum TipoMovimientoInventario {

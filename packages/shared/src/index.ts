@@ -9,3 +9,4 @@ export * from "./utils/uuid7";
 export * from "./utils/urlBackend";
 export * from "./utils/turnos";
 export * from "./calculos";
+export * from "./monedero";

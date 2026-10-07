@@ -6,6 +6,7 @@ import {
   calcularDiferenciaTraspaso,
   calcularImpuesto,
   calcularMontoDescuento,
+  calcularDescuentosVenta,
   calcularNivelInventario,
   calcularSubtotal,
   calcularTotalesPedido,
@@ -234,5 +235,52 @@ describe("efectivoEsperadoPorMoneda", () => {
         egresos: 30,
       }),
     ).toEqual({ mxn: 570, usd: 20 }); // 500 + 120 + 50 − 30 − 70 de cambio
+  });
+});
+
+describe("calcularDescuentosVenta", () => {
+  const lineas = [
+    { precioUnitario: 50, cantidad: 2, modificadoresPrecio: 10 }, // línea de $120
+    { precioUnitario: 80, cantidad: 1 }, // línea de $80
+  ];
+
+  it("sin descuentos el total es el subtotal", () => {
+    const r = calcularDescuentosVenta(lineas);
+    expect(r).toMatchObject({ subtotal: 200, descuentoTotal: 0, total: 200, porLinea: [0, 0] });
+  });
+
+  it("descuento general por porcentaje sobre toda la cuenta", () => {
+    const r = calcularDescuentosVenta(lineas, { tipo: TipoDescuento.PORCENTAJE, valor: 10 });
+    expect(r.descuentoGeneral).toBe(20);
+    expect(r.total).toBe(180);
+  });
+
+  it("descuento general por monto fijo", () => {
+    expect(calcularDescuentosVenta(lineas, { tipo: TipoDescuento.MONTO, valor: 35 }).total).toBe(165);
+  });
+
+  it("descuento por producto solo toca esa línea (el monto fijo es de la línea completa)", () => {
+    const r = calcularDescuentosVenta([{ ...lineas[0], descuento: { tipo: TipoDescuento.MONTO, valor: 30 } }, lineas[1]]);
+    expect(r.porLinea).toEqual([30, 0]);
+    expect(r.descuentoProductos).toBe(30);
+    expect(r.total).toBe(170);
+  });
+
+  it("un descuento por producto nunca excede el valor de su línea", () => {
+    const r = calcularDescuentosVenta([{ ...lineas[1], descuento: { tipo: TipoDescuento.MONTO, valor: 500 } }]);
+    expect(r.porLinea).toEqual([80]);
+    expect(r.total).toBe(0);
+  });
+
+  it("el general se calcula DESPUÉS de los descuentos por producto", () => {
+    const r = calcularDescuentosVenta(
+      [{ ...lineas[0], descuento: { tipo: TipoDescuento.PORCENTAJE, valor: 50 } }, lineas[1]], // -60 → quedan 140
+      { tipo: TipoDescuento.PORCENTAJE, valor: 10 }, // 10% de 140 = 14
+    );
+    expect(r).toMatchObject({ descuentoProductos: 60, descuentoGeneral: 14, descuentoTotal: 74, total: 126 });
+  });
+
+  it("rechaza descuentos negativos", () => {
+    expect(() => calcularDescuentosVenta(lineas, { tipo: TipoDescuento.MONTO, valor: -1 })).toThrow();
   });
 });
