@@ -290,6 +290,8 @@ model Sucursal {
   paymentRequests        PaymentRequest[]
   plataformaConfigs      PlataformaConfig[]
   solicitudesProducto    SolicitudProducto[]
+  seccionesInventario    SeccionInventario[]
+  insumosSeccion         InsumoSeccion[]
 
   @@index([empresaId])
   @@map("sucursales")
@@ -1093,6 +1095,7 @@ model Insumo {
   inventario    InventarioSucursal[]
   movimientos   MovimientoInventario[]
   traspasoItems TraspasoItem[]
+  secciones     InsumoSeccion[]
 
   @@index([empresaId])
   @@index([proveedorId])
@@ -1143,6 +1146,42 @@ model InventarioSucursal {
   @@unique([sucursalId, insumoId])
   @@index([sucursalId])
   @@map("inventario_sucursal")
+}
+
+// Sección física de una sucursal para el conteo de inventario ("Exhibidor", "Refrigerador 1",
+// "Tras barra"…). El id lo genera la terminal (o es determinista para las secciones de inicio,
+// así dos tablets que las siembran sin conexión no las duplican). Darla de baja la desactiva.
+model SeccionInventario {
+  id         String   @id
+  sucursalId String
+  nombre     String
+  orden      Int      @default(0)
+  activo     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  sucursal Sucursal        @relation(fields: [sucursalId], references: [id])
+  insumos  InsumoSeccion[]
+
+  @@index([sucursalId])
+  @@map("secciones_inventario")
+}
+
+// En qué sección de la sucursal se guarda cada insumo. Sin fila = la terminal propone una por el
+// nombre del insumo; `seccionId` null = elegido explícitamente "sin sección".
+model InsumoSeccion {
+  insumoId   String
+  sucursalId String
+  seccionId  String?
+  updatedAt  DateTime @updatedAt
+
+  insumo   Insumo             @relation(fields: [insumoId], references: [id])
+  sucursal Sucursal           @relation(fields: [sucursalId], references: [id])
+  seccion  SeccionInventario? @relation(fields: [seccionId], references: [id])
+
+  @@id([insumoId, sucursalId])
+  @@index([sucursalId])
+  @@map("insumos_seccion")
 }
 
 model MovimientoInventario {

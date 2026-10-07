@@ -269,6 +269,15 @@ export class SyncService {
         });
         break;
 
+      // Secciones del conteo físico y la sección de cada insumo (ver InventarioService.secciones).
+      case SyncEntidad.SECCION_INVENTARIO:
+        await this.inventario.guardarSeccion(item.sucursalId, { id: p.seccionId ?? item.id, nombre: p.nombre, orden: p.orden, activo: p.activo });
+        break;
+
+      case SyncEntidad.INSUMO_SECCION:
+        await this.inventario.asignarSeccion(item.sucursalId, p.insumoId, p.seccionId ?? null);
+        break;
+
       case SyncEntidad.TURNO:
         if (item.operacion === SyncOperacion.CREATE) {
           // Con el MISMO id que el turno de la terminal: el corte, los movimientos y las ventas

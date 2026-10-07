@@ -86,6 +86,11 @@ export class AlcanceSync {
         return (await this.deOtraSucursal("turno", p.turnoId, suc)) ? "El turno pertenece a otra sucursal" : null;
       case SyncEntidad.MOVIMIENTO_INVENTARIO:
         return (await this.deOtraEmpresa("insumo", p.insumoId)) ? "El insumo pertenece a otra empresa" : null;
+      case SyncEntidad.SECCION_INVENTARIO:
+        return (await this.deOtraSucursal("seccionInventario", p.seccionId ?? item.id, suc)) ? "La sección pertenece a otra sucursal" : null;
+      case SyncEntidad.INSUMO_SECCION:
+        if (await this.deOtraEmpresa("insumo", p.insumoId)) return "El insumo pertenece a otra empresa";
+        return (await this.deOtraSucursal("seccionInventario", p.seccionId, suc)) ? "La sección pertenece a otra sucursal" : null;
       case SyncEntidad.PRODUCTO_SUCURSAL:
         return (await this.deOtraEmpresa("producto", p.productoId)) ? "El producto pertenece a otra empresa" : null;
       case SyncEntidad.VENTA_HUB:
@@ -100,7 +105,11 @@ export class AlcanceSync {
   }
 
   /** true solo si la fila EXISTE y es de otra sucursal. */
-  private async deOtraSucursal(modelo: "pedido" | "mesa" | "turno" | "caja" | "solicitudProducto", id: string | undefined, sucursalId: string): Promise<boolean> {
+  private async deOtraSucursal(
+    modelo: "pedido" | "mesa" | "turno" | "caja" | "solicitudProducto" | "seccionInventario",
+    id: string | undefined | null,
+    sucursalId: string,
+  ): Promise<boolean> {
     if (!id) return false;
     const fila = await (this.prisma[modelo] as any).findUnique({ where: { id }, select: { sucursalId: true } });
     return !!fila && fila.sucursalId !== sucursalId;

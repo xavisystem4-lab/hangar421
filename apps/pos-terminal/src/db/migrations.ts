@@ -567,6 +567,33 @@ export const MIGRACIONES: Migracion[] = [
       await db.execAsync(`ALTER TABLE ventas ADD COLUMN plataforma TEXT;`);
     },
   },
+  {
+    version: 15,
+    nombre: "secciones_inventario",
+    up: async (db) => {
+      // Secciones físicas para el conteo de inventario (Exhibidor, Refrigerador 1…) y en cuál
+      // está cada insumo, por sucursal. Se editan aquí y viajan al ERP por la cola
+      // (SECCION_INVENTARIO, INSUMO_SECCION); bajan del ERP con el inventario. Sin fila en
+      // insumo_seccion = la sección la propone el nombre del insumo (inventario/secciones.ts).
+      await db.execAsync(`
+        CREATE TABLE secciones_inventario (
+          id TEXT PRIMARY KEY,
+          sucursal_id TEXT NOT NULL,
+          nombre TEXT NOT NULL,
+          orden INTEGER NOT NULL DEFAULT 0,
+          activo INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE INDEX idx_secciones_inventario_sucursal ON secciones_inventario(sucursal_id);
+
+        CREATE TABLE insumo_seccion (
+          insumo_id TEXT NOT NULL,
+          sucursal_id TEXT NOT NULL,
+          seccion_id TEXT,
+          PRIMARY KEY (insumo_id, sucursal_id)
+        );
+      `);
+    },
+  },
 ];
 
 /** Corre, en orden, toda migración con `version` mayor a la ya aplicada — cada una dentro de su

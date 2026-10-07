@@ -238,6 +238,11 @@ export enum SyncEntidad {
   SOLICITUD_PRODUCTO = "SOLICITUD_PRODUCTO",
   /** Venta cerrada de un POS de Windows standalone, subida a la nube (ver VentaHub). */
   VENTA_HUB = "VENTA_HUB",
+  /** Sección física de la sucursal para el conteo de inventario ("Exhibidor", "Refrigerador 1"…):
+   *  alta, renombre o baja. Upsert por id (lo genera la terminal). Usado por apps/pos-terminal. */
+  SECCION_INVENTARIO = "SECCION_INVENTARIO",
+  /** En qué sección de la sucursal se guarda un insumo (`seccionId: null` = sin sección). */
+  INSUMO_SECCION = "INSUMO_SECCION",
 }
 
 export enum EstadoSolicitudProducto {

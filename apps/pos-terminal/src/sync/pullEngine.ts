@@ -6,6 +6,7 @@ import { obtenerSucursalErp } from "../db/dispositivoLocal";
 import { obtenerConfig, guardarConfig } from "../db/configLocalRepo";
 import { upsertCatalogo, upsertMesas, repararProductosLocalesEnOutbox } from "../db/catalogoSyncRepo";
 import { upsertInventario } from "../db/inventarioRepo";
+import { aplicarSeccionesDelErp } from "../db/seccionesRepo";
 import { asegurarSesionEnSucursalActiva } from "./terminalErp";
 
 const CLAVE_EMPRESA_ERP = "empresa_id_erp";
@@ -77,6 +78,17 @@ export async function refrescarInventario(): Promise<void> {
     })),
     existencias.map((e) => ({ insumoId: e.insumoId, existencia: e.existencia, minimo: e.minimo, maximo: e.maximo })),
   );
+
+  // Secciones del conteo físico, aparte y best-effort: un ERP que todavía no tiene el endpoint
+  // no debe dejar a la tablet sin existencias.
+  await erpFetch<{ secciones: any[]; asignaciones: any[] }>(`/inventario/secciones?sucursalId=${sucursalId}`)
+    .then((r) =>
+      aplicarSeccionesDelErp(db, sucursalId, {
+        secciones: r.secciones.map((s) => ({ id: s.id, nombre: s.nombre, orden: s.orden ?? 0, activo: !!s.activo })),
+        asignaciones: r.asignaciones.map((a) => ({ insumoId: a.insumoId, seccionId: a.seccionId ?? null })),
+      }),
+    )
+    .catch(() => undefined);
 }
 
 /** Deltas operativos vía /sync/pull (mesas, por ahora — PEDIDO/INVENTARIO_SUCURSAL quedan fuera
