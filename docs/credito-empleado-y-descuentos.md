@@ -22,6 +22,7 @@ El ERP recalcula con sus precios y guarda una fila en `descuentos` por línea y 
 Botón **👛 Crédito empleado**: buscador por nombre + filtro por sucursal; muestra el saldo.
 
 - Tope **$500** por empleada, el mismo monedero en **todas las sucursales**.
+- **Un solo monedero activo por nombre** (primer nombre, sin acentos). Cada empleada tiene un usuario por sucursal; la migración `20261007190000_monedero_unico_por_nombre` deja el de su sucursal (o el usuario más antiguo), apaga los demás y les pasa sus consumos. El servidor además manda a las tablets uno por nombre y rechaza activar un segundo (`PUT /monedero/:usuarioId`).
 - Se **reinicia sin acumular** a un día y hora fijos: Diana, Andrea y Daniela → viernes 9:00 PM;
   Dalia → sábado 5:00 PM.
 - Si la cuenta supera el saldo, se usa todo el monedero y **el resto se cobra con otro método**

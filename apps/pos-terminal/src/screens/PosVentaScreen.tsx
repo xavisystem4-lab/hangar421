@@ -255,15 +255,19 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
                 {item.notas ? <Text style={estilos.modificadoresItem} numberOfLines={1}>✎ {item.notas}</Text> : null}
               </View>
               <View style={estilos.controlesCantidad}>
-                <TouchableOpacity onPress={() => cambiarCantidad(item.id, -1)} style={estilos.botonCantidad}><Text style={estilos.botonCantidadTexto}>−</Text></TouchableOpacity>
-                <Text style={{ color: colores.texto, width: 24, textAlign: "center" }}>{item.cantidad}</Text>
-                <TouchableOpacity onPress={() => cambiarCantidad(item.id, 1)} style={estilos.botonCantidad}><Text style={estilos.botonCantidadTexto}>+</Text></TouchableOpacity>
+                {/* El cesto va a la izquierda del "−" para que no se confunda con el cobro y quede
+                    junto a los controles de la línea; los tres son táctiles de 40×40. */}
+                <TouchableOpacity onPress={() => quitarItem(item.id)} style={[estilos.botonCantidad, { backgroundColor: colores.red + "1A" }]} accessibilityLabel={`Quitar ${item.nombreProducto}`}>
+                  <Text style={estilos.botonCantidadTexto}>🗑</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => cambiarCantidad(item.id, -1)} style={estilos.botonCantidad} accessibilityLabel={`Una menos de ${item.nombreProducto}`}><Text style={estilos.botonCantidadTexto}>−</Text></TouchableOpacity>
+                <Text style={{ color: colores.texto, width: 28, textAlign: "center", fontSize: 16, fontWeight: "700" }}>{item.cantidad}</Text>
+                <TouchableOpacity onPress={() => cambiarCantidad(item.id, 1)} style={estilos.botonCantidad} accessibilityLabel={`Una más de ${item.nombreProducto}`}><Text style={estilos.botonCantidadTexto}>+</Text></TouchableOpacity>
               </View>
               {/* Incluye los extras: si no, la suma de las líneas no cuadraría con el total. */}
               <Text style={{ color: colores.texto, width: 70, textAlign: "right" }}>
                 ${((item.precioUnitario + item.modificadores.reduce((s, m) => s + m.precioExtra, 0)) * item.cantidad).toFixed(2)}
               </Text>
-              <TouchableOpacity onPress={() => quitarItem(item.id)}><Text style={{ color: colores.red, marginLeft: 8 }}>🗑</Text></TouchableOpacity>
             </View>
           ))}
           {items.length === 0 && <Text style={estilos.ayuda}>Carrito vacío — toca un producto para agregarlo.</Text>}
@@ -361,8 +365,8 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     filaNombre: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 40, paddingBottom: 6, marginBottom: 4, borderBottomWidth: 1, borderBottomColor: colores.borde },
     filaItem: { flexDirection: "row", alignItems: "center", paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colores.borde },
     controlesCantidad: { flexDirection: "row", alignItems: "center", gap: 4, marginHorizontal: 8 },
-    botonCantidad: { width: 26, height: 26, borderRadius: 6, backgroundColor: colores.gray50, alignItems: "center", justifyContent: "center" },
-    botonCantidadTexto: { fontSize: 16, fontWeight: "700", color: colores.texto },
+    botonCantidad: { width: 40, height: 40, borderRadius: 8, backgroundColor: colores.gray50, alignItems: "center", justifyContent: "center" },
+    botonCantidadTexto: { fontSize: 22, fontWeight: "700", color: colores.texto },
     barraCobro: { flexDirection: "row", alignItems: "center", gap: 12, paddingTop: 10 },
     // `flexShrink` para que con un total largo se encoja el importe y no se deforme el botón.
     bloqueTotal: { flex: 1, flexShrink: 1 },
