@@ -49,7 +49,8 @@ export class SyncService {
     const alcance = new AlcanceSync(this.prisma, sesion);
     let primeroAceptado: SyncEnvelope | undefined;
 
-    for (const item of items) {
+    for (const original of items) {
+      const item = await this.altaEnSucursalDeLaSesion(original, alcance, sesion);
       const rechazo = await alcance.motivoDeRechazo(item);
       if (rechazo) {
         this.logger.warn(`Rechazado ${item.entidad}/${item.operacion} (${item.id}) de ${sesion.sub}: ${rechazo}`);
@@ -65,6 +66,28 @@ export class SyncService {
     if (primeroAceptado) await this.marcarVisto(primeroAceptado.dispositivoId, primeroAceptado.sucursalId);
 
     return { resultados, serverTime: new Date().toISOString() };
+  }
+
+  /**
+   * Un alta de persona (USUARIO) que llega nombrando una sucursal a la que la sesión no tiene
+   * acceso se registra en la sucursal ACTIVA de la sesión en vez de rechazarse.
+   *
+   * Pasa cuando la persona se dio de alta en la tablet antes de enlazarla al ERP (la sucursal es
+   * un id provisional que el ERP no conoce) o cuando la tablet estuvo enlazada a otra sucursal que
+   * su código ya no tiene. Ese rechazo era permanente: la persona sigue trabajando en esa tablet
+   * pero nunca llegaba al ERP. La sucursal activa del token es justo donde está trabajando.
+   *
+   * Solo altas de persona: una venta, un turno o un cobro con sucursal ajena se siguen rechazando.
+   * Y solo si la sesión tiene acceso a su sucursal activa; si no, el rechazo se queda como estaba.
+   */
+  private async altaEnSucursalDeLaSesion(item: SyncEnvelope, alcance: AlcanceSync, sesion: JwtPayload): Promise<SyncEnvelope> {
+    if (item.entidad !== SyncEntidad.USUARIO) return item;
+    const activa = sesion.sucursalId;
+    if (!activa || item.sucursalId === activa) return item;
+    if (item.sucursalId && (await alcance.sucursalAccesible(item.sucursalId))) return item;
+    if (!(await alcance.sucursalAccesible(activa))) return item;
+    this.logger.log(`Alta de usuario ${item.id} de ${sesion.sub}: sucursal ${item.sucursalId ?? "(ninguna)"} sin acceso, se registra en la activa ${activa}`);
+    return { ...item, sucursalId: activa };
   }
 
   /**
