@@ -254,7 +254,9 @@ export class PedidosService {
 
   /** Crea un pedido de forma idempotente: si `dto.id` ya existe, devuelve el existente
    *  (reintento de sincronización offline no duplica). */
-  async crear(dto: CrearPedidoDto) {
+  /** `opciones.desdeTerminal`: la venta llega por la cola offline y ya ocurrió; un producto que
+   *  el ERP no tiene no la rechaza (ver `productoFueraDeCatalogo`). */
+  async crear(dto: CrearPedidoDto, opciones: { desdeTerminal?: boolean } = {}) {
     const existente = await this.prisma.pedido.findUnique({ where: { id: dto.id } });
     if (existente) {
       // El reintento idempotente solo vale dentro de la misma sucursal: sin esto, nombrar el id
@@ -267,7 +269,7 @@ export class PedidosService {
     const folio = await this.generarFolio(dto.sucursalId);
 
     const itemsResueltos = await Promise.all(
-      dto.items.map((item) => this.resolverItem(item, dto.sucursalId)),
+      dto.items.map((item) => this.resolverItem(item, dto.sucursalId, opciones.desdeTerminal ? dto.empresaId : undefined)),
     );
 
     const base = calcularTotalesPedido(itemsResueltos, [], Number(sucursal.tasaImpuesto));
@@ -783,6 +785,45 @@ export class PedidosService {
   }
 
   /**
+   * Producto que una venta de la cola offline nombra y el ERP no tiene: se registra INACTIVO con
+   * ese mismo id, el nombre y el precio con que se vendió, en la categoría "Fuera de catálogo".
+   *
+   * Antes el pedido entero se rechazaba ("ya no existe en el catálogo") y se reintentaba para
+   * siempre, y detrás de él su cobro ("Pedido no encontrado"). Pero la venta ya ocurrió y el
+   * dinero ya se cobró: rechazarla solo la saca de los reportes. Pasaba sobre todo con productos
+   * sembrados en la tablet (`hangar-prod-…`) que el ERP nunca tuvo.
+   *
+   * Inactivo para que no aparezca en ningún catálogo ni se pueda vender; con el mismo id para que
+   * un reintento, o una segunda venta del mismo producto, reutilice el mismo registro.
+   */
+  private async productoFueraDeCatalogo(
+    empresaId: string,
+    item: { productoId: string; nombreProducto?: string; precioUnitario?: number },
+  ) {
+    const sembrado = datosDeProductoSembrado(item.productoId);
+    const precio = Number.isFinite(Number(item.precioUnitario)) && Number(item.precioUnitario) >= 0
+      ? Number(item.precioUnitario)
+      : sembrado?.precio ?? 0;
+    const nombre = item.nombreProducto?.trim() || sembrado?.nombre || "Producto fuera de catálogo";
+
+    let categoria = await this.prisma.categoriaProducto.findFirst({
+      where: { empresaId, nombre: CATEGORIA_FUERA_DE_CATALOGO },
+      select: { id: true },
+    });
+    categoria ??= await this.prisma.categoriaProducto.create({
+      data: { empresaId, nombre: CATEGORIA_FUERA_DE_CATALOGO, activo: false, orden: 999 },
+      select: { id: true },
+    });
+
+    this.logger.warn(`Producto ${item.productoId} no existe en el ERP: se registra inactivo como "${nombre}" a $${precio} para no perder la venta.`);
+    return this.prisma.producto.upsert({
+      where: { id: item.productoId },
+      update: {},
+      create: { id: item.productoId, empresaId, categoriaId: categoria.id, nombre, precioBase: precio, activo: false },
+    });
+  }
+
+  /**
    * Revalúa las líneas de un pedido con el precio de su sucursal (y su promoción, si la tenía) y
    * recalcula los totales. Devuelve si cambió algo. Repara los pedidos que se crearon con el
    * precio base antes de que `resolverItem` usara el de la sucursal.
@@ -811,14 +852,26 @@ export class PedidosService {
   }
 
   private async resolverItem(
-    item: { productoId: string; cantidad: number; notas?: string; promocionId?: string; modificadores?: { opcionModificadorId: string }[] },
+    item: {
+      productoId: string;
+      cantidad: number;
+      notas?: string;
+      promocionId?: string;
+      modificadores?: { opcionModificadorId: string }[];
+      nombreProducto?: string;
+      precioUnitario?: number;
+    },
     sucursalId?: string,
+    /** Solo para ventas de la cola offline: la empresa en la que registrar un producto que el
+     *  ERP no tiene. Sin ella (venta en línea) se rechaza como siempre. */
+    empresaFueraDeCatalogo?: string,
   ) {
     // findUniqueOrThrow revienta con un NotFoundError si el productoId no existe (ej. el POS
     // tenía el catálogo cacheado y alguien borró/desactivó ese producto entre medias) — sin este
     // try/catch se iba como 500 genérico ("Error interno del servidor"), sin decir cuál producto
     // ni qué hacer al respecto.
-    const producto = await this.prisma.producto.findUnique({ where: { id: item.productoId } });
+    let producto = await this.prisma.producto.findUnique({ where: { id: item.productoId } });
+    if (!producto && empresaFueraDeCatalogo) producto = await this.productoFueraDeCatalogo(empresaFueraDeCatalogo, item);
     if (!producto) {
       throw new BadRequestException(
         `Uno de los productos del pedido ya no existe en el catálogo (id: ${item.productoId}). Actualiza la app (F5 o reinicia el POS) y vuelve a agregarlo.`,
@@ -966,4 +1019,22 @@ export class PedidosService {
       }
     }
   }
+}
+
+/** Categoría (inactiva) donde quedan los productos que solo existían en una terminal. */
+const CATEGORIA_FUERA_DE_CATALOGO = "Fuera de catálogo";
+
+/**
+ * Nombre y precio que codifica el id de un producto sembrado en la tablet:
+ * `hangar-prod-<categoría>-<nombre>-<precio>` (ver pos-terminal/src/db/catalogoHangar.ts). El
+ * slug no separa la categoría del nombre, así que el nombre lleva ambas; basta para reconocerlo
+ * en un reporte. null si el id no tiene esa forma.
+ */
+export function datosDeProductoSembrado(id: string): { nombre: string; precio: number } | null {
+  const m = /^hangar-prod-(.+)-(\d+(?:\.\d+)?)$/.exec(id);
+  if (!m) return null;
+  const palabras = m[1].split("-").filter(Boolean);
+  if (palabras.length === 0) return null;
+  const nombre = palabras.join(" ");
+  return { nombre: nombre.charAt(0).toUpperCase() + nombre.slice(1), precio: Number(m[2]) };
 }

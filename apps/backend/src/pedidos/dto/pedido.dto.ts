@@ -38,6 +38,11 @@ export class ItemPedidoDto {
   /** Promoción (precio especial) con la que la terminal vendió esta línea. El servidor recalcula
    *  el precio con la definición que él tiene; si no la encuentra, cobra el precio de catálogo. */
   @ApiPropertyOptional() @IsOptional() @IsString() promocionId?: string;
+  /** Nombre y precio con que la terminal vendió la línea. Solo se usan si el producto no existe
+   *  en el ERP (ver PedidosService.productoFueraDeCatalogo): la venta ya ocurrió y se registra
+   *  con lo que se cobró, en vez de rechazarse para siempre. */
+  @ApiPropertyOptional() @IsOptional() @IsString() nombreProducto?: string;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() precioUnitario?: number;
   /** Descuento "por producto": solo esta línea. */
   @ApiPropertyOptional({ type: DescuentoTerminalDto })
   @IsOptional()

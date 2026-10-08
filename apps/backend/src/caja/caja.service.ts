@@ -137,10 +137,22 @@ export class CajaService {
 
   /** Registra una entrada/salida de efectivo de caja que no es una venta (retiro para cambio,
    *  pago a proveedor de contado, etc.) — se descuenta/suma al esperado en el corte. */
-  async registrarMovimiento(data: { turnoId: string; tipo: TipoMovimientoCaja; monto: number; motivo: string; usuarioId?: string | null }) {
-    const turno = await this.prisma.turno.findUnique({ where: { id: data.turnoId } });
+  /**
+   * `terminal`: el movimiento llega por la cola offline y ya ocurrió (el efectivo ya salió o
+   * entró de la caja). Ahí un turno que el ERP no tiene, o que ya cerró, no lo rechaza:
+   *  - turno desconocido → el turno de esa sucursal que estaba abierto a esa hora; si no hay
+   *    ninguno, se registra uno de recuperación con ese mismo id (ver `turnoDeRecuperacion`);
+   *  - turno cerrado → se agrega igual. El corte ya firmado conserva sus cifras guardadas.
+   * Antes se quedaba en la cola con "Turno no encontrado" para siempre.
+   */
+  async registrarMovimiento(
+    data: { turnoId: string; tipo: TipoMovimientoCaja; monto: number; motivo: string; usuarioId?: string | null },
+    terminal?: { sucursalId: string; momento: Date },
+  ) {
+    let turno = await this.prisma.turno.findUnique({ where: { id: data.turnoId } });
+    if (!turno && terminal) turno = await this.turnoParaMovimientoHuerfano(data.turnoId, data.usuarioId, terminal);
     if (!turno) throw new NotFoundException("Turno no encontrado");
-    if (turno.estado === EstadoTurno.CERRADO) throw new BadRequestException("El turno ya está cerrado");
+    if (turno.estado === EstadoTurno.CERRADO && !terminal) throw new BadRequestException("El turno ya está cerrado");
     if (!(data.monto > 0)) throw new BadRequestException("El monto debe ser mayor a cero");
     if (!data.motivo?.trim()) throw new BadRequestException("El motivo es obligatorio");
 
@@ -149,7 +161,58 @@ export class CajaService {
     // FK. Se resuelve por el mismo camino antes de que llegue a pasar.
     const usuarioId = await resolverUsuarioDeTerminal(this.prisma, data.usuarioId, turno.sucursalId);
 
-    return this.prisma.movimientoCaja.create({ data: { ...data, usuarioId } });
+    return this.prisma.movimientoCaja.create({ data: { ...data, turnoId: turno.id, usuarioId } });
+  }
+
+  private async turnoParaMovimientoHuerfano(turnoId: string, usuarioId: string | null | undefined, t: { sucursalId: string; momento: Date }) {
+    const abiertoEntonces = await this.prisma.turno.findFirst({
+      where: {
+        sucursalId: t.sucursalId,
+        fechaApertura: { lte: t.momento },
+        OR: [{ fechaCierre: null }, { fechaCierre: { gte: t.momento } }],
+      },
+      orderBy: { fechaApertura: "desc" },
+    });
+    if (abiertoEntonces) return abiertoEntonces;
+    return this.turnoDeRecuperacion(turnoId, usuarioId, t);
+  }
+
+  /**
+   * Turno que la terminal abrió pero cuya apertura nunca llegó al ERP, reconstruido para no
+   * perder los movimientos que lo nombran. Con el MISMO id: si la apertura real llega después,
+   * `abrirTurno` lo encuentra y no lo duplica. Se registra CERRADO, con fondo 0 y a la hora del
+   * movimiento — no hay cifras inventadas — y queda en la bitácora para que se pueda revisar.
+   */
+  private async turnoDeRecuperacion(turnoId: string, usuarioId: string | null | undefined, t: { sucursalId: string; momento: Date }) {
+    const cajaId = await this.resolverCaja(t.sucursalId, null);
+    const responsable = await resolverUsuarioDeTerminal(this.prisma, usuarioId, t.sucursalId);
+    const turno = await this.prisma.turno.create({
+      data: {
+        id: turnoId,
+        sucursalId: t.sucursalId,
+        cajaId,
+        usuarioId: responsable,
+        montoInicial: 0,
+        estado: EstadoTurno.CERRADO,
+        fechaApertura: t.momento,
+        fechaCierre: t.momento,
+      },
+    });
+    const { empresaId } = await this.prisma.sucursal.findUniqueOrThrow({ where: { id: t.sucursalId }, select: { empresaId: true } });
+    await this.prisma.auditLog
+      .create({
+        data: {
+          empresaId,
+          sucursalId: t.sucursalId,
+          entidad: "TURNO",
+          entidadId: turnoId,
+          accion: "RECUPERAR",
+          usuarioId: responsable,
+          datosNuevos: { motivo: "La apertura del turno nunca llegó al ERP; se registra para conservar sus movimientos de caja" },
+        },
+      })
+      .catch(() => undefined);
+    return turno;
   }
 
   async listarMovimientos(turnoId: string) {

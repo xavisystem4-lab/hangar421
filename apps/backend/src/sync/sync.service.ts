@@ -249,7 +249,7 @@ export class SyncService {
             // Hay que nombrarlo aquí: el pedido se reconstruye campo por campo, y sin esto el ERP
             // registraría la venta a precio completo mientras la tablet cobró con descuento.
             descuentoGeneral: p.descuentoGeneral,
-          });
+          }, { desdeTerminal: true });
         } else if (item.operacion === SyncOperacion.UPDATE && p.accion === "CANCELAR") {
           // Cancelación hecha en una terminal, con el PIN del gerente ya validado allí (ver
           // PedidosService.cancelarDesdeTerminal). Llega por la cola como cualquier otra
@@ -340,13 +340,16 @@ export class SyncService {
       // Ingreso/egreso individual dentro de un turno ya abierto (distinto de TURNO, que es
       // abrir/cerrar el turno completo) — usado por apps/pos-terminal (ver turnosRepo.ts).
       case SyncEntidad.MOVIMIENTO_CAJA:
-        await this.caja.registrarMovimiento({
-          turnoId: p.turnoId,
-          tipo: p.tipo,
-          monto: p.monto,
-          motivo: p.motivo,
-          usuarioId: item.usuarioId ?? p.usuarioId,
-        });
+        await this.caja.registrarMovimiento(
+          {
+            turnoId: p.turnoId,
+            tipo: p.tipo,
+            monto: p.monto,
+            motivo: p.motivo,
+            usuarioId: item.usuarioId ?? p.usuarioId,
+          },
+          { sucursalId: item.sucursalId, momento: item.createdAtLocal ? new Date(item.createdAtLocal) : new Date() },
+        );
         break;
 
       // Cambio de precio/disponibilidad por sucursal (no crea un Producto nuevo — eso sigue sin

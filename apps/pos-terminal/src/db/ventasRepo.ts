@@ -113,6 +113,8 @@ export async function confirmarVenta(
 
     const itemsPayload: {
       productoId: string;
+      nombreProducto: string;
+      precioUnitario: number;
       cantidad: number;
       notas?: string;
       /** Promoción con la que se vendió: el ERP recalcula el precio especial con su definición. */
@@ -145,6 +147,10 @@ export async function confirmarVenta(
 
       itemsPayload.push({
         productoId: item.productoId,
+        // Lo que se cobró por la línea (sin modificadores). El ERP solo lo usa si no tiene el
+        // producto: lo registra con este nombre y precio en vez de rechazar la venta entera.
+        nombreProducto: item.nombreProducto,
+        precioUnitario: item.precioUnitario,
         cantidad: item.cantidad,
         notas: item.notas,
         ...(item.promocionId ? { promocionId: item.promocionId } : {}),

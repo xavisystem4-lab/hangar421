@@ -165,7 +165,10 @@ describe("SyncService.push — idempotencia", () => {
       createdAtLocal: new Date().toISOString(),
       payload: { turnoId: "turno-1", tipo: "INGRESO", monto: 100, motivo: "fondo extra" },
     } as any]);
-    expect(caja.registrarMovimiento).toHaveBeenCalledWith({ turnoId: "turno-1", tipo: "INGRESO", monto: 100, motivo: "fondo extra", usuarioId: "user-1" });
+    expect(caja.registrarMovimiento).toHaveBeenCalledWith(
+      { turnoId: "turno-1", tipo: "INGRESO", monto: 100, motivo: "fondo extra", usuarioId: "user-1" },
+      expect.objectContaining({ sucursalId: "suc-1" }),
+    );
   });
 
   it("PRODUCTO_SUCURSAL con precio enruta a fijarPrecioSucursal", async () => {
@@ -325,7 +328,7 @@ describe("SyncService.push — alcance de la sesión", () => {
   it("la empresa del pedido sale del token, no del payload", async () => {
     const { push, pedidos } = crearServicio();
     await push([sobre({ payload: { empresaId: "emp-2", tipo: "MOSTRADOR", items: [] } })]);
-    expect(pedidos.crear).toHaveBeenCalledWith(expect.objectContaining({ empresaId: "emp-1" }));
+    expect(pedidos.crear).toHaveBeenCalledWith(expect.objectContaining({ empresaId: "emp-1" }), { desdeTerminal: true });
   });
 
   it("rechaza una sucursal de otra empresa sin registrar nada", async () => {
@@ -355,7 +358,7 @@ describe("SyncService.push — alcance de la sesión", () => {
     const { push, pedidos } = crearServicio();
     const resp = await push([sobre({ sucursalId: "suc-provisional-de-la-tablet" })]);
     expect(resp.resultados[0].estado).toBe(SyncStatus.SYNCED);
-    expect(pedidos.crear).toHaveBeenCalledWith(expect.objectContaining({ sucursalId: "suc-1" }));
+    expect(pedidos.crear).toHaveBeenCalledWith(expect.objectContaining({ sucursalId: "suc-1" }), { desdeTerminal: true });
   });
 
   it("una venta con sucursal de OTRA empresa nunca se mueve a la activa", async () => {
@@ -515,7 +518,7 @@ describe("SyncService.push — descuentos y crédito de empleado del APK", () =>
 
     await push([sobre(SyncEntidad.PEDIDO, { empresaId: "emp-1", tipo: "MOSTRADOR", items, descuentoGeneral })]);
 
-    expect(pedidos.crear).toHaveBeenCalledWith(expect.objectContaining({ descuentoGeneral, items }));
+    expect(pedidos.crear).toHaveBeenCalledWith(expect.objectContaining({ descuentoGeneral, items }), { desdeTerminal: true });
   });
 
   it("el pago con crédito de empleado llega con la empleada", async () => {
