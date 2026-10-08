@@ -267,7 +267,7 @@ export class PedidosService {
     const folio = await this.generarFolio(dto.sucursalId);
 
     const itemsResueltos = await Promise.all(
-      dto.items.map((item) => this.resolverItem(item)),
+      dto.items.map((item) => this.resolverItem(item, dto.sucursalId)),
     );
 
     const base = calcularTotalesPedido(itemsResueltos, [], Number(sucursal.tasaImpuesto));
@@ -387,7 +387,7 @@ export class PedidosService {
 
   async agregarItems(pedidoId: string, dto: AgregarItemsDto) {
     const pedido = await this.prisma.pedido.findUniqueOrThrow({ where: { id: pedidoId } });
-    const itemsResueltos = await Promise.all(dto.items.map((item) => this.resolverItem(item)));
+    const itemsResueltos = await Promise.all(dto.items.map((item) => this.resolverItem(item, pedido.sucursalId)));
 
     await this.prisma.$transaction(
       itemsResueltos.map((it) =>
@@ -526,7 +526,17 @@ export class PedidosService {
     // está cobrado, se devuelve tal cual en vez de insertar pagos duplicados o fallar.
     if (pedido.estado === EstadoPedido.COBRADO) return pedido;
 
-    const { suficiente, totalPagado, faltante } = validarPagoSuficiente(dto.pagos, Number(pedido.total));
+    let { suficiente, totalPagado, faltante } = validarPagoSuficiente(dto.pagos, Number(pedido.total));
+
+    // Pedidos que el ERP valuó con el precio base en vez del de su sucursal (fallo corregido en
+    // `resolverItem`): la tablet cobró el precio de la sucursal y el pago quedaba "corto" para
+    // siempre, reintentándose en la cola. Antes de rechazar, se revalúa con el precio de la
+    // sucursal — solo si el pedido aún no tiene ningún pago, para no tocar uno ya cobrado.
+    if (!suficiente && (pedido.pagos?.length ?? 0) === 0 && (await this.revaluarConPreciosDeSucursal(pedidoId, pedido.sucursalId))) {
+      const revaluado = await this.prisma.pedido.findUniqueOrThrow({ where: { id: pedidoId }, select: { total: true } });
+      pedido.total = revaluado.total;
+      ({ suficiente, totalPagado, faltante } = validarPagoSuficiente(dto.pagos, Number(pedido.total)));
+    }
     if (!suficiente) {
       throw new BadRequestException(
         `El pago (${totalPagado}) no cubre el total del pedido (${pedido.total}); faltan ${faltante}`,
@@ -756,7 +766,54 @@ export class PedidosService {
     return { calculo, filas };
   }
 
-  private async resolverItem(item: { productoId: string; cantidad: number; notas?: string; promocionId?: string; modificadores?: { opcionModificadorId: string }[] }) {
+  /**
+   * Precio de un producto en una sucursal: el de `productos_sucursal` si la sucursal tiene uno
+   * propio, si no el precio base. Es la misma regla con la que la tablet vende
+   * (`/auth/terminal/precios` y `TerminalService.precios`).
+   */
+  private async precioEnSucursal(producto: { id: string; precioBase: unknown }, sucursalId?: string): Promise<number> {
+    if (sucursalId) {
+      const propio = await this.prisma.productoSucursal.findUnique({
+        where: { productoId_sucursalId: { productoId: producto.id, sucursalId } },
+        select: { precio: true },
+      });
+      if (propio) return Number(propio.precio);
+    }
+    return Number(producto.precioBase);
+  }
+
+  /**
+   * Revalúa las líneas de un pedido con el precio de su sucursal (y su promoción, si la tenía) y
+   * recalcula los totales. Devuelve si cambió algo. Repara los pedidos que se crearon con el
+   * precio base antes de que `resolverItem` usara el de la sucursal.
+   */
+  private async revaluarConPreciosDeSucursal(pedidoId: string, sucursalId: string): Promise<boolean> {
+    const items = await this.prisma.pedidoItem.findMany({
+      where: { pedidoId },
+      select: { id: true, precioUnitario: true, promocionId: true, producto: { select: { id: true, precioBase: true } } },
+    });
+    let cambios = 0;
+    for (const it of items) {
+      let precio = await this.precioEnSucursal(it.producto, sucursalId);
+      if (it.promocionId) {
+        const promo = await this.prisma.promocion.findUnique({ where: { id: it.promocionId } });
+        if (promo) precio = Math.min(precio, precioConPromocion({ tipo: promo.tipo as "PRECIO" | "PORCENTAJE", valor: Number(promo.valor) }, precio));
+      }
+      if (precio !== Number(it.precioUnitario)) {
+        await this.prisma.pedidoItem.update({ where: { id: it.id }, data: { precioUnitario: precio } });
+        cambios += 1;
+      }
+    }
+    if (cambios === 0) return false;
+    this.logger.warn(`Pedido ${pedidoId}: ${cambios} línea(s) revaluadas con el precio de la sucursal antes de cobrar.`);
+    await this.recalcularTotales(pedidoId);
+    return true;
+  }
+
+  private async resolverItem(
+    item: { productoId: string; cantidad: number; notas?: string; promocionId?: string; modificadores?: { opcionModificadorId: string }[] },
+    sucursalId?: string,
+  ) {
     // findUniqueOrThrow revienta con un NotFoundError si el productoId no existe (ej. el POS
     // tenía el catálogo cacheado y alguien borró/desactivó ese producto entre medias) — sin este
     // try/catch se iba como 500 genérico ("Error interno del servidor"), sin decir cuál producto
@@ -780,7 +837,9 @@ export class PedidosService {
     // venta hecha sin conexión llega horas después y la tablet ya comprobó fecha/día/horario en el
     // momento de vender. Si la promoción no existe, no incluye el producto o es de otra empresa, se
     // cobra el precio de catálogo y se avisa en el log.
-    let precioUnitario = Number(producto.precioBase);
+    // Precio de la SUCURSAL del pedido, no el base: la tablet vende con el de su sucursal, y con
+    // el base el ERP calculaba otro total y rechazaba el pago ("el pago no cubre el total").
+    let precioUnitario = await this.precioEnSucursal(producto, sucursalId);
     let promocionId: string | undefined;
     if (item.promocionId) {
       const promo = await this.prisma.promocion.findUnique({
