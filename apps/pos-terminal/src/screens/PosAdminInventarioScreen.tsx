@@ -13,8 +13,9 @@ import {
   type ExistenciaInsumo, type NivelStock,
 } from "../inventario/niveles";
 import { exportarComprasExcel, exportarComprasPdf } from "../reportes/exportarCompras";
+import { PanelInsumos } from "../components/PanelInsumos";
 
-type Pestana = "existencias" | "conteo" | "compras";
+type Pestana = "existencias" | "conteo" | "compras" | "insumos";
 
 export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void }) {
   const colores = usarColores();
@@ -254,11 +255,14 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
         <TouchableOpacity onPress={onCerrar}><Text style={estilos.cerrar}>✕</Text></TouchableOpacity>
       </View>
 
-      {items.length === 0 ? (
+      {items.length === 0 && pestana !== "insumos" ? (
         <View style={estilos.tarjeta}>
           <Text style={estilos.ayuda}>
-            Todavía no hay insumos en esta terminal. Se dan de alta en el ERP y bajan aquí al sincronizar.
+            Todavía no hay insumos en esta terminal. Dalos de alta aquí mismo o descárgalos del ERP si ya existen allá.
           </Text>
+          <TouchableOpacity onPress={() => setPestana("insumos")} style={[estilos.botonPrincipal, { backgroundColor: colores.green }]}>
+            <Text style={estilos.botonPrincipalTexto}>+ Dar de alta insumos</Text>
+          </TouchableOpacity>
           <TouchableOpacity onPress={descargarDelErp} disabled={sincronizando} style={estilos.botonPrincipal}>
             {sincronizando ? <ActivityIndicator color="#fff" /> : <Text style={estilos.botonPrincipalTexto}>⬇ Descargar stock del ERP</Text>}
           </TouchableOpacity>
@@ -276,14 +280,14 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
           </View>
 
           <View style={estilos.pestanas}>
-            {([["existencias", "Existencias"], ["conteo", "Conteo físico"], ["compras", `Compras (${compras.length})`]] as [Pestana, string][]).map(([id, etiqueta]) => (
+            {([["existencias", "Existencias"], ["conteo", "Conteo"], ["compras", `Compras (${compras.length})`], ["insumos", "Insumos"]] as [Pestana, string][]).map(([id, etiqueta]) => (
               <TouchableOpacity key={id} onPress={() => setPestana(id)} style={[estilos.pestana, pestana === id && estilos.pestanaActiva]}>
                 <Text style={[estilos.pestanaTexto, pestana === id && estilos.pestanaTextoActivo]}>{etiqueta}</Text>
               </TouchableOpacity>
             ))}
           </View>
 
-          {pestana !== "compras" && (
+          {(pestana === "existencias" || pestana === "conteo") && (
             <TextInput
               value={busqueda}
               onChangeText={setBusqueda}
@@ -437,6 +441,10 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
               )}
             </>
           )}
+
+          {/* Catálogo de insumos: alta, edición y baja. Al guardar se vuelve a bajar el
+              inventario, así que el insumo nuevo aparece ya en Existencias y Conteo. */}
+          {pestana === "insumos" && <PanelInsumos onCambio={cargar} />}
 
           {movimientos.length > 0 && pestana === "existencias" && (
             <View style={estilos.tarjeta}>
