@@ -81,7 +81,7 @@ export function CodigoVinculacion({
           {hora && /\.$/.test(hora) ? null : "."}
         </div>
         <div style={{ fontSize: 12, color: "var(--h421-gray-400)", marginTop: 4 }}>
-          La terminal ya puede trabajar. Para enlazar otra, genera un código nuevo: cada código se usa una sola vez.
+          El código {codigo.slice(0, 4)}-{codigo.slice(4)} ya se usó y no se puede usar de nuevo.
         </div>
       </div>
     );
