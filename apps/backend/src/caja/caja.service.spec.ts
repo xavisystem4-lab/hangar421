@@ -302,3 +302,42 @@ describe("CajaService — turno con el id de la terminal y cuadre en dólares", 
     }));
   });
 });
+
+/**
+ * Regresión: un movimiento de caja de la cola offline cuyo turno nunca llegó al ERP se quedaba
+ * con "Turno no encontrado" para siempre (Benito Juárez, 19/09). Desde la terminal ahora se
+ * engancha al turno que estaba abierto a esa hora, o a uno de recuperación con el mismo id.
+ */
+describe("CajaService.registrarMovimiento — turno desconocido desde la terminal", () => {
+  const MOV = { turnoId: "turno-perdido", tipo: "EGRESO" as any, monto: 100, motivo: "Hielo", usuarioId: "user-1" };
+  const T = { sucursalId: "suc-1", momento: new Date("2026-09-19T19:54:00-07:00") };
+
+  function servicio(abiertoEntonces: any = null) {
+    const { service, prisma } = crearServicio([{ id: "caja-existente", nombre: "Caja principal" }]);
+    (prisma.turno as any).findUnique = jest.fn(() => Promise.resolve(null));
+    (prisma.turno as any).findFirst = jest.fn(() => Promise.resolve(abiertoEntonces));
+    (prisma as any).movimientoCaja = { create: jest.fn((args: any) => Promise.resolve(args.data)) };
+    return { service, prisma };
+  }
+
+  it("lo engancha al turno de la sucursal que estaba abierto a esa hora", async () => {
+    const { service, prisma } = servicio({ id: "turno-real", sucursalId: "suc-1", estado: "ABIERTO" });
+    const r: any = await service.registrarMovimiento(MOV, T);
+    expect(r.turnoId).toBe("turno-real");
+    expect(prisma.turno.create).not.toHaveBeenCalled();
+  });
+
+  it("si no había ninguno, registra un turno de recuperación CERRADO con el mismo id y fondo 0", async () => {
+    const { service, prisma } = servicio(null);
+    const r: any = await service.registrarMovimiento(MOV, T);
+    expect(prisma.turno.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ id: "turno-perdido", estado: "CERRADO", montoInicial: 0, fechaApertura: T.momento }),
+    }));
+    expect(r.turnoId).toBe("turno-perdido");
+  });
+
+  it("fuera de la cola (en línea) sigue respondiendo Turno no encontrado", async () => {
+    const { service } = servicio(null);
+    await expect(service.registrarMovimiento(MOV)).rejects.toThrow("Turno no encontrado");
+  });
+});
