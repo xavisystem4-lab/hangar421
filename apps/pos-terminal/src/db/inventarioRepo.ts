@@ -43,6 +43,43 @@ export async function listarExistencias(db: SQLiteDatabase): Promise<ExistenciaI
   }));
 }
 
+export interface InsumoLocal {
+  id: string;
+  nombre: string;
+  unidadMedida: string;
+  costoUnitario: number;
+  proveedorId: string | null;
+  proveedorNombre: string | null;
+  activo: boolean;
+  minimo: number;
+  maximo: number | null;
+}
+
+/** Catálogo de insumos tal como bajó del ERP, INCLUIDOS los dados de baja: la pestaña de
+ *  Insumos los necesita para reactivarlos y para no dar de alta un duplicado de uno inactivo. */
+export async function listarInsumosLocales(db: SQLiteDatabase): Promise<InsumoLocal[]> {
+  const sucursalId = await obtenerOCrearSucursalIdLocal(db);
+  const filas = await db.getAllAsync<any>(
+    `SELECT i.id, i.nombre, i.unidad_medida, i.costo_unitario, i.proveedor_id, i.proveedor_nombre, i.activo,
+            COALESCE(inv.minimo, 0) AS minimo, inv.maximo
+     FROM insumos i
+     LEFT JOIN inventario_local inv ON inv.insumo_id = i.id AND inv.sucursal_id = ?
+     ORDER BY i.activo DESC, i.nombre`,
+    sucursalId,
+  );
+  return filas.map((f) => ({
+    id: f.id,
+    nombre: f.nombre,
+    unidadMedida: f.unidad_medida,
+    costoUnitario: Number(f.costo_unitario) || 0,
+    proveedorId: f.proveedor_id ?? null,
+    proveedorNombre: f.proveedor_nombre ?? null,
+    activo: f.activo === 1,
+    minimo: Number(f.minimo) || 0,
+    maximo: f.maximo != null ? Number(f.maximo) : null,
+  }));
+}
+
 /**
  * Registra un movimiento: actualiza el saldo local y lo encola hacia el ERP, todo en una
  * transacción. El saldo autoritativo lo lleva el ERP —que aplica el mismo movimiento cuando le
