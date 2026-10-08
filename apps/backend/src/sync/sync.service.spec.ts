@@ -423,6 +423,29 @@ describe("SyncService.push — USUARIO dado de alta en la terminal", () => {
     expect((prisma.usuario as any).create).not.toHaveBeenCalled();
   });
 
+  it("un alta con sucursal sin acceso (provisional o ya quitada) se registra en la sucursal activa", async () => {
+    const { push, prisma } = conAltas();
+    const resp = await push([alta({ sucursalId: "suc-provisional-de-la-tablet" }), alta({ id: "usuario-offline-2", sucursalId: "suc-2" })]);
+    expect(resp.resultados.map((r) => r.estado)).toEqual([SyncStatus.SYNCED, SyncStatus.SYNCED]);
+    for (const [args] of (prisma as any).usuarioSucursal.upsert.mock.calls) {
+      expect(args.create.sucursalId).toBe("suc-1");
+    }
+  });
+
+  it("si la sesión tampoco tiene acceso a su sucursal activa, el alta se sigue rechazando", async () => {
+    const { push, prisma } = conAltas();
+    const resp = await push([alta({ sucursalId: "suc-2" })], { ...SESION, sucursalId: "suc-ajena" });
+    expect(resp.resultados[0].error).toBe("No tienes acceso a esta sucursal");
+    expect((prisma as any).usuarioSucursal.upsert).not.toHaveBeenCalled();
+  });
+
+  it("solo las altas de persona cambian de sucursal: una venta ajena se sigue rechazando", async () => {
+    const { push, pedidos } = conAltas();
+    const resp = await push([alta({ id: "pedido-x", entidad: SyncEntidad.PEDIDO, sucursalId: "suc-2", payload: { tipo: "MOSTRADOR", items: [] } })]);
+    expect(resp.resultados[0].error).toBe("No tienes acceso a esta sucursal");
+    expect(pedidos.crear).not.toHaveBeenCalled();
+  });
+
   it("rechaza reutilizar el id de un usuario de otra empresa", async () => {
     const { push } = conAltas();
     const resp = await push([alta({ id: "user-ajeno" })]);
