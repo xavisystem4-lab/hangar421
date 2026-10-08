@@ -88,6 +88,14 @@ describe("CajaService.abrirTurno", () => {
     expect(prisma.turno.create).not.toHaveBeenCalled();
   });
 
+  it("un turno que llega de la terminal se registra aunque la caja tenga otro abierto", async () => {
+    const { service, prisma } = crearServicio([{ id: "caja-existente", nombre: "Caja principal" }]);
+    prisma.turno.findFirst.mockResolvedValueOnce({ id: "turno-de-otra-tablet" } as any);
+
+    await service.abrirTurno({ ...BASE, cajaId: null, desdeTerminal: true });
+    expect(prisma.turno.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ cajaId: "caja-existente" }) }));
+  });
+
   it("comprueba el turno abierto contra la caja RESUELTA, no contra el null recibido", async () => {
     const { service, prisma } = crearServicio([{ id: "caja-existente", nombre: "Caja principal" }]);
     await service.abrirTurno({ ...BASE, cajaId: null });
