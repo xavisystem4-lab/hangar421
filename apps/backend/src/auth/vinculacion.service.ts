@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import * as crypto from "crypto";
 import { RolUsuario, TipoDispositivo } from "@hangar421/shared";
 import { PrismaService } from "../prisma/prisma.service";
@@ -99,6 +99,51 @@ export class VinculacionService {
     });
 
     return { codigo, expiraAt, sucursal: descripcion };
+  }
+
+  /**
+   * Estado de un código ya generado, para que el ERP confirme en pantalla cuándo la terminal lo
+   * canjeó. Lo consulta el admin mientras tiene el código a la vista.
+   *
+   * Acotado a la empresa del token: un código de otra empresa responde igual que uno que no
+   * existe. Nunca devuelve material de la sesión de la terminal, solo qué equipo lo usó y cuándo.
+   */
+  async estado(empresaId: string, codigoTecleado: string): Promise<{
+    estado: "PENDIENTE" | "VINCULADO" | "EXPIRADO";
+    expiraAt: Date;
+    usadoAt: Date | null;
+    terminal: string | null;
+    sucursal: string | null;
+  }> {
+    const codigo = (codigoTecleado ?? "").trim().toUpperCase().replace(/[\s-]/g, "");
+    const registro = codigo
+      ? await this.prisma.codigoVinculacion.findUnique({ where: { codigo }, include: { sucursal: { select: { nombre: true } } } })
+      : null;
+    if (!registro || registro.empresaId !== empresaId) throw new NotFoundException("Código no encontrado");
+
+    if (!registro.usadoAt) {
+      return {
+        estado: registro.expiraAt < new Date() ? "EXPIRADO" : "PENDIENTE",
+        expiraAt: registro.expiraAt,
+        usadoAt: null,
+        terminal: null,
+        sucursal: registro.sucursal?.nombre ?? null,
+      };
+    }
+
+    const dispositivo = registro.dispositivoId
+      ? await this.prisma.dispositivo.findUnique({
+          where: { identificador: registro.dispositivoId },
+          select: { nombre: true, sucursal: { select: { nombre: true } } },
+        })
+      : null;
+    return {
+      estado: "VINCULADO",
+      expiraAt: registro.expiraAt,
+      usadoAt: registro.usadoAt,
+      terminal: dispositivo?.nombre ?? null,
+      sucursal: registro.sucursal?.nombre ?? dispositivo?.sucursal?.nombre ?? null,
+    };
   }
 
   /**

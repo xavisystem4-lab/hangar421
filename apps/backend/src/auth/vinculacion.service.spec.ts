@@ -272,3 +272,37 @@ describe("VinculacionService — código de EMPRESA (varias sucursales)", () => 
     );
   });
 });
+
+describe("VinculacionService.estado — confirmación en el ERP", () => {
+  const base = { id: "cod-1", codigo: "ABCD2345", empresaId: "emp-1", sucursal: { nombre: "Benito Juárez" }, dispositivoId: null, usadoAt: null };
+  function servicio(registro: any, dispositivo: any = null) {
+    const { prisma } = crearPrisma({
+      codigoVinculacion: { findUnique: jest.fn(async () => registro) },
+      dispositivo: { findUnique: jest.fn(async () => dispositivo) },
+    });
+    return new VinculacionService(prisma, auth);
+  }
+
+  it("PENDIENTE mientras no se canjea y sigue vigente", async () => {
+    const r = await servicio({ ...base, expiraAt: new Date(Date.now() + 60_000) }).estado("emp-1", "abcd-2345");
+    expect(r).toMatchObject({ estado: "PENDIENTE", terminal: null, sucursal: "Benito Juárez" });
+  });
+
+  it("EXPIRADO si caducó sin usarse", async () => {
+    const r = await servicio({ ...base, expiraAt: new Date(Date.now() - 1000) }).estado("emp-1", "ABCD2345");
+    expect(r.estado).toBe("EXPIRADO");
+  });
+
+  it("VINCULADO con la terminal y la hora en que se canjeó", async () => {
+    const usadoAt = new Date();
+    const r = await servicio(
+      { ...base, expiraAt: new Date(Date.now() + 60_000), usadoAt, dispositivoId: "huella-1" },
+      { nombre: "Tablet caja", sucursal: { nombre: "Benito Juárez" } },
+    ).estado("emp-1", "ABCD2345");
+    expect(r).toMatchObject({ estado: "VINCULADO", usadoAt, terminal: "Tablet caja", sucursal: "Benito Juárez" });
+  });
+
+  it("un código de otra empresa responde como si no existiera", async () => {
+    await expect(servicio({ ...base, empresaId: "emp-2", expiraAt: new Date() }).estado("emp-1", "ABCD2345")).rejects.toThrow("Código no encontrado");
+  });
+});

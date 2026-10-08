@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useAuthCrm } from "@/lib/authClient";
 import { useSucursalActiva } from "@/store/sucursalActiva";
+import { CodigoVinculacion } from "@/components/CodigoVinculacion";
 
 interface Sucursal {
   id: string;
@@ -78,10 +79,6 @@ export default function SucursalesPage() {
     } finally {
       setGenerando(null);
     }
-  }
-
-  function minutosRestantes(expiraAt: string): number {
-    return Math.max(0, Math.round((new Date(expiraAt).getTime() - Date.now()) / 60_000));
   }
 
   // Terminales conectadas por sucursal. "Conectada" = dio señal hace menos de 3 min; el APK
@@ -232,19 +229,7 @@ export default function SucursalesPage() {
             </div>
 
             {codigo?.sucursalId === s.id && (
-              <div style={{ marginTop: 12, padding: 12, borderRadius: 10, background: "var(--h421-gray-50)", textAlign: "center" }}>
-                <div style={{ fontSize: 11, color: "var(--h421-gray-400)", textTransform: "uppercase", fontWeight: 700 }}>
-                  Dictar en el Punto de Venta
-                </div>
-                {/* Partido en dos mitades y con espaciado: se lee en voz alta y se teclea en una
-                    tablet. La app acepta el código con o sin el guion. */}
-                <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: 4, margin: "6px 0", fontFamily: "monospace" }}>
-                  {codigo.codigo.slice(0, 4)}-{codigo.codigo.slice(4)}
-                </div>
-                <div style={{ fontSize: 12, color: "var(--h421-gray-400)" }}>
-                  Sirve una sola vez · caduca en {minutosRestantes(codigo.expiraAt)} min
-                </div>
-              </div>
+              <CodigoVinculacion codigo={codigo.codigo} expiraAt={codigo.expiraAt} onVinculado={cargar} />
             )}
           </div>
         ))}
@@ -288,17 +273,7 @@ export default function SucursalesPage() {
                 : `Generar código (${sucursalesTerminal.length} sucursal${sucursalesTerminal.length === 1 ? "" : "es"})`}
           </button>
           {codigo?.sucursalId === CODIGO_EMPRESA && (
-            <div style={{ marginTop: 12, padding: 12, borderRadius: 10, background: "var(--h421-gray-50)", textAlign: "center" }}>
-              <div style={{ fontSize: 11, color: "var(--h421-gray-400)", textTransform: "uppercase", fontWeight: 700 }}>
-                Dictar en el Punto de Venta · {codigo.descripcion}
-              </div>
-              <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: 4, margin: "6px 0", fontFamily: "monospace" }}>
-                {codigo.codigo.slice(0, 4)}-{codigo.codigo.slice(4)}
-              </div>
-              <div style={{ fontSize: 12, color: "var(--h421-gray-400)" }}>
-                Sirve una sola vez · caduca en {minutosRestantes(codigo.expiraAt)} min
-              </div>
-            </div>
+            <CodigoVinculacion codigo={codigo.codigo} expiraAt={codigo.expiraAt} descripcion={codigo.descripcion} onVinculado={cargar} />
           )}
         </div>
       )}
