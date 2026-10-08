@@ -69,24 +69,32 @@ export class SyncService {
   }
 
   /**
-   * Un alta de persona (USUARIO) que llega nombrando una sucursal a la que la sesión no tiene
-   * acceso se registra en la sucursal ACTIVA de la sesión en vez de rechazarse.
+   * Operaciones que llegan nombrando una sucursal a la que la sesión no tiene acceso y que se
+   * registran en la sucursal ACTIVA de la sesión en vez de rechazarse: altas de persona
+   * (USUARIO) siempre, y cualquier otra operación solo si su sucursal es un id provisional que
+   * el ERP no conoce.
    *
    * Pasa cuando la persona se dio de alta en la tablet antes de enlazarla al ERP (la sucursal es
    * un id provisional que el ERP no conoce) o cuando la tablet estuvo enlazada a otra sucursal que
    * su código ya no tiene. Ese rechazo era permanente: la persona sigue trabajando en esa tablet
    * pero nunca llegaba al ERP. La sucursal activa del token es justo donde está trabajando.
    *
-   * Solo altas de persona: una venta, un turno o un cobro con sucursal ajena se siguen rechazando.
-   * Y solo si la sesión tiene acceso a su sucursal activa; si no, el rechazo se queda como estaba.
+   * Una venta, un turno o un cobro que nombra otra sucursal REAL se sigue rechazando.
+   * Y nada se mueve si la sesión no tiene acceso a su sucursal activa.
    */
   private async altaEnSucursalDeLaSesion(item: SyncEnvelope, alcance: AlcanceSync, sesion: JwtPayload): Promise<SyncEnvelope> {
-    if (item.entidad !== SyncEntidad.USUARIO) return item;
     const activa = sesion.sucursalId;
     if (!activa || item.sucursalId === activa) return item;
     if (item.sucursalId && (await alcance.sucursalAccesible(item.sucursalId))) return item;
+
+    // Una venta, turno o movimiento solo se mueve si su sucursal NO EXISTE en el ERP: es el id
+    // provisional que la tablet usa antes de enlazarse, así que solo pudo pasar en la tablet
+    // misma, que trabaja en su sucursal activa. Si nombra una sucursal real a la que no tiene
+    // acceso, NO se mueve: sería pasar dinero de una sucursal a otra.
+    if (item.entidad !== SyncEntidad.USUARIO && item.sucursalId && (await alcance.sucursalExiste(item.sucursalId))) return item;
+
     if (!(await alcance.sucursalAccesible(activa))) return item;
-    this.logger.log(`Alta de usuario ${item.id} de ${sesion.sub}: sucursal ${item.sucursalId ?? "(ninguna)"} sin acceso, se registra en la activa ${activa}`);
+    this.logger.log(`${item.entidad} ${item.id} de ${sesion.sub}: sucursal ${item.sucursalId ?? "(ninguna)"} sin acceso, se registra en la activa ${activa}`);
     return { ...item, sucursalId: activa };
   }
 
@@ -307,6 +315,7 @@ export class SyncService {
             usuarioId: item.usuarioId ?? p.usuarioId,
             montoInicial: p.montoInicial,
             tipoCambioUsd: p.tipoCambioUsd,
+            desdeTerminal: true,
           });
         } else if (p.accion === "REASIGNAR") {
           // Relevo de cajero con la caja abierta. Llega por la cola como todo lo demás, así

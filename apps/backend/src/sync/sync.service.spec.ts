@@ -340,7 +340,7 @@ describe("SyncService.push — alcance de la sesión", () => {
   it("rechaza una sucursal de la misma empresa a la que el usuario no tiene acceso", async () => {
     const { push } = crearServicio();
     const resp = await push([sobre({ sucursalId: "suc-2" })]);
-    expect(resp.resultados[0].error).toBe("No tienes acceso a esta sucursal");
+    expect(resp.resultados[0].error).toMatch(/^No tienes acceso a esta sucursal/);
   });
 
   it("ADMIN_CORPORATIVO opera en cualquier sucursal de su empresa, pero no en otra empresa", async () => {
@@ -349,6 +349,27 @@ describe("SyncService.push — alcance de la sesión", () => {
     const resp = await push([sobre({ sucursalId: "suc-2" }), sobre({ sucursalId: "suc-ajena" })], admin);
     expect(resp.resultados[0].estado).toBe(SyncStatus.SYNCED);
     expect(resp.resultados[1].estado).toBe(SyncStatus.ERROR);
+  });
+
+  it("una venta con sucursal provisional (que no existe en el ERP) se registra en la sucursal activa", async () => {
+    const { push, pedidos } = crearServicio();
+    const resp = await push([sobre({ sucursalId: "suc-provisional-de-la-tablet" })]);
+    expect(resp.resultados[0].estado).toBe(SyncStatus.SYNCED);
+    expect(pedidos.crear).toHaveBeenCalledWith(expect.objectContaining({ sucursalId: "suc-1" }));
+  });
+
+  it("una venta con sucursal de OTRA empresa nunca se mueve a la activa", async () => {
+    const { push, pedidos } = crearServicio();
+    const resp = await push([sobre({ sucursalId: "suc-ajena" })]);
+    expect(resp.resultados[0].estado).toBe(SyncStatus.ERROR);
+    expect(pedidos.crear).not.toHaveBeenCalled();
+  });
+
+  it("una venta de otra sucursal REAL no se mueve: se rechaza diciendo cuál es", async () => {
+    const { push, pedidos } = crearServicio();
+    const resp = await push([sobre({ sucursalId: "suc-2" })]);
+    expect(resp.resultados[0].error).toMatch(/^No tienes acceso a esta sucursal \(.+\)$/);
+    expect(pedidos.crear).not.toHaveBeenCalled();
   });
 
   it("no deja cobrar un pedido de otra sucursal nombrando su id", async () => {
@@ -435,14 +456,14 @@ describe("SyncService.push — USUARIO dado de alta en la terminal", () => {
   it("si la sesión tampoco tiene acceso a su sucursal activa, el alta se sigue rechazando", async () => {
     const { push, prisma } = conAltas();
     const resp = await push([alta({ sucursalId: "suc-2" })], { ...SESION, sucursalId: "suc-ajena" });
-    expect(resp.resultados[0].error).toBe("No tienes acceso a esta sucursal");
+    expect(resp.resultados[0].error).toMatch(/^No tienes acceso a esta sucursal/);
     expect((prisma as any).usuarioSucursal.upsert).not.toHaveBeenCalled();
   });
 
   it("solo las altas de persona cambian de sucursal: una venta ajena se sigue rechazando", async () => {
     const { push, pedidos } = conAltas();
     const resp = await push([alta({ id: "pedido-x", entidad: SyncEntidad.PEDIDO, sucursalId: "suc-2", payload: { tipo: "MOSTRADOR", items: [] } })]);
-    expect(resp.resultados[0].error).toBe("No tienes acceso a esta sucursal");
+    expect(resp.resultados[0].error).toMatch(/^No tienes acceso a esta sucursal/);
     expect(pedidos.crear).not.toHaveBeenCalled();
   });
 

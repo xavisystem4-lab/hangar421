@@ -23,6 +23,9 @@ export class CajaService {
     usuarioId?: string | null;
     montoInicial: number;
     tipoCambioUsd?: number | null;
+    /** El turno ya se abrió en la tablet (offline-first): el ERP lo registra aunque la caja
+     *  tenga otro turno abierto. Ver la nota junto a la comprobación. */
+    desdeTerminal?: boolean;
   }) {
     if (data.id) {
       const existente = await this.prisma.turno.findUnique({ where: { id: data.id } });
@@ -37,7 +40,13 @@ export class CajaService {
     const turnoActivo = await this.prisma.turno.findFirst({
       where: { cajaId, estado: EstadoTurno.ABIERTO },
     });
-    if (turnoActivo) throw new BadRequestException("Ya existe un turno abierto para esta caja");
+    // Un turno que llega por la cola ya está abierto en la tablet y con ventas encima: rechazarlo
+    // no lo deshace, solo deja su corte, sus movimientos y sus ventas sin turno ("Turno no
+    // encontrado") reintentándose para siempre. Pasaba porque las tablets mandan `cajaId: null`
+    // y todas caen en la misma caja de la sucursal: bastaba con que otra terminal (o un turno
+    // viejo que nunca llegó a cerrarse en el ERP) tuviera esa caja abierta. La regla de un turno
+    // por caja se mantiene para quien abre directo contra el ERP (POS Windows).
+    if (turnoActivo && !data.desdeTerminal) throw new BadRequestException("Ya existe un turno abierto para esta caja");
 
     return this.prisma.turno.create({
       data: {

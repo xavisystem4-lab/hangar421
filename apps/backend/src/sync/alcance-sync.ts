@@ -34,7 +34,7 @@ export class AlcanceSync {
   /** null si el item está dentro del alcance de la sesión; si no, el motivo del rechazo. */
   async motivoDeRechazo(item: SyncEnvelope): Promise<string | null> {
     if (!item.sucursalId) return "La operación no indica sucursal";
-    if (!(await this.sucursalAccesible(item.sucursalId))) return "No tienes acceso a esta sucursal";
+    if (!(await this.sucursalAccesible(item.sucursalId))) return this.motivoSinAcceso(item.sucursalId);
 
     const p = (item.payload ?? {}) as any;
     const ajena = await this.referenciaAjena(item, p);
@@ -44,6 +44,32 @@ export class AlcanceSync {
       if (usuarioId && !(await this.usuarioDeLaEmpresa(usuarioId))) return "El usuario indicado pertenece a otra empresa";
     }
     return null;
+  }
+
+  /** true si la sucursal existe en el ERP, de la empresa que sea. Solo un id que no existe en
+   *  ningún lado (el provisional de una tablet sin enlazar) da false. */
+  async sucursalExiste(sucursalId: string): Promise<boolean> {
+    await this.datosSucursal(sucursalId);
+    return this.existentes.get(sucursalId) === true;
+  }
+
+  /** Dice QUÉ sucursal se rechazó, para que quien lo lee en la tablet sepa qué hacer: si es una
+   *  sucursal real hay que darle acceso a la terminal (enlazarla también a esa sucursal). */
+  private async motivoSinAcceso(sucursalId: string): Promise<string> {
+    const s = await this.datosSucursal(sucursalId);
+    return s ? `No tienes acceso a esta sucursal (${s.nombre})` : "No tienes acceso a esta sucursal";
+  }
+
+  private readonly datos = new Map<string, { nombre: string } | null>();
+  private readonly existentes = new Map<string, boolean>();
+  /** Nombre de la sucursal si es de la empresa de la sesión; null si no existe o es de otra. */
+  private async datosSucursal(sucursalId: string): Promise<{ nombre: string } | null> {
+    if (this.datos.has(sucursalId)) return this.datos.get(sucursalId)!;
+    const s = await this.prisma.sucursal.findUnique({ where: { id: sucursalId }, select: { empresaId: true, nombre: true } });
+    this.existentes.set(sucursalId, !!s);
+    const r = s && s.empresaId === this.sesion.empresaId ? { nombre: s.nombre ?? sucursalId } : null;
+    this.datos.set(sucursalId, r);
+    return r;
   }
 
   async sucursalAccesible(sucursalId: string): Promise<boolean> {
