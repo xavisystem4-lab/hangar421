@@ -76,10 +76,12 @@ export function CodigoVinculacion({
         <div style={{ fontSize: 13, marginTop: 4 }}>
           {estado.terminal ?? "La terminal"} quedó enlazada
           {estado.sucursal ? <> a <strong>{estado.sucursal}</strong></> : descripcion ? <> a <strong>{descripcion}</strong></> : null}
-          {hora ? <> a las {hora}</> : null}.
+          {hora ? <> a las {hora}</> : null}
+          {/* La hora en es-MX ya termina en punto ("a.m."): no se agrega otro. */}
+          {hora && /\.$/.test(hora) ? null : "."}
         </div>
         <div style={{ fontSize: 12, color: "var(--h421-gray-400)", marginTop: 4 }}>
-          El código {codigo.slice(0, 4)}-{codigo.slice(4)} ya se usó y no sirve otra vez.
+          El código {codigo.slice(0, 4)}-{codigo.slice(4)} ya se usó y no se puede usar de nuevo.
         </div>
       </div>
     );
