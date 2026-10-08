@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
 import { RolUsuario } from "@hangar421/shared";
@@ -68,6 +68,16 @@ export class AuthController {
       creadoPorRol: user.rol,
       rol: dto.rol,
     });
+  }
+
+  /** Estado del código: el ERP lo consulta mientras lo muestra para confirmar en cuanto la
+   *  terminal lo canjea. Mismos roles que generarlo; acotado a la empresa del token. */
+  @UseGuards(JwtAuthGuard)
+  @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
+  @SucursalLibre()
+  @Get("codigos-vinculacion/:codigo/estado")
+  estadoCodigoVinculacion(@CurrentUser() user: any, @Param("codigo") codigo: string) {
+    return this.vinculacion.estado(user.empresaId, codigo);
   }
 
   /**
