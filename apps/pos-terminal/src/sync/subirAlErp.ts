@@ -1,5 +1,6 @@
 import { abrirBaseDeDatos } from "../db/database";
 import { repararProductosLocalesEnOutbox } from "../db/catalogoSyncRepo";
+import { repuntarAltasDeUsuarioSinAcceso } from "../db/reparacionesSync";
 import {
   contarPendientes,
   corregirVentasConTurnoDesconocido,
@@ -32,7 +33,8 @@ export interface ResumenSubida {
  * 1. Descarga el catálogo del ERP (sin él no se pueden corregir los productos de la tablet).
  * 2. Corrige las ventas que el ERP ya rechazó por causas que la tablet puede arreglar:
  *    productos sembrados en la tablet (`hangar-prod-…`) que en el ERP tienen otro id, y ventas
- *    con un turno que el ERP no conoce.
+ *    con un turno que el ERP no conoce, y altas de usuario de una sucursal que la terminal ya no
+ *    tiene (se pasan a la sucursal activa).
  * 3. Devuelve a la cola todo lo que estaba en error y lo manda, sin esperar el backoff.
  * 4. Dice qué subió y qué no, con el motivo del ERP para lo que sigue rechazado.
  *
@@ -51,7 +53,10 @@ export async function subirAlErp(): Promise<ResumenSubida> {
     errorCatalogo = e?.message ?? "No se pudo descargar el catálogo del ERP";
   });
 
-  const corregidas = (await repararProductosLocalesEnOutbox(db).catch(() => 0)) + (await corregirVentasConTurnoDesconocido(db).catch(() => 0));
+  const corregidas =
+    (await repararProductosLocalesEnOutbox(db).catch(() => 0)) +
+    (await corregirVentasConTurnoDesconocido(db).catch(() => 0)) +
+    (await repuntarAltasDeUsuarioSinAcceso(db).catch(() => 0));
   await reintentarTodosLosProblemas(db);
   await procesarCola(true);
 
@@ -76,7 +81,7 @@ export function textoResumenSubida(r: ResumenSubida): { titulo: string; detalle:
   }
   const partes: string[] = [];
   if (r.enviados > 0) partes.push(`✓ Se subieron ${r.enviados} evento(s) al ERP (ventas, cobros y movimientos de caja).`);
-  if (r.corregidas > 0) partes.push(`Se corrigieron ${r.corregidas} venta(s) antes de reenviarlas.`);
+  if (r.corregidas > 0) partes.push(`Se corrigieron ${r.corregidas} registro(s) antes de reenviarlos.`);
   if (r.errorGeneral) partes.push(`No se pudo completar: ${r.errorGeneral}`);
   if (r.problemas.length > 0) {
     const muestra = r.problemas.slice(0, 3).map((p) => `• ${p.folioLocal != null ? `Venta #${p.folioLocal}` : p.entidad}: ${p.ultimoError}`);

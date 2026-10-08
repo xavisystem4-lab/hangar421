@@ -58,6 +58,9 @@ function crearServicio(usuariosExistentes: string[], opciones: { turnoIdDelPedid
         ),
       ),
     },
+    // Sin líneas: la revaluación con precios de sucursal no encuentra nada que cambiar (su caso
+    // real se prueba en precio-sucursal.spec.ts).
+    pedidoItem: { findMany: jest.fn(() => Promise.resolve([])) },
     $transaction: jest.fn((fn: any) => fn(tx)),
   };
 
