@@ -20,6 +20,10 @@
   --h421-amber-texto: #92400e;
   --h421-amber-bg: #fef3c7;
   --h421-green-bg: #dcfce7;
+  /* Encabezados de categoría del Catálogo: el ámbar del logotipo. En modo día se oscurece un
+     paso (el ámbar puro sobre blanco casi no se lee); en modo noche va el ámbar tal cual. */
+  --h421-categoria-texto: #b45309;
+  --h421-categoria-bg: #fef3c7;
 }
 
 /* Modo oscuro — mismos tokens y mismo criterio que apps/pos-desktop/src/theme.css: solo se
@@ -40,6 +44,8 @@
   --h421-amber-texto: #fbbf24; /* ámbar aclarado, mismo criterio que red-texto */
   --h421-amber-bg: #3a2a0a;   /* fondo de píldora "Bajo" (nivel de inventario), oscurecido */
   --h421-green-bg: #0f2e1d;   /* fondo de píldora "Óptimo" (nivel de inventario), oscurecido */
+  --h421-categoria-texto: #e8a33d; /* ámbar del logotipo, legible sobre superficie oscura */
+  --h421-categoria-bg: #2a2210;    /* franja ámbar muy tenue para la fila de categoría */
 }
 
 * { box-sizing: border-box; }

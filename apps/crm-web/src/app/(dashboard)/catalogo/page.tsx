@@ -333,11 +333,11 @@ function FilasCategoria({ nombre, total, mostrarEncabezado, children }: { nombre
   return (
     <>
       {mostrarEncabezado && (
-        // Ámbar de texto: es una variable que ya cambia con el tema (oscuro sobre claro en modo
-        // día, claro sobre oscuro en modo noche), y en ambos se distingue del texto de los productos.
+        // Ámbar del logotipo (ver --h421-categoria-texto en globals.css): claro sobre oscuro en modo
+        // noche y un paso más oscuro en modo día; en ambos se distingue del texto de los productos.
         // El navy de marca se perdía en modo noche porque ahí es casi del color del fondo.
-        <tr style={{ background: "var(--h421-amber-bg)" }}>
-          <td colSpan={6} style={{ padding: "8px 8px 6px", fontWeight: 700, fontSize: 13, letterSpacing: 0.3, textTransform: "uppercase", color: "var(--h421-amber-texto)" }}>
+        <tr style={{ background: "var(--h421-categoria-bg)" }}>
+          <td colSpan={6} style={{ padding: "8px 8px 6px", fontWeight: 800, fontSize: 13, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--h421-categoria-texto)" }}>
             {nombre} <span style={{ fontWeight: 400, opacity: 0.75 }}>({total})</span>
           </td>
         </tr>
