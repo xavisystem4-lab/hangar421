@@ -87,20 +87,70 @@ export class CatalogoService {
     return this.prisma.categoriaProducto.create({ data });
   }
 
-  crearProducto(data: {
+  /**
+   * Alta de un producto desde el ERP (CRM → Catálogo → Nuevo producto), con los mismos datos que
+   * pide la terminal: categoría, nombre, precio, subcategoría, estación y los modificadores que
+   * debe preguntar. La empresa sale del token, no del cuerpo.
+   *
+   * `sucursalIds` dice dónde queda EN VENTA: se crea el renglón por sucursal con `disponible`
+   * según esté o no en la lista, para que cada terminal lo reciba ya resuelto. Si no viene, no se
+   * crea ningún renglón y el producto queda disponible en todas (comportamiento histórico del ERP).
+   */
+  async crearProducto(data: {
     empresaId: string;
     categoriaId: string;
     nombre: string;
-    descripcion?: string;
-    subcategoria?: string;
-    imagenUrl?: string;
+    descripcion?: string | null;
+    subcategoria?: string | null;
+    imagenUrl?: string | null;
     precioBase: number;
     orden?: number;
-    requierePersonalizacion?: boolean;
-    estacionPreparacion?: "BARRA" | "COCINA" | "POSTRES";
-    impuestoOverride?: number;
+    estacionPreparacion?: "BARRA" | "COCINA" | "POSTRES" | null;
+    impuestoOverride?: number | null;
+    modificadorIds?: string[];
+    sucursalIds?: string[];
   }) {
-    return this.prisma.producto.create({ data });
+    const nombre = String(data.nombre ?? "").trim();
+    if (!nombre) throw new Error("El producto no tiene nombre");
+    const precioBase = Number(data.precioBase);
+    if (!Number.isFinite(precioBase) || precioBase < 0) throw new Error("El precio del producto no es válido");
+    const categoria = await this.prisma.categoriaProducto.findUnique({ where: { id: data.categoriaId }, select: { empresaId: true } });
+    if (!categoria || categoria.empresaId !== data.empresaId) throw new Error("La categoría no existe en esta empresa");
+    const modificadorIds = await this.validarModificadores(data.empresaId, data.modificadorIds);
+    const estaciones = ["BARRA", "COCINA", "POSTRES"];
+    const estacionPreparacion = data.estacionPreparacion && estaciones.includes(data.estacionPreparacion) ? data.estacionPreparacion : null;
+
+    return this.prisma.$transaction(async (tx) => {
+      const producto = await tx.producto.create({
+        data: {
+          empresaId: data.empresaId,
+          categoriaId: data.categoriaId,
+          nombre,
+          precioBase,
+          descripcion: data.descripcion?.trim() || null,
+          subcategoria: data.subcategoria?.trim() || null,
+          imagenUrl: data.imagenUrl?.trim() || null,
+          orden: data.orden ?? 0,
+          estacionPreparacion,
+          impuestoOverride: data.impuestoOverride ?? null,
+          requierePersonalizacion: modificadorIds.length > 0,
+          activo: true,
+        },
+      });
+      if (modificadorIds.length > 0) await this.reemplazarModificadores(tx, producto.id, modificadorIds);
+      if (Array.isArray(data.sucursalIds)) {
+        const enVenta = new Set(data.sucursalIds);
+        const sucursales = await tx.sucursal.findMany({ where: { empresaId: data.empresaId }, select: { id: true } });
+        if (sucursales.length > 0) {
+          await tx.productoSucursal.createMany({
+            data: sucursales.map((s) => ({ productoId: producto.id, sucursalId: s.id, precio: precioBase, disponible: enVenta.has(s.id) })),
+            skipDuplicates: true,
+          });
+        }
+      }
+      this.logger.log(`Producto "${nombre}" dado de alta desde el ERP (${producto.id}) con ${modificadorIds.length} modificador(es)`);
+      return { ...producto, modificadorIds };
+    });
   }
 
   actualizarProducto(

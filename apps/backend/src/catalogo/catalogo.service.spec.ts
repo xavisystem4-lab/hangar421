@@ -258,3 +258,44 @@ describe("CatalogoService.editarDatosProducto", () => {
     await expect(s.editarDatosProducto("emp-1", "p-1", { categoriaId: "cat-ajena" })).rejects.toThrow("no existe");
   });
 });
+
+/** Alta desde el ERP (CRM → Catálogo → Nuevo producto): el id lo genera el servidor, los
+ *  modificadores se validan igual que desde la terminal y `sucursalIds` decide dónde queda en
+ *  venta; sin esa lista no se crea ningún renglón por sucursal (disponible en todas). */
+describe("CatalogoService.crearProducto (desde el ERP)", () => {
+  function conSucursales() {
+    const { cliente, productos, links, porSucursal } = crearPrismaFalso();
+    cliente.sucursal.findMany = jest.fn(() => Promise.resolve([{ id: "suc-1" }, { id: "suc-2" }, { id: "suc-3" }]));
+    cliente.producto.create = jest.fn(({ data }: any) => { const p = { id: "prod-erp", ...data }; productos.set(p.id, p); return Promise.resolve(p); });
+    return { cliente, productos, links, porSucursal };
+  }
+  const DATOS = { empresaId: "emp-1", categoriaId: "cat-1", nombre: " Matcha Latte ", precioBase: 85 };
+
+  it("crea el producto con sus modificadores y lo deja en venta solo en las sucursales elegidas", async () => {
+    const { cliente, productos, links, porSucursal } = conSucursales();
+    const r = await new CatalogoService(cliente).crearProducto({ ...DATOS, modificadorIds: ["mod-2", "mod-1", "mod-2"], estacionPreparacion: "BARRA", sucursalIds: ["suc-1", "suc-3"] });
+    expect(r.id).toBe("prod-erp");
+    expect(productos.get("prod-erp")).toMatchObject({ nombre: "Matcha Latte", precioBase: 85, requierePersonalizacion: true, estacionPreparacion: "BARRA", empresaId: "emp-1" });
+    expect([...links.values()].map((l) => [l.modificadorId, l.orden])).toEqual([["mod-2", 1], ["mod-1", 2]]);
+    expect(porSucursal.get("prod-erp|suc-1")).toMatchObject({ disponible: true, precio: 85 });
+    expect(porSucursal.get("prod-erp|suc-2")).toMatchObject({ disponible: false });
+    expect(porSucursal.get("prod-erp|suc-3")).toMatchObject({ disponible: true });
+  });
+
+  it("sin modificadores ni lista de sucursales: no pregunta nada y queda disponible en todas (sin renglones)", async () => {
+    const { cliente, productos, porSucursal } = conSucursales();
+    await new CatalogoService(cliente).crearProducto({ ...DATOS });
+    expect(productos.get("prod-erp").requierePersonalizacion).toBe(false);
+    expect(porSucursal.size).toBe(0);
+  });
+
+  it("rechaza nombre vacío, precio inválido, categoría ajena y modificadores ajenos", async () => {
+    const { cliente } = conSucursales();
+    const s = new CatalogoService(cliente);
+    await expect(s.crearProducto({ ...DATOS, nombre: "  " })).rejects.toThrow("no tiene nombre");
+    await expect(s.crearProducto({ ...DATOS, precioBase: -1 })).rejects.toThrow("precio");
+    await expect(s.crearProducto({ ...DATOS, categoriaId: "cat-ajena" })).rejects.toThrow("categoría");
+    await expect(s.crearProducto({ ...DATOS, modificadorIds: ["mod-ajeno"] })).rejects.toThrow("otra empresa");
+    expect(cliente.producto.create).not.toHaveBeenCalled();
+  });
+});

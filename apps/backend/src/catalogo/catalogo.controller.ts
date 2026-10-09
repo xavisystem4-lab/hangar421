@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Put, Query, Req, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { RolUsuario } from "@hangar421/shared";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
@@ -33,8 +33,17 @@ export class CatalogoController {
   @Post("productos")
   @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
   @Audit("PRODUCTO", "CREAR")
-  crearProducto(@Body() body: any) {
-    return this.catalogo.crearProducto(body);
+  crearProducto(@Req() req: any, @Body() body: any) {
+    // La empresa sale del token: un admin nunca da de alta productos en otra empresa.
+    return this.catalogo.crearProducto({ ...body, empresaId: req.user.empresaId });
+  }
+
+  /** Reemplaza la lista de modificadores que pregunta un producto (ERP → Catálogo → Editar). */
+  @Put("productos/:id/modificadores")
+  @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
+  @Audit("PRODUCTO", "ACTUALIZAR_MODIFICADORES")
+  fijarModificadores(@Req() req: any, @Param("id") id: string, @Body() body: { modificadorIds?: string[] }) {
+    return this.catalogo.fijarModificadoresDeProducto(req.user.empresaId, id, body?.modificadorIds);
   }
 
   @Patch("productos/:id")
