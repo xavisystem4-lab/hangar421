@@ -270,6 +270,18 @@ export class SyncService {
         break;
 
       case SyncEntidad.PAGO:
+        if (item.operacion === SyncOperacion.UPDATE && p.accion === "CAMBIAR_METODO") {
+          // Cambio de método de pago de una venta ya cobrada (APK → Ventas → Cambiar método),
+          // autorizado con PIN en la terminal. Reemplaza los pagos; el corte se recalcula solo.
+          await this.pedidos.cambiarPagosDesdeTerminal(p.pedidoId ?? item.id, {
+            pagos: p.pagos,
+            cajeroId: p.cajeroId ?? item.usuarioId,
+            autorizadoPorId: p.autorizadoPorId,
+            autorizadoPorNombre: p.autorizadoPorNombre,
+            motivo: p.motivo,
+          });
+          break;
+        }
         await this.pedidos.cobrar(
           p.pedidoId,
           { pagos: p.pagos, cajeroId: p.cajeroId ?? item.usuarioId },

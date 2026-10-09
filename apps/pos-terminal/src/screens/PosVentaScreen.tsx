@@ -14,6 +14,7 @@ import { esVentaDidi } from "../caja/origenVenta";
 import { listarPromociones } from "../db/promocionesRepo";
 import { obtenerOCrearSucursalIdLocal } from "../db/dispositivoLocal";
 import { precioDeVenta } from "../caja/promocionVenta";
+import { coloresPorCategoria, conOpacidad } from "../caja/coloresCategoria";
 import type { Promocion } from "@hangar421/shared";
 
 /** Catálogo + carrito — lee/escribe SQLite local, nunca la red. El catálogo de HANGAR 421 se
@@ -112,6 +113,9 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
   const t = totales();
   const buscando = busqueda.trim().length > 0;
   const nombrePorCategoria = useMemo(() => new Map(categorias.map((c) => [c.id, c.nombre])), [categorias]);
+  // Un color vivo por categoría (azul rey = bebidas frías, rojo = calientes, café = postres…),
+  // compartido por el botón de la categoría y las tarjetas de sus productos (ver coloresCategoria).
+  const colorPorCategoria = useMemo(() => coloresPorCategoria(categorias), [categorias]);
 
   // Al buscar se ignora la categoría activa y se recorre TODO el catálogo — mismo criterio que
   // el autocompletado del POS de Windows: el cajero debe encontrar un producto aunque esté
@@ -160,11 +164,21 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
             <TouchableOpacity onPress={() => setCategoriaActiva(null)} style={[estilos.chip, !categoriaActiva && estilos.chipActivo]}>
               <Text style={{ color: !categoriaActiva ? "#fff" : colores.texto, fontWeight: "700" }}>Todas</Text>
             </TouchableOpacity>
-            {categoriasConProductos.map((c) => (
-              <TouchableOpacity key={c.id} onPress={() => setCategoriaActiva(c.id)} style={[estilos.chip, categoriaActiva === c.id && estilos.chipActivo]}>
-                <Text style={{ color: categoriaActiva === c.id ? "#fff" : colores.texto, fontWeight: "700" }}>{c.nombre}</Text>
-              </TouchableOpacity>
-            ))}
+            {categoriasConProductos.map((c) => {
+              const color = colorPorCategoria.get(c.id);
+              const activa = categoriaActiva === c.id;
+              // Siempre con su color; la elegida va sólida y con borde blanco, las demás atenuadas.
+              return (
+                <TouchableOpacity
+                  key={c.id}
+                  onPress={() => setCategoriaActiva(c.id)}
+                  style={[estilos.chip, estilos.chipCategoria, { backgroundColor: activa ? color?.fondo : conOpacidad(color?.fondo ?? "#1565C0", 0.72), borderColor: activa ? "#fff" : "transparent" }]}
+                  accessibilityState={{ selected: activa }}
+                >
+                  <Text style={{ color: color?.texto ?? "#fff", fontWeight: "800" }}>{c.nombre}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
 
           <View style={estilos.barraBusqueda}>
@@ -218,10 +232,14 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
               {productosVisibles.map((p) => {
                 const contexto = etiquetaContexto(p);
                 const promo = precioDeVenta(promociones, p, new Date(), sucursalLocalId);
+                // La tarjeta lleva el color de su categoría con texto blanco: en "Todas" y en la
+                // búsqueda se distingue de un vistazo a qué familia pertenece cada producto.
+                const color = colorPorCategoria.get(p.categoriaId);
+                const fondo = color?.fondo ?? colores.navy;
                 return (
                   <TouchableOpacity
                     key={p.id}
-                    style={estilos.tarjetaProducto}
+                    style={[estilos.tarjetaProducto, { backgroundColor: fondo, borderColor: fondo }]}
                     onPress={() => tocarProducto(p)}
                   >
                     <Text style={estilos.nombreProducto} numberOfLines={2}>{p.nombre}</Text>
@@ -355,6 +373,7 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     tabsCategoria: { flexGrow: 0, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colores.borde, backgroundColor: colores.superficie },
     chip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, backgroundColor: colores.gray50 },
     chipActivo: { backgroundColor: colores.navy },
+    chipCategoria: { borderWidth: 2 },
     barraBusqueda: {
       flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 10,
       backgroundColor: colores.superficie, borderBottomWidth: 1, borderBottomColor: colores.borde,
@@ -371,18 +390,19 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     botonSolicitud: { backgroundColor: colores.navy, borderRadius: 10, paddingVertical: 12, alignItems: "center" },
     botonSolicitudTexto: { color: "#fff", fontWeight: "700" },
     grillaProductos: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-    tarjetaProducto: { width: "47%", backgroundColor: colores.superficie, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: colores.borde },
-    nombreProducto: { fontSize: 14, fontWeight: "700", color: colores.texto },
-    contextoProducto: { fontSize: 11, color: colores.textoSecundario, marginTop: 2 },
-    precioProducto: { fontSize: 15, fontWeight: "800", color: colores.navyTexto, marginTop: 6 },
-    marcaPersonaliza: { fontSize: 11, color: colores.textoSecundario, fontWeight: "600" },
+    // Fondo y borde los pone cada tarjeta con el color de su categoría; el texto va en blanco.
+    tarjetaProducto: { width: "47%", backgroundColor: colores.navy, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: colores.navy },
+    nombreProducto: { fontSize: 14, fontWeight: "800", color: "#fff" },
+    contextoProducto: { fontSize: 11, color: "rgba(255,255,255,0.8)", marginTop: 2 },
+    precioProducto: { fontSize: 15, fontWeight: "800", color: "#fff", marginTop: 6 },
+    marcaPersonaliza: { fontSize: 11, color: "rgba(255,255,255,0.85)", fontWeight: "600" },
     modificadoresItem: { fontSize: 11, color: colores.textoSecundario, marginTop: 1 },
     ayuda: { color: colores.textoSecundario, fontSize: 13, padding: 8 },
     carrito: { backgroundColor: colores.superficie, borderTopWidth: 1, borderTopColor: colores.borde, padding: 12 },
     filaNombre: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 40, paddingBottom: 6, marginBottom: 4, borderBottomWidth: 1, borderBottomColor: colores.borde },
     filaItem: { flexDirection: "row", alignItems: "center", paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colores.borde },
-    etiquetaPromo: { fontSize: 11, fontWeight: "700", color: colores.green },
-    precioAnterior: { fontSize: 12, fontWeight: "400", color: colores.textoSecundario, textDecorationLine: "line-through" },
+    etiquetaPromo: { fontSize: 11, fontWeight: "800", color: "#FFE082" },
+    precioAnterior: { fontSize: 12, fontWeight: "400", color: "rgba(255,255,255,0.75)", textDecorationLine: "line-through" },
     promoItem: { fontSize: 12, fontWeight: "700", color: colores.green },
     controlesCantidad: { flexDirection: "row", alignItems: "center", gap: 4, marginHorizontal: 8 },
     botonCantidad: { width: 40, height: 40, borderRadius: 8, backgroundColor: colores.gray50, alignItems: "center", justifyContent: "center" },

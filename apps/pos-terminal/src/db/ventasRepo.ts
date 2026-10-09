@@ -318,3 +318,94 @@ export async function cancelarVenta(db: SQLiteDatabase, datos: DatosCancelacion)
     });
   });
 }
+
+export interface DatosCambioMetodoPago {
+  ventaId: string;
+  /** Los pagos NUEVOS, completos (reemplazan a los anteriores). */
+  pagos: PagoVenta[];
+  solicitadaPorId: string;
+  autorizadaPorId: string;
+  autorizadaPorNombre: string;
+  motivo?: string;
+}
+
+/** Lo que una venta cobrada tiene registrado hoy como pagos (para ofrecer el cambio de método). */
+export async function pagosDeVenta(db: SQLiteDatabase, ventaId: string): Promise<PagoVenta[]> {
+  const filas = await db.getAllAsync<any>(
+    "SELECT metodo, monto, referencia, monto_recibido, monto_usd, tipo_cambio, empleado_id FROM pagos WHERE venta_id = ? ORDER BY created_at",
+    ventaId,
+  );
+  return filas.map((f) => ({
+    metodo: f.metodo,
+    monto: f.monto,
+    referencia: f.referencia ?? undefined,
+    montoRecibido: f.monto_recibido ?? undefined,
+    montoUsd: f.monto_usd ?? undefined,
+    tipoCambio: f.tipo_cambio ?? undefined,
+    empleadoId: f.empleado_id ?? undefined,
+  }));
+}
+
+/**
+ * Cambia el método de pago de una venta YA COBRADA (el cajero marcó efectivo y fue tarjeta, o al
+ * revés). Reemplaza los pagos locales y encola PAGO/UPDATE (accion CAMBIAR_METODO) para que el
+ * ERP haga lo mismo (PedidosService.cambiarPagosDesdeTerminal). La venta, sus productos y su
+ * total no se tocan; el corte y los reportes por método se recalculan solos porque leen `pagos`.
+ *
+ * No admite crédito de empleado en ninguno de los dos lados: ese pago mueve el monedero y
+ * cambiarlo a mano dejaría el saldo mal — para eso se cancela la venta y se vuelve a cobrar.
+ * Autorizado con PIN de supervisor en la terminal (igual que cancelar): cambiar efectivo por
+ * tarjeta mueve el efectivo esperado del corte.
+ */
+export async function cambiarMetodoPago(db: SQLiteDatabase, datos: DatosCambioMetodoPago): Promise<void> {
+  const venta = await db.getFirstAsync<any>("SELECT id, estado, total, folio_local FROM ventas WHERE id = ?", datos.ventaId);
+  if (!venta) throw new Error("Venta no encontrada");
+  if (venta.estado !== "COBRADA") throw new Error("Solo se puede cambiar el método de pago de una venta cobrada");
+  if (datos.pagos.length === 0) throw new Error("Hace falta al menos un pago");
+  const actuales = await pagosDeVenta(db, datos.ventaId);
+  const conMonedero = (lista: PagoVenta[]) => lista.some((p) => p.metodo === "MONEDERO_EMPLEADO");
+  if (conMonedero(actuales) || conMonedero(datos.pagos)) {
+    throw new Error("Una venta con crédito de empleado no admite cambio de método: cancélala y vuelve a cobrarla");
+  }
+  const { suficiente, faltante } = validarPagoSuficiente(datos.pagos, Number(venta.total));
+  if (!suficiente) throw new Error(`Los pagos no cubren el total de la venta (faltan $${faltante.toFixed(2)})`);
+
+  const ahora = new Date().toISOString();
+  const [sucursalId, dispositivoId] = await Promise.all([obtenerOCrearSucursalIdLocal(db), obtenerOCrearDispositivoId(db)]);
+  const pagosPayload: PagoVenta[] = datos.pagos.map((p) => ({
+    metodo: p.metodo,
+    monto: round2(p.monto),
+    referencia: p.referencia,
+    ...(p.montoUsd != null ? { montoUsd: round2(p.montoUsd), tipoCambio: p.tipoCambio } : {}),
+  }));
+
+  await db.withTransactionAsync(async () => {
+    await db.runAsync("DELETE FROM pagos WHERE venta_id = ?", datos.ventaId);
+    for (const pago of datos.pagos) {
+      await db.runAsync(
+        "INSERT INTO pagos (id, venta_id, metodo, monto, referencia, created_at, idempotency_key, monto_recibido, monto_usd, tipo_cambio, empleado_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+        uuid7(), datos.ventaId, pago.metodo, round2(pago.monto), pago.referencia ?? null, ahora, uuid7(),
+        pago.montoRecibido != null ? round2(pago.montoRecibido) : null, pago.montoUsd ?? null, pago.tipoCambio ?? null,
+      );
+    }
+    await db.runAsync("UPDATE ventas SET updated_at = ? WHERE id = ?", ahora, datos.ventaId);
+    await encolarSync(db, {
+      entidad: SyncEntidad.PAGO,
+      operacion: SyncOperacion.UPDATE,
+      entidadId: datos.ventaId,
+      sucursalId,
+      dispositivoId,
+      usuarioId: datos.solicitadaPorId,
+      payload: {
+        accion: "CAMBIAR_METODO",
+        pedidoId: datos.ventaId,
+        pagos: pagosPayload,
+        cajeroId: datos.solicitadaPorId,
+        autorizadoPorId: datos.autorizadaPorId,
+        autorizadoPorNombre: datos.autorizadaPorNombre,
+        motivo: datos.motivo,
+        cambiadoAtLocal: ahora,
+      },
+    });
+  });
+}

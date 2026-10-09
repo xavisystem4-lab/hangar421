@@ -3,8 +3,11 @@ import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TextInpu
 import { usarColores } from "../store/temaStore";
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { abrirBaseDeDatos } from "../db/database";
-import { consultarVentas, detalleTicket, type FiltroConsulta, type LineaTicket, type VentaConsulta } from "../db/ventasHistorialRepo";
-import { cancelarVenta } from "../db/ventasRepo";
+import { consultarVentas, detalleTicket, ventaParaReabrir, type FiltroConsulta, type LineaTicket, type VentaConsulta } from "../db/ventasHistorialRepo";
+import { cambiarMetodoPago, cancelarVenta, pagosDeVenta, type PagoVenta } from "../db/ventasRepo";
+import { etiquetaMetodoPago, listarMetodosPago } from "../db/metodosPagoRepo";
+import { useCarritoStore } from "../store/carritoStore";
+import { MetodoPago } from "@hangar421/shared";
 import { cajerosDelRango, type CajeroDelRango } from "../db/reportesRepo";
 import { procesarCola } from "../sync/syncEngine";
 import { ModalAutorizacion } from "../components/ModalAutorizacion";
@@ -36,10 +39,16 @@ const ETIQUETA_SYNC: Record<VentaConsulta["sync"], string> = {
  * cancelar baja el efectivo esperado exactamente en ese importe — que es lo que pasa en el cajón
  * al devolver el dinero.
  */
-export function PosConsultarVentasScreen({ onCerrar }: { onCerrar: () => void }) {
+/** Métodos a los que se puede cambiar un cobro ya hecho. Dólares y crédito de empleado quedan
+ *  fuera: los dólares necesitan tipo de cambio y monto recibido (eso es volver a cobrar) y el
+ *  crédito mueve el monedero de la empleada. */
+const METODOS_CAMBIABLES: MetodoPago[] = [MetodoPago.EFECTIVO, MetodoPago.TARJETA, MetodoPago.TRANSFERENCIA, MetodoPago.QR, MetodoPago.EN_LINEA, MetodoPago.OTRO];
+
+export function PosConsultarVentasScreen({ onCerrar, onReabierta }: { onCerrar: () => void; onReabierta?: () => void }) {
   const colores = usarColores();
   const estilos = crearEstilos(colores);
   const { usuario } = useAuthLocalStore();
+  const carrito = useCarritoStore();
 
   const [rango, setRango] = useState<RangoRapido>("hoy");
   const [folio, setFolio] = useState("");
@@ -53,6 +62,16 @@ export function PosConsultarVentasScreen({ onCerrar }: { onCerrar: () => void })
   const [cancelando, setCancelando] = useState<VentaConsulta | null>(null);
   const [motivo, setMotivo] = useState("");
   const [pidiendoPin, setPidiendoPin] = useState(false);
+
+  // Cambio de método de pago de una venta cobrada (efectivo ↔ tarjeta…): se elige el método,
+  // se pide el PIN de un supervisor y se reemplazan los pagos (local + ERP).
+  const [cambiandoPago, setCambiandoPago] = useState<{ venta: VentaConsulta; actuales: PagoVenta[]; opciones: MetodoPago[] } | null>(null);
+  const [metodoNuevo, setMetodoNuevo] = useState<MetodoPago | null>(null);
+  const [referenciaNueva, setReferenciaNueva] = useState("");
+  const [pinCambioPago, setPinCambioPago] = useState(false);
+  // Reabrir = cancelar este ticket y pasar sus productos al carrito para corregir y cobrar de
+  // nuevo (folio nuevo). También con PIN de supervisor: por debajo es una cancelación.
+  const [reabriendo, setReabriendo] = useState<VentaConsulta | null>(null);
 
   const filtro: FiltroConsulta = useMemo(() => {
     const ahora = new Date();
@@ -113,6 +132,90 @@ export function PosConsultarVentasScreen({ onCerrar }: { onCerrar: () => void })
       Alert.alert("Ticket cancelado", `Folio #${cancelando.folioLocal} cancelado y autorizado por ${autorizador.nombre}.`);
     } catch (e: any) {
       Alert.alert("Cancelar", e?.message ?? "No se pudo cancelar el ticket.");
+    }
+  }
+
+  async function pedirCambioPago(venta: VentaConsulta) {
+    const db = await abrirBaseDeDatos();
+    const [actuales, habilitados] = await Promise.all([pagosDeVenta(db, venta.id), listarMetodosPago(db, true)]);
+    if (actuales.some((p) => p.metodo === MetodoPago.MONEDERO_EMPLEADO)) {
+      Alert.alert("Cambiar método de pago", "Esta venta se pagó con crédito de empleado: para corregirla cancélala y vuelve a cobrarla.");
+      return;
+    }
+    const metodoActual = actuales.length === 1 ? actuales[0].metodo : null;
+    const opciones = habilitados.map((m) => m.tipo).filter((m) => METODOS_CAMBIABLES.includes(m) && m !== metodoActual);
+    if (opciones.length === 0) {
+      Alert.alert("Cambiar método de pago", "No hay otro método de pago habilitado. Actívalo en Admin → Pagos.");
+      return;
+    }
+    setDetalle(null);
+    setMetodoNuevo(null);
+    setReferenciaNueva("");
+    setCambiandoPago({ venta, actuales, opciones });
+  }
+
+  async function ejecutarCambioPago(autorizador: Autorizador) {
+    if (!cambiandoPago || !metodoNuevo || !usuario) return;
+    setPinCambioPago(false);
+    const { venta } = cambiandoPago;
+    try {
+      const db = await abrirBaseDeDatos();
+      await cambiarMetodoPago(db, {
+        ventaId: venta.id,
+        pagos: [{ metodo: metodoNuevo, monto: venta.total, referencia: referenciaNueva.trim() || undefined }],
+        solicitadaPorId: usuario.id,
+        autorizadaPorId: autorizador.id,
+        autorizadaPorNombre: autorizador.nombre,
+        motivo: `Antes: ${cambiandoPago.actuales.map((p) => etiquetaMetodoPago[p.metodo as MetodoPago] ?? p.metodo).join(" + ")}`,
+      });
+      setCambiandoPago(null);
+      await cargar();
+      procesarCola(true).catch(() => undefined);
+      Alert.alert("Método de pago cambiado", `Folio #${venta.folioLocal} ahora está cobrado con ${etiquetaMetodoPago[metodoNuevo]}. El corte de caja ya lo refleja.`);
+    } catch (e: any) {
+      Alert.alert("Cambiar método de pago", e?.message ?? "No se pudo cambiar el método de pago.");
+    }
+  }
+
+  function pedirReapertura(venta: VentaConsulta) {
+    if (carrito.items.length > 0) {
+      Alert.alert("Hay una venta en curso", "Cobra o vacía la venta actual antes de reabrir un ticket.");
+      return;
+    }
+    setDetalle(null);
+    Alert.alert(
+      `Reabrir ticket #${venta.folioLocal}`,
+      "El ticket se cancela y sus productos pasan a la pantalla de Venta para corregirlos y cobrarlos de nuevo con un folio nuevo. Hace falta el PIN de un supervisor.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        { text: "Reabrir", onPress: () => setReabriendo(venta) },
+      ],
+    );
+  }
+
+  async function ejecutarReapertura(autorizador: Autorizador) {
+    if (!reabriendo || !usuario) return;
+    const venta = reabriendo;
+    setReabriendo(null);
+    try {
+      const db = await abrirBaseDeDatos();
+      const datos = await ventaParaReabrir(db, venta.id);
+      if (datos.items.length === 0) throw new Error("El ticket no tiene productos que reabrir.");
+      await cancelarVenta(db, {
+        ventaId: venta.id,
+        motivo: `Reabierta para corrección (se cobra de nuevo con folio nuevo)`,
+        solicitadaPorId: usuario.id,
+        autorizadaPorId: autorizador.id,
+        autorizadaPorNombre: autorizador.nombre,
+      });
+      carrito.limpiar();
+      for (const item of datos.items) carrito.agregarItem(item);
+      if (datos.nombreCliente) carrito.fijarNombreCliente(datos.nombreCliente);
+      await cargar();
+      procesarCola(true).catch(() => undefined);
+      onReabierta?.();
+    } catch (e: any) {
+      Alert.alert("Reabrir ticket", e?.message ?? "No se pudo reabrir el ticket.");
     }
   }
 
@@ -268,6 +371,19 @@ export function PosConsultarVentasScreen({ onCerrar }: { onCerrar: () => void })
                 </TouchableOpacity>
               )}
 
+              {/* Correcciones de una venta cobrada: cambiar el método de pago o reabrirla. Las dos
+                  piden el PIN de un supervisor (mueven el corte / cancelan el ticket). */}
+              {detalle.venta.estado === "COBRADA" && tienePermiso(usuario, PERMISOS_TERMINAL.VENTA_COBRAR) && (
+                <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
+                  <TouchableOpacity onPress={() => pedirCambioPago(detalle.venta)} style={[estilos.botonSecundario, { flex: 1 }]}>
+                    <Text style={estilos.botonSecundarioTexto}>💳 Cambiar método de pago</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => pedirReapertura(detalle.venta)} style={[estilos.botonSecundario, { flex: 1 }]}>
+                    <Text style={estilos.botonSecundarioTexto}>↩ Reabrir cuenta</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
               {/* Sin el permiso no se ofrece; con él, igual pide el PIN de un supervisor. */}
               {detalle.venta.estado !== "CANCELADA" && tienePermiso(usuario, PERMISOS_TERMINAL.VENTA_CANCELAR) && (
                 <TouchableOpacity onPress={() => { const v = detalle.venta; setDetalle(null); pedirCancelacion(v); }} style={estilos.botonCancelarTicket}>
@@ -321,6 +437,67 @@ export function PosConsultarVentasScreen({ onCerrar }: { onCerrar: () => void })
           onAutorizado={ejecutarCancelacion}
         />
       )}
+
+      {/* Cambio de método de pago: elegir el método nuevo (un solo pago por el total). */}
+      {cambiandoPago && !pinCambioPago && (
+        <Modal visible animationType="slide" transparent onRequestClose={() => setCambiandoPago(null)}>
+          <View style={estilos.fondoModal}>
+            <View style={estilos.hoja}>
+              <View style={estilos.encabezado}>
+                <Text style={estilos.titulo}>Cambiar método de pago · #{cambiandoPago.venta.folioLocal}</Text>
+                <TouchableOpacity onPress={() => setCambiandoPago(null)}><Text style={estilos.cerrar}>✕</Text></TouchableOpacity>
+              </View>
+              <Text style={estilos.ayuda}>
+                Cobrado con {cambiandoPago.actuales.map((p) => `${etiquetaMetodoPago[p.metodo as MetodoPago] ?? p.metodo} ${formatearDinero(p.monto)}`).join(" + ")}.
+                El total ({formatearDinero(cambiandoPago.venta.total)}) no cambia; solo cómo se pagó. El corte de caja se ajusta solo.
+              </Text>
+              <View style={[estilos.chips, { marginTop: 12 }]}>
+                {cambiandoPago.opciones.map((m) => (
+                  <TouchableOpacity key={m} onPress={() => setMetodoNuevo(m)} style={[estilos.chip, metodoNuevo === m && estilos.chipActivo]}>
+                    <Text style={[estilos.chipTexto, metodoNuevo === m && estilos.chipTextoActivo]}>{etiquetaMetodoPago[m]}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {metodoNuevo && metodoNuevo !== MetodoPago.EFECTIVO && (
+                <TextInput
+                  value={referenciaNueva}
+                  onChangeText={setReferenciaNueva}
+                  placeholder={metodoNuevo === MetodoPago.TARJETA ? "Autorización o últimos 4 dígitos (opcional)" : "Referencia (opcional)"}
+                  placeholderTextColor={colores.textoSecundario}
+                  style={estilos.input}
+                />
+              )}
+              <TouchableOpacity
+                onPress={() => setPinCambioPago(true)}
+                disabled={!metodoNuevo}
+                style={[estilos.botonReimprimir, !metodoNuevo && { opacity: 0.5 }]}
+              >
+                <Text style={estilos.botonCancelarTicketTexto}>Continuar — pedir autorización</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {cambiandoPago && pinCambioPago && usuario && metodoNuevo && (
+        <ModalAutorizacion
+          titulo={`Autorizar cambio de pago #${cambiandoPago.venta.folioLocal}`}
+          descripcion={`El ticket por ${formatearDinero(cambiandoPago.venta.total)} pasará a ${etiquetaMetodoPago[metodoNuevo]}. Hace falta el PIN de un supervisor o administrador.`}
+          solicitanteId={usuario.id}
+          onCancelar={() => setPinCambioPago(false)}
+          onAutorizado={ejecutarCambioPago}
+        />
+      )}
+
+      {reabriendo && usuario && (
+        <ModalAutorizacion
+          titulo={`Autorizar reapertura #${reabriendo.folioLocal}`}
+          descripcion={`El ticket por ${formatearDinero(reabriendo.total)} se cancelará y sus productos pasarán a Venta para cobrarse de nuevo. Hace falta el PIN de un supervisor o administrador.`}
+          solicitanteId={usuario.id}
+          onCancelar={() => setReabriendo(null)}
+          onAutorizado={ejecutarReapertura}
+        />
+      )}
     </View>
   );
 }
@@ -356,5 +533,7 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     botonCancelarTicket: { backgroundColor: colores.red, borderRadius: 10, padding: 15, alignItems: "center", minHeight: 50, justifyContent: "center", marginTop: 12 },
     botonCancelarTicketTexto: { color: "#fff", fontWeight: "800", fontSize: 15 },
     botonReimprimir: { backgroundColor: colores.navy, borderRadius: 10, padding: 15, alignItems: "center", minHeight: 50, justifyContent: "center", marginTop: 12 },
+    botonSecundario: { backgroundColor: colores.gray50, borderWidth: 1, borderColor: colores.borde, borderRadius: 10, padding: 12, alignItems: "center", minHeight: 50, justifyContent: "center" },
+    botonSecundarioTexto: { color: colores.texto, fontWeight: "800", fontSize: 14, textAlign: "center" },
   });
 }
