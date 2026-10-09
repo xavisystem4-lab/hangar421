@@ -8,9 +8,11 @@ import {
   calcularMontoDescuento,
   calcularDescuentosVenta,
   calcularNivelInventario,
+  calcularPorcionesDisponibles,
   calcularSubtotal,
   calcularTotalesPedido,
   deltaExistenciaInventario,
+  resumenSemaforoInventario,
   round2,
   validarPagoSuficiente,
 } from "./calculos";
@@ -282,5 +284,40 @@ describe("calcularDescuentosVenta", () => {
 
   it("rechaza descuentos negativos", () => {
     expect(() => calcularDescuentosVenta(lineas, { tipo: TipoDescuento.MONTO, valor: -1 })).toThrow();
+  });
+});
+
+describe("resumenSemaforoInventario", () => {
+  it("cuenta cuántos insumos hay en cada color", () => {
+    expect(resumenSemaforoInventario(["OPTIMO", "CRITICO", "BAJO", "CRITICO"])).toEqual({ optimo: 1, bajo: 1, critico: 2, total: 4 });
+    expect(resumenSemaforoInventario([])).toEqual({ optimo: 0, bajo: 0, critico: 0, total: 0 });
+  });
+});
+
+describe("calcularPorcionesDisponibles", () => {
+  const receta = [
+    { insumoId: "leche", cantidad: 0.25 }, // litros por café
+    { insumoId: "cafe", cantidad: 18 }, // gramos por café
+  ];
+
+  it("las porciones son el mínimo entre insumos, redondeado hacia abajo, y señala el limitante", () => {
+    const r = calcularPorcionesDisponibles(receta, { leche: 10, cafe: 100 }); // 40 cafés de leche, 5 de café
+    expect(r).toEqual({ porciones: 5, limitante: { insumoId: "cafe", porciones: 5 } });
+  });
+
+  it("un insumo sin registro en la sucursal cuenta como 0", () => {
+    expect(calcularPorcionesDisponibles(receta, { leche: 10 }).porciones).toBe(0);
+  });
+
+  it("sin receta no se puede saber (null)", () => {
+    expect(calcularPorcionesDisponibles([], { leche: 10 })).toEqual({ porciones: null, limitante: null });
+  });
+
+  it("no se deja engañar por el punto flotante (0.3 / 0.1 son 3 porciones, no 2)", () => {
+    expect(calcularPorcionesDisponibles([{ insumoId: "x", cantidad: 0.1 }], { x: 0.3 }).porciones).toBe(3);
+  });
+
+  it("ignora cantidades de receta en 0 y existencias negativas", () => {
+    expect(calcularPorcionesDisponibles([{ insumoId: "x", cantidad: 0 }, { insumoId: "y", cantidad: 2 }], { x: 0, y: -4 }).porciones).toBe(0);
   });
 });

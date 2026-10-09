@@ -173,6 +173,52 @@ export function calcularNivelInventario(existencia: number, minimo: number, maxi
   return { porcentaje, nivel };
 }
 
+export interface ResumenSemaforoInventario {
+  optimo: number;
+  bajo: number;
+  critico: number;
+  total: number;
+}
+
+/** Cuenta cuántos insumos hay en cada color del semáforo (verde óptimo / amarillo bajo / rojo
+ *  crítico) — encabezado del reporte de inventario y de la lista de compras. */
+export function resumenSemaforoInventario(niveles: NivelInventario[]): ResumenSemaforoInventario {
+  const r: ResumenSemaforoInventario = { optimo: 0, bajo: 0, critico: 0, total: niveles.length };
+  for (const n of niveles) {
+    if (n === "OPTIMO") r.optimo++;
+    else if (n === "BAJO") r.bajo++;
+    else r.critico++;
+  }
+  return r;
+}
+
+export interface PorcionesDisponibles {
+  /** Cuántas unidades del producto alcanzan a prepararse con la existencia actual (entero,
+   *  redondeado hacia abajo). `null` cuando el producto no tiene receta: no se puede saber. */
+  porciones: number | null;
+  /** El insumo que se acaba primero (el que limita las porciones), si hay receta. */
+  limitante: { insumoId: string; porciones: number } | null;
+}
+
+/** Existencia "en producto": con la receta del producto (cuánto insumo lleva cada unidad) y la
+ *  existencia de cada insumo en la sucursal, calcula cuántas unidades alcanzan — el mínimo entre
+ *  insumos. Un insumo sin registro de inventario en la sucursal cuenta como existencia 0; una
+ *  cantidad de receta 0 o negativa se ignora (no limita). */
+export function calcularPorcionesDisponibles(
+  receta: { insumoId: string; cantidad: number }[],
+  existencias: Record<string, number>,
+): PorcionesDisponibles {
+  let limitante: { insumoId: string; porciones: number } | null = null;
+  for (const item of receta) {
+    if (!(item.cantidad > 0)) continue;
+    const existencia = Math.max(0, existencias[item.insumoId] ?? 0);
+    // Se evita el error de punto flotante (0.3/0.1 = 2.9999…) redondeando a 6 decimales antes del piso.
+    const porciones = Math.floor(Math.round((existencia / item.cantidad) * 1e6) / 1e6);
+    if (limitante === null || porciones < limitante.porciones) limitante = { insumoId: item.insumoId, porciones };
+  }
+  return { porciones: limitante?.porciones ?? null, limitante };
+}
+
 export interface DescuentoVenta {
   tipo: TipoDescuento;
   valor: number;

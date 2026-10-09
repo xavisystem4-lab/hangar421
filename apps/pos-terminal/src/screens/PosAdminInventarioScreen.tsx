@@ -1,5 +1,5 @@
 import { createRef, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { abrirBaseDeDatos } from "../db/database";
@@ -35,6 +35,10 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
   const [pendientes, setPendientes] = useState(0);
   /** Lo tecleado en el conteo físico, por insumo. Vacío = ese insumo no se contó. */
   const [conteo, setConteo] = useState<Record<string, string>>({});
+  /** Entrada/merma en captura (modal propio: Alert.prompt solo existe en iOS, en Android no hacía nada). */
+  const [ajuste, setAjuste] = useState<{ item: ExistenciaInsumo; tipo: "ENTRADA" | "MERMA" } | null>(null);
+  const [cantidadAjuste, setCantidadAjuste] = useState("");
+  const [guardandoAjuste, setGuardandoAjuste] = useState(false);
 
   const COLOR_NIVEL: Record<NivelStock, string> = {
     agotado: colores.red,
@@ -202,26 +206,34 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
 
   function ajustar(item: ExistenciaInsumo, tipo: "ENTRADA" | "MERMA") {
     if (!usuario) return;
-    Alert.prompt?.(
-      tipo === "ENTRADA" ? `Entrada de ${item.nombre}` : `Merma de ${item.nombre}`,
-      `Cantidad en ${item.unidadMedida}`,
-      async (texto) => {
-        const cantidad = Number(texto);
-        if (!cantidad || cantidad <= 0) return;
-        const db = await abrirBaseDeDatos();
-        await registrarMovimiento(db, {
-          insumoId: item.insumoId,
-          tipo,
-          cantidad,
-          motivo: tipo === "ENTRADA" ? "Recepción de mercancía" : "Merma registrada en el Punto de Venta",
-          usuarioId: usuario.id,
-        });
-        await cargar();
-      },
-      "plain-text",
-      "",
-      "numeric",
-    );
+    setCantidadAjuste("");
+    setAjuste({ item, tipo });
+  }
+
+  async function confirmarAjuste() {
+    if (!usuario || !ajuste) return;
+    const cantidad = Number(cantidadAjuste.replace(",", "."));
+    if (!cantidad || cantidad <= 0) {
+      Alert.alert("Cantidad", `Escribe cuántos ${ajuste.item.unidadMedida} ${ajuste.tipo === "ENTRADA" ? "llegaron" : "se perdieron"}.`);
+      return;
+    }
+    setGuardandoAjuste(true);
+    try {
+      const db = await abrirBaseDeDatos();
+      await registrarMovimiento(db, {
+        insumoId: ajuste.item.insumoId,
+        tipo: ajuste.tipo,
+        cantidad,
+        motivo: ajuste.tipo === "ENTRADA" ? "Recepción de mercancía" : "Merma registrada en el Punto de Venta",
+        usuarioId: usuario.id,
+      });
+      setAjuste(null);
+      await cargar();
+    } catch (e: any) {
+      Alert.alert("Inventario", e?.message ?? "No se pudo registrar el movimiento.");
+    } finally {
+      setGuardandoAjuste(false);
+    }
   }
 
   async function exportarCompras(formato: "pdf" | "excel") {
@@ -335,10 +347,13 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
                   <View key={i.insumoId} style={[estilos.filaInsumo, { borderLeftColor: COLOR_NIVEL[nivel] }]}>
                     <View style={{ flex: 1 }}>
                       <Text style={estilos.nombreInsumo}>{i.nombre}</Text>
+                      <View style={{ flexDirection: "row", alignItems: "baseline", gap: 4 }}>
+                        <Text style={[estilos.existenciaGrande, { color: COLOR_NIVEL[nivel] }]}>{i.existencia}</Text>
+                        <Text style={[estilos.ayuda, { fontWeight: "700", color: COLOR_NIVEL[nivel] }]}>{i.unidadMedida}</Text>
+                      </View>
                       <Text style={estilos.ayuda}>
-                        {i.existencia} {i.unidadMedida} · mínimo {i.minimo} · {ETIQUETA_NIVEL[nivel]}
+                        mínimo {i.minimo} · {ETIQUETA_NIVEL[nivel]}{i.proveedorNombre ? ` · ${i.proveedorNombre}` : ""}
                       </Text>
-                      {i.proveedorNombre ? <Text style={estilos.ayuda}>{i.proveedorNombre}</Text> : null}
                     </View>
                     <View style={{ gap: 6 }}>
                       <TouchableOpacity onPress={() => ajustar(i, "ENTRADA")} style={[estilos.botonMini, { backgroundColor: colores.green }]}>
@@ -492,6 +507,43 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
         </TouchableOpacity>
       </View>
     )}
+
+    {ajuste && (
+      <Modal visible animationType="fade" transparent onRequestClose={() => setAjuste(null)}>
+        <View style={estilos.fondoModal}>
+          <View style={estilos.hojaModal}>
+            <Text style={estilos.subtitulo}>{ajuste.tipo === "ENTRADA" ? "+ Entrada" : "− Merma"} · {ajuste.item.nombre}</Text>
+            <Text style={estilos.ayuda}>
+              Existencia actual: {ajuste.item.existencia} {ajuste.item.unidadMedida}.{" "}
+              {ajuste.tipo === "ENTRADA" ? "¿Cuántos llegaron? Se suman a la existencia." : "¿Cuántos se perdieron? Se restan de la existencia."}
+            </Text>
+            <TextInput
+              value={cantidadAjuste}
+              onChangeText={setCantidadAjuste}
+              placeholder={`Cantidad en ${ajuste.item.unidadMedida}`}
+              placeholderTextColor={colores.textoSecundario}
+              keyboardType="decimal-pad"
+              autoFocus
+              style={[estilos.input, { marginTop: 10, fontSize: 22, fontWeight: "800", textAlign: "center" }]}
+              onSubmitEditing={confirmarAjuste}
+            />
+            {Number(cantidadAjuste.replace(",", ".")) > 0 && (
+              <Text style={[estilos.ayuda, { textAlign: "center", marginBottom: 8 }]}>
+                Quedarán {Math.max(0, ajuste.item.existencia + (ajuste.tipo === "ENTRADA" ? 1 : -1) * Number(cantidadAjuste.replace(",", "."))).toLocaleString("es-MX", { maximumFractionDigits: 2 })} {ajuste.item.unidadMedida}
+              </Text>
+            )}
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <TouchableOpacity onPress={() => setAjuste(null)} style={[estilos.botonMini, { flex: 1, backgroundColor: colores.gray50, borderWidth: 1, borderColor: colores.borde, minHeight: 46 }]}>
+                <Text style={{ color: colores.texto, fontWeight: "700" }}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={confirmarAjuste} disabled={guardandoAjuste} style={[estilos.botonMini, { flex: 1, backgroundColor: ajuste.tipo === "ENTRADA" ? colores.green : colores.red, minHeight: 46 }]}>
+                {guardandoAjuste ? <ActivityIndicator color="#fff" /> : <Text style={estilos.botonMiniTexto}>{ajuste.tipo === "ENTRADA" ? "Registrar entrada" : "Registrar merma"}</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    )}
     </View>
   );
 }
@@ -520,7 +572,10 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
       backgroundColor: colores.superficie, borderRadius: 10, borderLeftWidth: 5,
     },
     nombreInsumo: { fontSize: 14, fontWeight: "700", color: colores.texto },
-    botonMini: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 6, minWidth: 82, alignItems: "center" },
+    botonMini: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 6, minWidth: 82, alignItems: "center", justifyContent: "center" },
+    existenciaGrande: { fontSize: 28, fontWeight: "900", lineHeight: 32 },
+    fondoModal: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "center", padding: 24 },
+    hojaModal: { backgroundColor: colores.fondo, borderRadius: 16, padding: 18 },
     botonMiniTexto: { color: "#fff", fontSize: 12, fontWeight: "700" },
     filaConteo: {
       flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 6,

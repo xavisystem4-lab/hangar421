@@ -1,11 +1,11 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { RolUsuario, TipoMovimientoInventario } from "@hangar421/shared";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../common/guards/roles.guard";
 import { Roles } from "../common/decorators/roles.decorator";
 import { Audit } from "../common/interceptors/audit.interceptor";
-import { InventarioService } from "./inventario.service";
+import { InventarioService, type ReporteInventarioPorCorreo } from "./inventario.service";
 
 @ApiTags("inventario")
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -56,6 +56,25 @@ export class InventarioController {
   @Get("existencias")
   existencias(@Query("sucursalId") sucursalId: string) {
     return this.inventario.existencias(sucursalId);
+  }
+
+  /** Existencia "en producto": cuántas unidades de cada producto alcanzan con los insumos de la sucursal. */
+  @Get("productos-existencias")
+  existenciasPorProducto(@Query("sucursalId") sucursalId: string) {
+    return this.inventario.existenciasPorProducto(sucursalId);
+  }
+
+  /** Si el servidor puede enviar correos (para que el ERP ofrezca "Enviar por correo" o la alternativa manual). */
+  @Get("reporte/correo")
+  estadoCorreo() {
+    return this.inventario.estadoCorreo();
+  }
+
+  @Post("reporte/enviar")
+  @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL, RolUsuario.SUPERVISOR)
+  @Audit("INVENTARIO", "ENVIAR_REPORTE")
+  enviarReporte(@Body() body: ReporteInventarioPorCorreo, @Req() req: { user?: { nombre?: string; email?: string } }) {
+    return this.inventario.enviarReportePorCorreo(body, req.user?.nombre ?? req.user?.email);
   }
 
   @Get("alertas")

@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { NivelInventario, Sucursal } from "@hangar421/shared";
-import { calcularNivelInventario } from "@hangar421/shared";
+import { calcularNivelInventario, resumenSemaforoInventario } from "@hangar421/shared";
 import { apiFetch } from "@/lib/api";
 import { useAuthCrm } from "@/lib/authClient";
 import { useSucursalActiva } from "@/store/sucursalActiva";
-import { ReporteInventario } from "@/components/ReporteInventario";
+import { ReporteInventario, SEMAFORO } from "@/components/ReporteInventario";
+import { PanelExistencias, type ExistenciaProducto } from "@/components/PanelExistencias";
 
 interface Existencia {
   insumoId: string;
@@ -92,6 +93,8 @@ export default function InventarioPage() {
   const [sucursalId, setSucursalId] = useState("");
   const [existencias, setExistencias] = useState<Existencia[]>([]);
   const [insumos, setInsumos] = useState<Insumo[]>([]);
+  const [existenciasProducto, setExistenciasProducto] = useState<ExistenciaProducto[]>([]);
+  const [actualizadoEn, setActualizadoEn] = useState<Date | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
 
   const [busqueda, setBusqueda] = useState("");
@@ -152,13 +155,21 @@ export default function InventarioPage() {
 
   async function cargar(suc: string) {
     if (!contexto || !suc) return;
-    const [ex, ins] = await Promise.all([
+    const [ex, ins, prods] = await Promise.all([
       apiFetch<Existencia[]>(`/inventario/existencias?sucursalId=${suc}`),
       apiFetch<Insumo[]>(`/inventario/insumos?empresaId=${contexto.usuario.empresaId}`),
+      apiFetch<ExistenciaProducto[]>(`/inventario/productos-existencias?sucursalId=${suc}`).catch(() => [] as ExistenciaProducto[]),
     ]);
     setExistencias(ex);
     setInsumos(ins);
+    setExistenciasProducto(prods);
+    setActualizadoEn(new Date());
     cargarTraspasosPendientes(suc);
+  }
+
+  function cargarSucursales() {
+    if (!contexto) return;
+    apiFetch<Sucursal[]>(`/sucursales?empresaId=${contexto.usuario.empresaId}`).then(setSucursales).catch(() => {});
   }
 
   function cargarProveedores() {
@@ -182,8 +193,20 @@ export default function InventarioPage() {
     setSucursalId(seleccion.sucursalId);
     cargar(seleccion.sucursalId);
     cargarProveedores();
+    cargarSucursales();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contexto, seleccion?.sucursalId]);
+
+  // La existencia es "la del momento": se refresca sola cada minuto y al volver a la pestaña,
+  // para que lo que se ve en grande sea lo real y no lo de hace una hora.
+  useEffect(() => {
+    if (!sucursalId) return;
+    const intervalo = setInterval(() => cargar(sucursalId), 60_000);
+    const alVolver = () => { if (document.visibilityState === "visible") cargar(sucursalId); };
+    document.addEventListener("visibilitychange", alVolver);
+    return () => { clearInterval(intervalo); document.removeEventListener("visibilitychange", alVolver); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sucursalId]);
 
   // Filas combinadas (insumo + su existencia en la sucursal elegida) con búsqueda y filtro de
   // nivel aplicados — es la única tabla ahora, antes existían dos por separado.
@@ -201,6 +224,15 @@ export default function InventarioPage() {
       .filter((f) => (texto ? f.insumo.nombre.toLowerCase().includes(texto) : true))
       .filter((f) => (filtroNivel === "TODOS" ? true : f.nivel === filtroNivel));
   }, [insumos, existencias, busqueda, filtroNivel]);
+
+  // Semáforo de TODO el inventario de la sucursal (sin buscador ni filtro), para las tarjetas de arriba.
+  const resumenSemaforo = useMemo(
+    () => resumenSemaforoInventario(insumos.map((i) => {
+      const ex = existencias.find((e) => e.insumoId === i.id);
+      return calcularNivelInventario(ex ? Number(ex.existencia) : 0, ex ? Number(ex.minimo) : 0, ex?.maximo != null ? Number(ex.maximo) : null).nivel;
+    })),
+    [insumos, existencias],
+  );
 
   async function crearInsumo() {
     if (!contexto || !nuevoInsumo.nombre.trim()) return;
@@ -379,6 +411,18 @@ export default function InventarioPage() {
         </div>
       )}
 
+      <PanelExistencias
+        filas={filas}
+        productos={existenciasProducto}
+        resumen={resumenSemaforo}
+        filtroNivel={filtroNivel}
+        onFiltroNivel={setFiltroNivel}
+        busqueda={busqueda}
+        actualizadoEn={actualizadoEn}
+        onActualizar={() => cargar(sucursalId)}
+        onListaCompras={() => setModalListaCompras(true)}
+      />
+
       {/* Barra de herramientas: buscador + filtro de nivel + acciones — mismo layout que el
           módulo de inventario de referencia (buscar insumo / filtro de niveles / botones de
           acción a la derecha). */}
@@ -458,7 +502,10 @@ export default function InventarioPage() {
                 <tr key={i.id} style={{ borderBottom: "1px solid var(--h421-gray-200)" }}>
                   <td style={{ padding: 8, fontWeight: 600 }}>{i.nombre}</td>
                   <td style={{ padding: 8 }}>{i.proveedor?.nombre ?? "—"}</td>
-                  <td style={{ padding: 8 }}>{f.existencia} {i.unidadMedida}</td>
+                  <td style={{ padding: 8, whiteSpace: "nowrap" }}>
+                    <span style={{ fontSize: 22, fontWeight: 800, color: SEMAFORO[f.nivel].color, lineHeight: 1 }}>{f.existencia}</span>
+                    <span style={{ fontSize: 12, marginLeft: 4, color: "var(--h421-gray-400)" }}>{i.unidadMedida}</span>
+                  </td>
                   <td style={{ padding: 8 }}>{f.minimo} {i.unidadMedida}</td>
                   <td style={{ padding: 8, minWidth: 140 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -677,8 +724,8 @@ export default function InventarioPage() {
         </Modal>
       )}
 
-      {modalReporte && <ReporteInventario tipo="reporte" filas={filas} onCerrar={() => setModalReporte(false)} />}
-      {modalListaCompras && <ReporteInventario tipo="compras" filas={filas} onCerrar={() => setModalListaCompras(false)} />}
+      {modalReporte && <ReporteInventario tipo="reporte" filas={filas} sucursalId={sucursalId} sucursalNombre={seleccion?.nombre} onCerrar={() => setModalReporte(false)} />}
+      {modalListaCompras && <ReporteInventario tipo="compras" filas={filas} sucursalId={sucursalId} sucursalNombre={seleccion?.nombre} onCerrar={() => setModalListaCompras(false)} />}
     </div>
   );
 }
