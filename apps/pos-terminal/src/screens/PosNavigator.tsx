@@ -31,6 +31,8 @@ import { PosAdminSincronizacionScreen } from "./PosAdminSincronizacionScreen";
 import { PosAdminImpresoraScreen } from "./PosAdminImpresoraScreen";
 import { PosAdminPlataformasScreen } from "./PosAdminPlataformasScreen";
 import { useAvisosDelivery } from "../plataformas/useAvisosDelivery";
+import { useNotificacionesDidi, type PedidoDetectado } from "../plataformas/useNotificacionesDidi";
+import { nombrePedidoDidi } from "../plataformas/notificacionesDidi";
 import { ReciboEnPantallaScreen } from "./ReciboEnPantallaScreen";
 
 type Pantalla = "venta" | "cobro" | "caja" | "consultar" | "admin";
@@ -66,6 +68,7 @@ const ETIQUETA_SYNC: Record<EstadoSync, string> = {
 export function PosNavigator() {
   const { usuario, salir, misSucursales, elegirSucursal } = useAuthLocalStore();
   const carritoConProductos = useCarritoStore((s) => s.items.length > 0);
+  const fijarNombreCliente = useCarritoStore((s) => s.fijarNombreCliente);
   const sync = useSyncStatusStore();
   const colores = usarColores();
   const estilos = crearEstilos(colores);
@@ -103,6 +106,23 @@ export function PosNavigator() {
     delivery.descartarAviso();
     setPantallaAdmin("plataformas");
     setPantalla("admin");
+  }
+
+  // Pedidos que anuncia la app de DiDi instalada en ESTA tablet (notificaciones): avisan igual
+  // que los de la bandeja del ERP y, al tocar, dejan la Venta lista para capturar el pedido con
+  // su número y el grupo DIDI abierto (ver plataformas/useNotificacionesDidi.ts).
+  const didi = useNotificacionesDidi((puede(PERMISOS_TERMINAL.VENTA_COBRAR) || puedeDelivery) && !mostrarConexion);
+  const [categoriaSugerida, setCategoriaSugerida] = useState<string | null>(null);
+  function registrarDidi(p: PedidoDetectado) {
+    if (carritoConProductos) {
+      Alert.alert("Hay una venta en curso", "Cobra o vacía la venta actual y vuelve a tocar el aviso de DiDi.");
+      return;
+    }
+    fijarNombreCliente(nombrePedidoDidi(p));
+    didi.atender(p.id);
+    didi.descartarAviso();
+    setCategoriaSugerida("DIDI");
+    setPantalla("venta");
   }
 
   // Indicador de sucursal activa: se recarga al volver de la pantalla de conexión, que es el
@@ -256,6 +276,7 @@ export function PosNavigator() {
 
   async function cobroConfirmado(ventaId: string, folio: number, total: number) {
     setUltimoFolio({ folio, total });
+    setCategoriaSugerida(null);
     setPantalla("venta");
     // El ticket ya se intentó imprimir dentro de PosCobroScreen (best-effort, después de
     // confirmar la venta) — si sigue pendiente, este es el respaldo en pantalla.
@@ -361,6 +382,16 @@ export function PosNavigator() {
         </View>
       )}
 
+      {didi.aviso && (
+        <View style={estilos.avisoDelivery} accessibilityRole="alert">
+          <TouchableOpacity onPress={() => registrarDidi(didi.aviso!)} style={{ flex: 1 }}>
+            <Text style={estilos.avisoDeliveryTexto}>🛵 {didi.aviso.resumen}</Text>
+            <Text style={estilos.avisoDeliverySub}>Desde la app de DiDi en esta tablet · tocar para registrarlo</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={didi.descartarAviso}><Text style={estilos.avisoDeliveryTexto}>✕</Text></TouchableOpacity>
+        </View>
+      )}
+
       {puedeDelivery && delivery.aviso && (
         <View style={estilos.avisoDelivery} accessibilityRole="alert">
           <TouchableOpacity onPress={abrirDelivery} style={{ flex: 1 }}>
@@ -379,7 +410,7 @@ export function PosNavigator() {
       )}
 
       <View style={{ flex: 1 }}>
-        {pantalla === "venta" && <PosVentaScreen key={versionSucursal} onCobrar={() => exigir(PERMISOS_TERMINAL.VENTA_COBRAR, () => setPantalla("cobro"))} />}
+        {pantalla === "venta" && <PosVentaScreen key={versionSucursal} categoriaSugerida={categoriaSugerida} onCobrar={() => exigir(PERMISOS_TERMINAL.VENTA_COBRAR, () => setPantalla("cobro"))} />}
         {pantalla === "cobro" && <PosCobroScreen onCerrar={() => setPantalla("venta")} onCobrado={cobroConfirmado} />}
         {pantalla === "caja" && <PosCajaScreen />}
         {pantalla === "consultar" && <PosConsultarVentasScreen onCerrar={() => setPantalla("venta")} onReabierta={() => setPantalla("venta")} />}
@@ -404,7 +435,12 @@ export function PosNavigator() {
               {pantallaAdmin === "inventario" && <PosAdminInventarioScreen onCerrar={() => setPantalla("venta")} />}
               {pantallaAdmin === "sync" && <PosAdminSincronizacionScreen onCerrar={() => setPantalla("venta")} />}
               {pantallaAdmin === "impresora" && <PosAdminImpresoraScreen onCerrar={() => setPantalla("venta")} />}
-              {pantallaAdmin === "plataformas" && <PosAdminPlataformasScreen onCerrar={() => setPantalla("venta")} />}
+              {pantallaAdmin === "plataformas" && (
+                <PosAdminPlataformasScreen
+                  onCerrar={() => setPantalla("venta")}
+                  didi={{ detectados: didi.detectados, atender: didi.atender, recargar: didi.recargar, registrar: registrarDidi }}
+                />
+              )}
               </>}
             </View>
           </View>

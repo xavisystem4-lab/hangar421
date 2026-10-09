@@ -1,0 +1,20 @@
+apply plugin: 'com.android.library'
+
+group = 'com.hangar421'
+version = '0.1.0'
+
+// Mismo esqueleto que modules/hangar-usb-printer (y que los módulos oficiales de Expo SDK 51).
+def expoModulesCorePlugin = new File(project(":expo-modules-core").projectDir.absolutePath, "ExpoModulesCorePlugin.gradle")
+apply from: expoModulesCorePlugin
+applyKotlinExpoModulesCorePlugin()
+useCoreDependencies()
+useDefaultAndroidSdkVersions()
+useExpoPublishing()
+
+android {
+  namespace "expo.modules.hangarnotificaciones"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+}
