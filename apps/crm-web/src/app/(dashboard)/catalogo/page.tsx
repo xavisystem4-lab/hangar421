@@ -29,15 +29,18 @@ export default function CatalogoPage() {
   // Se usa el mismo lugar que el panel de Receta: solo uno abierto a la vez.
   const [panelProducto, setPanelProducto] = useState<Producto | null | undefined>(undefined);
 
-  // Buscador + filtro de categoría sobre la lista. Se filtra en el navegador (el catálogo
-  // completo ya viene en una sola consulta) y la lista se agrupa por categoría para que con
-  // "Todas" se vea el catálogo entero ordenado como en la terminal.
+  // Buscador + botones de categoría sobre la lista. Se filtra en el navegador (el catálogo
+  // completo ya viene en una sola consulta). Al entrar no se lista nada: la lista aparece al
+  // tocar una categoría ("TODAS" incluida) o al escribir en el buscador, que entonces busca en
+  // todo el catálogo salvo que haya una categoría elegida.
   const [busqueda, setBusqueda] = useState("");
-  const [filtroCategoria, setFiltroCategoria] = useState<string>("");
+  // null = ninguna elegida todavía (lista vacía); "" = TODAS; id = una categoría.
+  const [filtroCategoria, setFiltroCategoria] = useState<string | null>(null);
+  const hayFiltro = filtroCategoria !== null || busqueda.trim() !== "";
 
   const productosFiltrados = useMemo(
-    () => filtrarProductos(productos, filtroCategoria, busqueda),
-    [productos, filtroCategoria, busqueda],
+    () => (hayFiltro ? filtrarProductos(productos, filtroCategoria ?? "", busqueda) : []),
+    [productos, filtroCategoria, busqueda, hayFiltro],
   );
   const grupos = useMemo(
     () => categorias
@@ -145,28 +148,36 @@ export default function CatalogoPage() {
 
       <div className="h421-grid-2col" style={{ display: "grid", gridTemplateColumns: productoReceta || panelProducto !== undefined ? "1.6fr 1fr" : "1fr", gap: 16, alignItems: "start" }}>
         <div>
-          {/* Barra de herramientas: buscador + categoría, mismo layout que Inventario. */}
-          <div className="card" style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", marginBottom: 16 }}>
-            <input
-              placeholder="Buscar producto…"
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-              style={{ flex: "1 1 220px", padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }}
-            />
-            <select value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)} style={{ padding: 10, borderRadius: 8 }}>
-              <option value="">Todas las categorías ({productos.length})</option>
+          {/* Barra de herramientas: botones de categoría arriba y buscador debajo. */}
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
               {categorias.map((c) => (
-                <option key={c.id} value={c.id}>{c.nombre} ({conteoPorCategoria.get(c.id) ?? 0})</option>
+                <BotonCategoria key={c.id} activo={filtroCategoria === c.id} onClick={() => setFiltroCategoria(filtroCategoria === c.id ? null : c.id)}>
+                  {c.nombre} <span style={{ opacity: 0.7, fontWeight: 400 }}>({conteoPorCategoria.get(c.id) ?? 0})</span>
+                </BotonCategoria>
               ))}
-            </select>
-            {(busqueda || filtroCategoria) && (
-              <button onClick={() => { setBusqueda(""); setFiltroCategoria(""); }} style={{ background: "var(--h421-gray-200)", padding: "10px 14px", fontSize: 13 }}>
-                Limpiar
-              </button>
-            )}
-            <span style={{ fontSize: 13, color: "var(--h421-gray-400)", marginLeft: "auto" }}>
-              {productosFiltrados.length} de {productos.length} productos
-            </span>
+              {categorias.length > 0 && (
+                <BotonCategoria activo={filtroCategoria === ""} onClick={() => setFiltroCategoria(filtroCategoria === "" ? null : "")}>
+                  Todas <span style={{ opacity: 0.7, fontWeight: 400 }}>({productos.length})</span>
+                </BotonCategoria>
+              )}
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+              <input
+                placeholder={filtroCategoria ? "Buscar en esta categoría…" : "Buscar producto en todo el catálogo…"}
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+                style={{ flex: "1 1 220px", padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }}
+              />
+              {hayFiltro && (
+                <button onClick={() => { setBusqueda(""); setFiltroCategoria(null); }} style={{ background: "var(--h421-gray-200)", padding: "10px 14px", fontSize: 13 }}>
+                  Limpiar
+                </button>
+              )}
+              <span style={{ fontSize: 13, color: "var(--h421-gray-400)", marginLeft: "auto" }}>
+                {hayFiltro ? `${productosFiltrados.length} de ${productos.length} productos` : `${productos.length} productos en ${categorias.length} categorías`}
+              </span>
+            </div>
           </div>
 
           <div className="card h421-tabla-wrap" style={{ overflowX: "auto", marginBottom: 16 }}>
@@ -230,8 +241,12 @@ export default function CatalogoPage() {
                 ))}
                 {productosFiltrados.length === 0 && (
                   <tr>
-                    <td colSpan={6} style={{ padding: 16, color: "var(--h421-gray-400)", textAlign: "center" }}>
-                      {productos.length === 0 ? "Sin productos en el catálogo." : "Ningún producto coincide con la búsqueda."}
+                    <td colSpan={6} style={{ padding: 24, color: "var(--h421-gray-400)", textAlign: "center" }}>
+                      {productos.length === 0
+                        ? "Sin productos en el catálogo."
+                        : !hayFiltro
+                          ? "Elige una categoría arriba, o escribe el nombre de un producto para buscarlo."
+                          : "Ningún producto coincide con la búsqueda."}
                     </td>
                   </tr>
                 )}
@@ -293,15 +308,37 @@ export default function CatalogoPage() {
   );
 }
 
+/** Botón de categoría de la barra superior (píldora). El activo se pinta en navy con texto
+ *  blanco: contrasta en ambos temas porque el navy de marca no cambia con el tema. */
+function BotonCategoria({ activo, onClick, children }: { activo: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-pressed={activo}
+      style={{
+        padding: "8px 14px", borderRadius: 999, fontSize: 13, fontWeight: 700,
+        background: activo ? "var(--h421-navy)" : "var(--h421-gray-50)",
+        color: activo ? "#fff" : "var(--h421-black)",
+        border: activo ? "1px solid var(--h421-navy)" : "1px solid var(--h421-gray-200)",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 /** Fila de encabezado de categoría dentro de la tabla (solo cuando se ven todas las categorías;
  *  si ya se filtró por una, la columna "Categoría" basta y el encabezado sería ruido). */
 function FilasCategoria({ nombre, total, mostrarEncabezado, children }: { nombre: string; total: number; mostrarEncabezado: boolean; children: ReactNode }) {
   return (
     <>
       {mostrarEncabezado && (
-        <tr style={{ background: "var(--h421-gray-50)" }}>
-          <td colSpan={6} style={{ padding: "8px 8px 6px", fontWeight: 700, fontSize: 13, letterSpacing: 0.3, textTransform: "uppercase", color: "var(--h421-navy)" }}>
-            {nombre} <span style={{ fontWeight: 400, color: "var(--h421-gray-400)" }}>({total})</span>
+        // Ámbar de texto: es una variable que ya cambia con el tema (oscuro sobre claro en modo
+        // día, claro sobre oscuro en modo noche), y en ambos se distingue del texto de los productos.
+        // El navy de marca se perdía en modo noche porque ahí es casi del color del fondo.
+        <tr style={{ background: "var(--h421-amber-bg)" }}>
+          <td colSpan={6} style={{ padding: "8px 8px 6px", fontWeight: 700, fontSize: 13, letterSpacing: 0.3, textTransform: "uppercase", color: "var(--h421-amber-texto)" }}>
+            {nombre} <span style={{ fontWeight: 400, opacity: 0.75 }}>({total})</span>
           </td>
         </tr>
       )}
