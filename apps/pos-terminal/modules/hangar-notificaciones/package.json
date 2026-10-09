@@ -1,0 +1,7 @@
+{
+  "name": "hangar-notificaciones",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Módulo nativo local (Expo Modules, Kotlin): escucha las notificaciones de la app de DiDi (u otra de reparto) instalada en la misma tablet para avisar de pedidos nuevos en el POS.",
+  "main": "index.ts"
+}

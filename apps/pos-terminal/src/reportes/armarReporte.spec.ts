@@ -131,3 +131,26 @@ describe("htmlReporte", () => {
     expect(vacio).toContain("Sin ventas en el rango.");
   });
 });
+
+describe("Top 10 y menos vendidos en el reporte", () => {
+  const conMenos = { ...BASE, topProductos: [{ nombre: "Latte", cantidad: 12, total: 840 }, { nombre: "Bagel", cantidad: 5, total: 300 }], menosVendidos: [{ nombre: "Té chai", cantidad: 0, total: 0 }, { nombre: "Brownie", cantidad: 1, total: 45 }] };
+
+  it("el resumen numera el top y agrega la sección de menos vendidos solo cuando viene", () => {
+    const filas = filasResumen(conMenos).map((f) => f.join("|"));
+    expect(filas).toContain("Top 10 productos más vendidos|Unidades|Importe");
+    expect(filas).toContain("1. Latte|12|840");
+    expect(filas).toContain("2. Bagel|5|300");
+    expect(filas).toContain("Productos menos vendidos|Unidades|Importe");
+    expect(filas).toContain("Té chai|0|0");
+    expect(filasResumen(BASE).map((f) => f.join("|"))).not.toContain("Productos menos vendidos|Unidades|Importe");
+  });
+
+  it("el HTML lleva las dos tablas (y escapa el nombre)", () => {
+    const html = htmlReporte({ ...conMenos, menosVendidos: [{ nombre: "H & T", cantidad: 0, total: 0 }] });
+    expect(html).toContain("Top 10 productos más vendidos");
+    expect(html).toContain("1. Latte");
+    expect(html).toContain("Productos menos vendidos");
+    expect(html).toContain("H &amp; T");
+    expect(htmlReporte(BASE)).not.toContain("Productos menos vendidos");
+  });
+});

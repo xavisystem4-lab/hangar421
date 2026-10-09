@@ -22,6 +22,8 @@ import {
 } from "../plataformas/plataformasApi";
 import { esperaTrasFallos, minutosEsperando } from "../plataformas/avisosDelivery";
 import { CLAVE_SONIDO_DELIVERY } from "../plataformas/useAvisosDelivery";
+import { TarjetaNotificacionesDidi } from "../components/TarjetaNotificacionesDidi";
+import type { PedidoDetectado } from "../plataformas/useNotificacionesDidi";
 import {
   buscarProductos,
   sugerirProducto,
@@ -117,7 +119,11 @@ interface Formulario {
  * - **Configuración**: credenciales (cifradas en el servidor, nunca se vuelven a mostrar), URL de
  *   webhook y estado de conexión de cada plataforma.
  */
-export function PosAdminPlataformasScreen({ onCerrar }: { onCerrar: () => void }) {
+export function PosAdminPlataformasScreen({ onCerrar, didi }: {
+  onCerrar: () => void;
+  /** Escucha de la app de DiDi en esta tablet (ver useNotificacionesDidi); el navegador la comparte con el banner. */
+  didi?: { detectados: PedidoDetectado[]; atender: (id: string) => void; recargar: () => void; registrar: (p: PedidoDetectado) => void };
+}) {
   const colores = usarColores();
   const estilos = crearEstilos(colores);
   const { usuario } = useAuthLocalStore();
@@ -308,6 +314,11 @@ export function PosAdminPlataformasScreen({ onCerrar }: { onCerrar: () => void }
           <Text style={estilos.titulo}>Plataformas de delivery</Text>
           <TouchableOpacity onPress={onCerrar}><Text style={estilos.cerrar}>✕</Text></TouchableOpacity>
         </View>
+
+        {/* Funciona sin conexión al ERP: lee la app de DiDi instalada en esta misma tablet. */}
+        {didi && (
+          <TarjetaNotificacionesDidi detectados={didi.detectados} onRegistrar={didi.registrar} onAtender={didi.atender} onRecargar={didi.recargar} />
+        )}
 
         {!conectado ? (
           <View style={[estilos.tarjeta, { borderLeftWidth: 4, borderLeftColor: colores.amber }]}>

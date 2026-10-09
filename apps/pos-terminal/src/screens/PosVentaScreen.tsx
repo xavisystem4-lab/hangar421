@@ -22,7 +22,7 @@ import type { Promocion } from "@hangar421/shared";
  *  pantalla tiene los mismos productos que el POS de Windows sin depender de ninguna conexión;
  *  se puede editar desde Admin → Catálogo, y si se enlaza el ERP el catálogo real lo reemplaza
  *  (ver catalogoSyncRepo.upsertCatalogo). */
-export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
+export function PosVentaScreen({ onCobrar, categoriaSugerida }: { onCobrar: () => void; categoriaSugerida?: string | null }) {
   const { items, agregarItem, quitarItem, cambiarCantidad, totales, nombreCliente, nombrePreguntado, fijarNombreCliente, marcarNombrePreguntado } = useCarritoStore();
   const [pidiendoNombre, setPidiendoNombre] = useState(false);
   const colores = usarColores();
@@ -98,6 +98,15 @@ export function PosVentaScreen({ onCobrar }: { onCobrar: () => void }) {
   useEffect(() => {
     cargar();
   }, []);
+
+  // Al llegar desde un aviso de DiDi (notificación de la app de DiDi en esta tablet) se abre
+  // directo el grupo DIDI: el cajero captura los productos del pedido sin buscar la categoría.
+  useEffect(() => {
+    if (!categoriaSugerida || categorias.length === 0) return;
+    const buscada = categoriaSugerida.toLowerCase();
+    const cat = categorias.find((c) => c.nombre.toLowerCase().includes(buscada));
+    if (cat) setCategoriaActiva(cat.id);
+  }, [categoriaSugerida, categorias]);
 
   // Un pedido de DIDI se captura desde la tablet de DiDi y se entrega con el código de la app, no
   // con un nombre: ahí no se pregunta ni se ofrece ponerle nombre.

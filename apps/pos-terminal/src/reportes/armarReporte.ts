@@ -16,7 +16,10 @@ export interface DatosReporte {
   porMetodo: { metodo: string; total: number; cantidad: number }[];
   /** Mostrador y plataformas por separado (opcional: un reporte armado sin él no lo muestra). */
   porOrigen?: { origen: string; total: number; cantidad: number; porMetodo: { metodo: string; total: number; cantidad: number }[] }[];
+  /** Top 10 por unidades vendidas. */
   topProductos: { nombre: string; cantidad: number; total: number }[];
+  /** Los menos vendidos del catálogo en venta (incluye los de 0 unidades); el primero es el menos vendido. */
+  menosVendidos?: { nombre: string; cantidad: number; total: number }[];
   ventas: { folioLocal: number; createdAt: string; total: number; cajero: string; metodos: string; productos: string }[];
 }
 
@@ -90,9 +93,16 @@ export function filasResumen(datos: DatosReporte): (string | number)[][] {
         ]
       : []),
     [],
-    ["Producto", "Unidades", "Importe"],
-    ...datos.topProductos.map((p) => [p.nombre, p.cantidad, p.total]),
+    ["Top 10 productos más vendidos", "Unidades", "Importe"],
+    ...datos.topProductos.map((p, i) => [`${i + 1}. ${p.nombre}`, p.cantidad, p.total]),
   );
+  if (datos.menosVendidos && datos.menosVendidos.length > 0) {
+    filas.push(
+      [],
+      ["Productos menos vendidos", "Unidades", "Importe"],
+      ...datos.menosVendidos.map((p) => [p.nombre, p.cantidad, p.total]),
+    );
+  }
   return filas;
 }
 
@@ -120,6 +130,9 @@ export function htmlReporte(datos: DatosReporte): string {
     ])
     .join("");
   const filaProducto = datos.topProductos
+    .map((p, i) => `<tr><td>${i + 1}. ${escaparHtml(p.nombre)}</td><td class="num">${p.cantidad}</td><td class="num">${formatearDinero(p.total)}</td></tr>`)
+    .join("");
+  const filaMenosVendido = (datos.menosVendidos ?? [])
     .map((p) => `<tr><td>${escaparHtml(p.nombre)}</td><td class="num">${p.cantidad}</td><td class="num">${formatearDinero(p.total)}</td></tr>`)
     .join("");
   const filaVenta = datos.ventas
@@ -172,9 +185,13 @@ export function htmlReporte(datos: DatosReporte): string {
   <table><thead><tr><th>Origen</th><th>Método</th><th class="num">Operaciones</th><th class="num">Total</th></tr></thead>
   <tbody>${filaOrigen}</tbody></table>` : ""}
 
-  <h2>Productos más vendidos</h2>
+  <h2>Top 10 productos más vendidos</h2>
   <table><thead><tr><th>Producto</th><th class="num">Unidades</th><th class="num">Importe</th></tr></thead>
   <tbody>${filaProducto || `<tr><td colspan="3">Sin ventas en el rango.</td></tr>`}</tbody></table>
+
+  ${filaMenosVendido ? `<h2>Productos menos vendidos</h2>
+  <table><thead><tr><th>Producto</th><th class="num">Unidades</th><th class="num">Importe</th></tr></thead>
+  <tbody>${filaMenosVendido}</tbody></table>` : ""}
 
   <h2>Detalle de ventas (${datos.ventas.length})</h2>
   <table><thead><tr><th>Folio</th><th>Fecha</th><th>Cajero</th><th>Pago</th><th>Productos</th><th class="num">Total</th></tr></thead>

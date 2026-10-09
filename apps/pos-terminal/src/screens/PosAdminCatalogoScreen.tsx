@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { abrirBaseDeDatos } from "../db/database";
 import { listarCategorias, listarModificadores, listarProductos, modificadoresPorProducto, type CategoriaLocal, type ModificadorLocal, type ProductoLocal } from "../db/catalogoRepo";
+import { coincideBusqueda } from "../db/busqueda";
+import { coloresPorCategoria, conOpacidad } from "../caja/coloresCategoria";
 import {
   crearCategoria,
   editarCategoria,
@@ -53,6 +55,23 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
   const [precioProducto, setPrecioProducto] = useState("");
   const [productoEditando, setProductoEditando] = useState<string | null>(null);
   const [productoBorrador, setProductoBorrador] = useState({ nombre: "", precio: "", categoriaId: "" });
+
+  // Buscador + botones de categoría sobre la lista de productos. Al entrar no se lista ninguna
+  // categoría: aparece la que se toque (sus productos) o lo que coincida con la búsqueda, que
+  // recorre todo el catálogo. Mismo criterio que el Catálogo del ERP.
+  const [busquedaCatalogo, setBusquedaCatalogo] = useState("");
+  const [categoriaFiltro, setCategoriaFiltro] = useState<string | null>(null);
+  const buscandoCatalogo = busquedaCatalogo.trim().length > 0;
+  const colorPorCategoria = useMemo(() => coloresPorCategoria(categorias), [categorias]);
+  const categoriasVisibles = useMemo(() => {
+    if (buscandoCatalogo) {
+      const conCoincidencia = new Set(productos.filter((p) => coincideBusqueda(`${p.nombre} ${p.subcategoria ?? ""}`, busquedaCatalogo)).map((p) => p.categoriaId));
+      return categorias.filter((c) => conCoincidencia.has(c.id) || coincideBusqueda(c.nombre, busquedaCatalogo));
+    }
+    return categoriaFiltro ? categorias.filter((c) => c.id === categoriaFiltro) : [];
+  }, [categorias, productos, busquedaCatalogo, buscandoCatalogo, categoriaFiltro]);
+  const productosDeCategoria = (categoriaId: string) =>
+    productos.filter((p) => p.categoriaId === categoriaId && (!buscandoCatalogo || coincideBusqueda(`${p.nombre} ${p.subcategoria ?? ""}`, busquedaCatalogo) || coincideBusqueda(categorias.find((c) => c.id === categoriaId)?.nombre ?? "", busquedaCatalogo)));
 
   async function cargar() {
     const db = await abrirBaseDeDatos();
@@ -212,8 +231,44 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
         <Text style={estilos.notaAlta}>Queda en venta en esta sucursal y en standby en las demás; el ERP lo recibe al sincronizar.</Text>
       </View>
 
-      {categorias.map((cat) => (
-        <View key={cat.id} style={estilos.tarjeta}>
+      {/* Buscador y botones de categoría: la lista de abajo muestra solo la categoría elegida
+          (o las coincidencias de la búsqueda). */}
+      <View style={estilos.tarjeta}>
+        <Text style={estilos.subtitulo}>Productos por categoría</Text>
+        <TextInput
+          placeholder="Buscar producto en todo el catálogo…"
+          placeholderTextColor={colores.textoSecundario}
+          value={busquedaCatalogo}
+          onChangeText={setBusquedaCatalogo}
+          style={estilos.input}
+        />
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {categorias.map((c) => {
+            const color = colorPorCategoria.get(c.id);
+            const activa = !buscandoCatalogo && categoriaFiltro === c.id;
+            const cuantos = productos.filter((p) => p.categoriaId === c.id).length;
+            return (
+              <TouchableOpacity
+                key={c.id}
+                onPress={() => { setBusquedaCatalogo(""); setCategoriaFiltro(categoriaFiltro === c.id ? null : c.id); }}
+                style={[estilos.chip, estilos.chipCategoriaCatalogo, { backgroundColor: activa ? color?.fondo : conOpacidad(color?.fondo ?? "#1565C0", 0.72), borderColor: activa ? "#fff" : "transparent" }]}
+                accessibilityState={{ selected: activa }}
+              >
+                <Text style={{ color: "#fff", fontWeight: "800", fontSize: 13 }}>{c.nombre} <Text style={{ fontWeight: "400", opacity: 0.85 }}>({cuantos})</Text></Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        {!buscandoCatalogo && !categoriaFiltro && (
+          <Text style={estilos.notaAlta}>Toca una categoría para ver y editar sus productos, o escribe arriba para buscar en todo el catálogo.</Text>
+        )}
+        {buscandoCatalogo && categoriasVisibles.length === 0 && (
+          <Text style={estilos.notaAlta}>Ningún producto coincide con "{busquedaCatalogo.trim()}".</Text>
+        )}
+      </View>
+
+      {categoriasVisibles.map((cat) => (
+        <View key={cat.id} style={[estilos.tarjeta, { borderLeftWidth: 5, borderLeftColor: colorPorCategoria.get(cat.id)?.fondo ?? colores.navy }]}>
           {categoriaEditando === cat.id ? (
             <View style={{ flexDirection: "row", gap: 8 }}>
               <TextInput value={nombreCategoriaBorrador} onChangeText={setNombreCategoriaBorrador} style={[estilos.input, { flex: 1, marginBottom: 0 }]} />
@@ -230,7 +285,10 @@ export function PosAdminCatalogoScreen({ onCerrar }: { onCerrar: () => void }) {
             </View>
           )}
 
-          {productos.filter((p) => p.categoriaId === cat.id).map((p) => (
+          {productosDeCategoria(cat.id).length === 0 && (
+            <Text style={estilos.notaAlta}>Sin productos en esta categoría.</Text>
+          )}
+          {productosDeCategoria(cat.id).map((p) => (
             <View key={p.id} style={estilos.filaProducto}>
               {productoEditando === p.id ? (
                 // Edición completa: nombre, precio, categoría y modificadores. Todo viaja al ERP.
@@ -311,6 +369,7 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     filaProducto: { flexDirection: "row", alignItems: "center", paddingVertical: 8, borderTopWidth: 1, borderTopColor: colores.borde, marginTop: 8 },
     chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: colores.gray50, borderWidth: 1, borderColor: colores.borde },
     chipActivo: { backgroundColor: colores.navy, borderColor: colores.navy },
+    chipCategoriaCatalogo: { borderWidth: 2, minHeight: 40, justifyContent: "center" },
     input: { borderWidth: 1, borderColor: colores.borde, borderRadius: 8, padding: 10, marginBottom: 8, color: colores.texto },
     botonChico: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
     botonPrincipal: { backgroundColor: colores.green, borderRadius: 10, padding: 14, alignItems: "center", marginTop: 4 },

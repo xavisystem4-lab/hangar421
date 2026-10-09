@@ -163,6 +163,28 @@ export async function topProductosVendidos(db: SQLiteDatabase, filtro: FiltroRep
   );
 }
 
+/**
+ * Los productos MENOS vendidos del rango, contando también los del catálogo en venta que no se
+ * vendieron ni una vez (son justo los que interesan): LEFT JOIN del catálogo activo contra las
+ * ventas del rango, de menor a mayor. `limite` 5 por defecto; el primero es "el menos vendido".
+ */
+export async function productosMenosVendidos(db: SQLiteDatabase, filtro: FiltroReporte, limite = 5): Promise<ProductoVendido[]> {
+  const sucursalId = await obtenerOCrearSucursalIdLocal(db);
+  const { sql, params } = condiciones(sucursalId, filtro);
+  return db.getAllAsync<ProductoVendido>(
+    `SELECT p.nombre as nombre,
+            COALESCE(SUM(CASE WHEN v.id IS NOT NULL THEN vi.cantidad ELSE 0 END), 0) as cantidad,
+            COALESCE(SUM(CASE WHEN v.id IS NOT NULL THEN vi.precio_unit_snapshot * vi.cantidad ELSE 0 END), 0) as total
+     FROM productos p
+     LEFT JOIN venta_items vi ON vi.producto_id = p.id
+     LEFT JOIN ventas v ON v.id = vi.venta_id AND ${sql}
+     WHERE p.activo = 1
+     GROUP BY p.id, p.nombre
+     ORDER BY cantidad ASC, p.nombre ASC LIMIT ?`,
+    ...params, limite,
+  );
+}
+
 /** Cajeros que vendieron en el rango — alimenta el selector de cajero. Solo salen los que
  *  realmente tienen ventas: un desplegable con toda la plantilla obliga a adivinar cuál trabajó
  *  ese día. Se hace LEFT JOIN porque un usuario borrado del dispositivo no debe hacer

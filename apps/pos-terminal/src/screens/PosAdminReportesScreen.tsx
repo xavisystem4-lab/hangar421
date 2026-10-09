@@ -6,7 +6,7 @@ import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
 import { obtenerNombreSucursal } from "../db/dispositivoLocal";
 import {
-  cajerosDelRango, detalleVentas, resumenVentas, topProductosVendidos,
+  cajerosDelRango, detalleVentas, productosMenosVendidos, resumenVentas, topProductosVendidos,
   type CajeroDelRango, type FiltroReporte, type ProductoVendido, type ResumenVentas, type VentaDetalle,
 } from "../db/reportesRepo";
 import { etiquetaMetodoPago } from "../db/metodosPagoRepo";
@@ -61,6 +61,7 @@ export function PosAdminReportesScreen({ onCerrar }: { onCerrar: () => void }) {
   const [cajeros, setCajeros] = useState<CajeroDelRango[]>([]);
   const [resumen, setResumen] = useState<ResumenVentas | null>(null);
   const [topProductos, setTopProductos] = useState<ProductoVendido[]>([]);
+  const [menosVendidos, setMenosVendidos] = useState<ProductoVendido[]>([]);
   const [ventas, setVentas] = useState<VentaDetalle[]>([]);
   const [sucursal, setSucursal] = useState("HANGAR 421");
   const [generando, setGenerando] = useState(false);
@@ -91,13 +92,15 @@ export function PosAdminReportesScreen({ onCerrar }: { onCerrar: () => void }) {
     setGenerando(true);
     try {
       const db = await abrirBaseDeDatos();
-      const [r, t, v] = await Promise.all([
+      const [r, t, menos, v] = await Promise.all([
         resumenVentas(db, filtro),
-        topProductosVendidos(db, filtro),
+        topProductosVendidos(db, filtro, 10),
+        productosMenosVendidos(db, filtro, 5),
         detalleVentas(db, filtro),
       ]);
       setResumen(r);
       setTopProductos(t);
+      setMenosVendidos(menos);
       setVentas(v);
       setGenerado(true);
     } catch (e: any) {
@@ -141,6 +144,7 @@ export function PosAdminReportesScreen({ onCerrar }: { onCerrar: () => void }) {
         porMetodo: o.porMetodo.map((m) => ({ metodo: etiquetaMetodoPago[m.metodo as keyof typeof etiquetaMetodoPago] ?? m.metodo, total: m.total, cantidad: m.cantidad })),
       })),
       topProductos,
+      menosVendidos,
       ventas,
     };
   }
@@ -321,8 +325,34 @@ export function PosAdminReportesScreen({ onCerrar }: { onCerrar: () => void }) {
               )}
 
               <View style={estilos.tarjeta}>
-                <Text style={estilos.subtitulo}>Productos más vendidos</Text>
-                <BarraHorizontal colores={colores} datos={topProductos.map((p) => ({ etiqueta: p.nombre, valor: p.cantidad }))} />
+                <Text style={estilos.subtitulo}>Top 10 productos más vendidos</Text>
+                {topProductos.length === 0 && <Text style={{ color: colores.textoSecundario, fontSize: 13 }}>Sin ventas en el rango.</Text>}
+                {topProductos.map((p, i) => (
+                  <View key={`${p.nombre}-${i}`} style={estilos.filaRanking}>
+                    <Text style={[estilos.posicionRanking, i === 0 && { backgroundColor: colores.amber, color: colores.navy }]}>{i + 1}</Text>
+                    <Text style={{ color: colores.texto, flex: 1, fontWeight: i < 3 ? "800" : "600", fontSize: 14 }} numberOfLines={1}>{p.nombre}</Text>
+                    <Text style={{ color: colores.texto, fontWeight: "800", fontSize: 14 }}>{p.cantidad} u.</Text>
+                    <Text style={{ color: colores.textoSecundario, fontSize: 13, width: 86, textAlign: "right" }}>{formatearDinero(p.total)}</Text>
+                  </View>
+                ))}
+                {topProductos.length > 0 && <BarraHorizontal colores={colores} datos={topProductos.map((p) => ({ etiqueta: p.nombre, valor: p.cantidad }))} />}
+              </View>
+
+              {/* Lo que menos se mueve, contando lo que está en venta y no se vendió ni una vez:
+                  es lo que sirve para decidir qué quitar del menú o qué empujar. */}
+              <View style={estilos.tarjeta}>
+                <Text style={estilos.subtitulo}>Productos menos vendidos</Text>
+                {menosVendidos.length === 0 && <Text style={{ color: colores.textoSecundario, fontSize: 13 }}>Sin productos en venta en el catálogo.</Text>}
+                {menosVendidos.map((p, i) => (
+                  <View key={`${p.nombre}-${i}`} style={estilos.filaRanking}>
+                    <Text style={[estilos.posicionRanking, i === 0 && { backgroundColor: colores.red + "33", color: colores.red }]}>{i === 0 ? "▼" : "·"}</Text>
+                    <Text style={{ color: colores.texto, flex: 1, fontWeight: i === 0 ? "800" : "600", fontSize: 14 }} numberOfLines={1}>
+                      {p.nombre}{i === 0 ? "  (el menos vendido)" : ""}
+                    </Text>
+                    <Text style={{ color: p.cantidad === 0 ? colores.red : colores.texto, fontWeight: "800", fontSize: 14 }}>{p.cantidad} u.</Text>
+                    <Text style={{ color: colores.textoSecundario, fontSize: 13, width: 86, textAlign: "right" }}>{formatearDinero(p.total)}</Text>
+                  </View>
+                ))}
               </View>
 
               <View style={estilos.tarjeta}>
@@ -376,5 +406,7 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     stat: { flex: 1, backgroundColor: colores.superficie, borderRadius: 12, borderLeftWidth: 4, padding: 12 },
     statValor: { fontSize: 17, fontWeight: "800", color: colores.texto },
     filaVenta: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colores.borde },
+    filaRanking: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: colores.borde },
+    posicionRanking: { width: 26, height: 26, borderRadius: 13, textAlign: "center", textAlignVertical: "center", lineHeight: 26, fontWeight: "800", fontSize: 12, backgroundColor: colores.gray50, color: colores.texto, overflow: "hidden" },
   });
 }
