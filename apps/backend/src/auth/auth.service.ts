@@ -67,8 +67,17 @@ export class AuthService {
 
   /** Login con correo o nombre de usuario + password (POS Windows admin, CRM). */
   async loginConCredenciales(dto: LoginCredencialesDto): Promise<LoginResponse> {
+    // Sin distinguir mayúsculas ni espacios al borde: el teclado del celular pone en mayúscula la
+    // primera letra ("Galaviz") y a veces agrega un espacio al final, y con comparación exacta
+    // eso era "Credenciales inválidas" aunque la contraseña fuera correcta.
+    const identificador = String(dto.email ?? "").trim();
     const usuario = await this.prisma.usuario.findFirst({
-      where: { OR: [{ email: dto.email }, { username: dto.email }] },
+      where: {
+        OR: [
+          { email: { equals: identificador, mode: "insensitive" } },
+          { username: { equals: identificador, mode: "insensitive" } },
+        ],
+      },
       include: { sucursales: INCLUIR_SUCURSALES },
     });
     if (!usuario || !usuario.activo || usuario.eliminado || !usuario.passwordHash) {

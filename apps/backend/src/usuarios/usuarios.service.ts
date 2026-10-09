@@ -7,13 +7,19 @@ import { PrismaService } from "../prisma/prisma.service";
 export class UsuariosService {
   constructor(private prisma: PrismaService) {}
 
-  listarPorSucursal(sucursalId: string) {
-    return this.prisma.usuarioSucursal.findMany({
+  /** `usuario.tienePassword` / `tienePin` dicen si puede entrar al ERP (contraseña) o a la
+   *  terminal (PIN); los hashes nunca salen. */
+  async listarPorSucursal(sucursalId: string) {
+    const filas = await this.prisma.usuarioSucursal.findMany({
       where: { sucursalId, activo: true, usuario: { eliminado: false } },
       include: {
-        usuario: { select: { id: true, nombre: true, email: true, username: true, activo: true } },
+        usuario: { select: { id: true, nombre: true, email: true, username: true, activo: true, passwordHash: true, pinHash: true } },
         perfil: { select: { id: true, nombre: true } },
       },
+    });
+    return filas.map((f) => {
+      const { passwordHash, pinHash, ...usuario } = f.usuario;
+      return { ...f, usuario: { ...usuario, tienePassword: !!passwordHash, tienePin: !!pinHash } };
     });
   }
 

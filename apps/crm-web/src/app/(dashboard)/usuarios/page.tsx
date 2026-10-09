@@ -13,7 +13,7 @@ interface UsuarioSucursalRow {
   turno: TurnoTrabajo | null;
   perfilId: string | null;
   activo: boolean;
-  usuario: { id: string; nombre: string; email: string | null; username: string | null; activo: boolean };
+  usuario: { id: string; nombre: string; email: string | null; username: string | null; activo: boolean; tienePassword?: boolean; tienePin?: boolean };
   perfil: { id: string; nombre: string } | null;
 }
 
@@ -57,6 +57,46 @@ const DIAS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "
 
 const inputStyle = { width: "100%", padding: 10, marginBottom: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" } as const;
 
+/** Roles que ven el panel del ERP (los demás entran pero solo a Ventas). Mismo criterio que el
+ *  menú (Sidebar.tsx) y los @Roles() del backend. */
+const ROLES_DASHBOARD: RolUsuario[] = ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL", "SUPERVISOR"] as RolUsuario[];
+
+/** Contraseña legible para dictarla o anotarla: 10 caracteres sin los que se confunden (0/O, 1/l/I). */
+function generarPassword(): string {
+  const letras = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ";
+  const digitos = "23456789";
+  const todo = letras + digitos;
+  const al = (c: string) => c[Math.floor(Math.random() * c.length)];
+  let p = al(letras.toUpperCase()) + al(letras.toLowerCase()) + al(digitos) + al(digitos);
+  while (p.length < 10) p += al(todo);
+  return p.split("").sort(() => Math.random() - 0.5).join("");
+}
+
+/** Campo de contraseña/PIN con botón para verla mientras se escribe. La guardada no se puede
+ *  mostrar (solo existe cifrada), así que lo que se ve es siempre lo que se está asignando. */
+function CampoSecreto({ valor, onCambio, placeholder, style, autoComplete }: { valor: string; onCambio: (v: string) => void; placeholder: string; style?: React.CSSProperties; autoComplete?: string }) {
+  const [ver, setVer] = useState(false);
+  return (
+    <div style={{ position: "relative", ...(style ?? {}) }}>
+      <input
+        placeholder={placeholder}
+        type={ver ? "text" : "password"}
+        value={valor}
+        onChange={(e) => onCambio(e.target.value)}
+        autoCapitalize="none"
+        autoCorrect="off"
+        spellCheck={false}
+        autoComplete={autoComplete ?? "new-password"}
+        style={{ ...inputStyle, paddingRight: 44, marginBottom: 0, boxSizing: "border-box" }}
+      />
+      <button type="button" onClick={() => setVer((v) => !v)} aria-label={ver ? "Ocultar" : "Mostrar"} title={ver ? "Ocultar" : "Mostrar"}
+        style={{ position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)", background: "none", color: "var(--h421-gray-400)", padding: "6px 8px", fontSize: 15 }}>
+        {ver ? "🙈" : "👁"}
+      </button>
+    </div>
+  );
+}
+
 export default function UsuariosPage() {
   const { contexto } = useAuthCrm();
   const [sucursales, setSucursales] = useState<Sucursal[]>([]);
@@ -76,6 +116,9 @@ export default function UsuariosPage() {
     rol: "CAJERO" as RolUsuario, turno: "" as TurnoTrabajo | "", perfilId: "",
   });
   const [creando, setCreando] = useState(false);
+  // Lo recién creado se muestra UNA vez con la contraseña en claro: es el único momento en que
+  // el sistema la conoce (después solo guarda el cifrado), y así el admin la dicta o la anota.
+  const [credencialesCreadas, setCredencialesCreadas] = useState<{ nombre: string; usuario: string; password: string | null; pin: string | null; entraAlErp: boolean } | null>(null);
 
   const [usuarioEditando, setUsuarioEditando] = useState<UsuarioSucursalRow | null>(null);
   const [nuevaPassword, setNuevaPassword] = useState("");
@@ -127,6 +170,13 @@ export default function UsuariosPage() {
           }],
         }),
       });
+      setCredencialesCreadas({
+        nombre: nuevo.nombre,
+        usuario: nuevo.username.trim() || nuevo.email.trim(),
+        password: nuevo.password || null,
+        pin: nuevo.pin || null,
+        entraAlErp: !!nuevo.password && ROLES_DASHBOARD.includes(nuevo.rol),
+      });
       setNuevo({ nombre: "", email: "", username: "", password: "", pin: "", rol: "CAJERO" as RolUsuario, turno: "", perfilId: "" });
       cargar(sucursalId);
     } catch (e: any) {
@@ -139,15 +189,19 @@ export default function UsuariosPage() {
   async function guardarPassword() {
     if (!usuarioEditando || !nuevaPassword) return;
     await apiFetch(`/usuarios/${usuarioEditando.usuarioId}/password`, { method: "PATCH", body: JSON.stringify({ password: nuevaPassword }) });
+    const asignada = nuevaPassword;
     setNuevaPassword("");
-    setMensaje("Contraseña actualizada.");
+    setMensaje(`Contraseña actualizada para ${usuarioEditando.usuario.nombre}: ${asignada} — anótala, no se vuelve a mostrar.`);
+    await cargar(sucursalId);
   }
 
   async function guardarPin() {
     if (!usuarioEditando || !nuevoPin) return;
     await apiFetch(`/usuarios/${usuarioEditando.usuarioId}/pin`, { method: "PATCH", body: JSON.stringify({ pin: nuevoPin }) });
+    const asignado = nuevoPin;
     setNuevoPin("");
-    setMensaje("PIN actualizado.");
+    setMensaje(`PIN actualizado para ${usuarioEditando.usuario.nombre}: ${asignado}.`);
+    await cargar(sucursalId);
   }
 
   async function guardarAsignacion(cambios: Partial<{ rol: RolUsuario; turno: TurnoTrabajo | null; perfilId: string | null }>) {
@@ -309,6 +363,7 @@ export default function UsuariosPage() {
                   <th style={{ padding: 8 }}>Rol</th>
                   <th style={{ padding: 8 }}>Turno</th>
                   <th style={{ padding: 8 }}>Perfil</th>
+                  <th style={{ padding: 8 }}>Acceso</th>
                   <th style={{ padding: 8 }}>Estado</th>
                   <th style={{ padding: 8 }}></th>
                 </tr>
@@ -321,6 +376,14 @@ export default function UsuariosPage() {
                     <td style={{ padding: 8 }}>{ETIQUETA_ROL[f.rol] ?? f.rol}</td>
                     <td style={{ padding: 8 }}>{f.turno ? ETIQUETA_TURNO[f.turno] : "—"}</td>
                     <td style={{ padding: 8 }}>{f.perfil?.nombre ?? "—"}</td>
+                    {/* Con qué entra: al ERP (contraseña + rol con panel) y/o a la terminal (PIN). */}
+                    <td style={{ padding: 8, fontSize: 12, whiteSpace: "nowrap" }}>
+                      {f.usuario.tienePassword && ROLES_DASHBOARD.includes(f.rol) ? <span style={{ color: "var(--h421-green)" }}>🖥 ERP</span>
+                        : f.usuario.tienePassword ? <span style={{ color: "var(--h421-gray-400)" }} title="Tiene contraseña pero su rol solo ve Ventas en el ERP">🖥 solo Ventas</span>
+                        : <span style={{ color: "var(--h421-gray-400)" }} title="Sin contraseña: no puede entrar al ERP">🖥 —</span>}
+                      {" · "}
+                      {f.usuario.tienePin ? <span style={{ color: "var(--h421-green)" }}>📱 PIN</span> : <span style={{ color: "var(--h421-gray-400)" }}>📱 —</span>}
+                    </td>
                     <td style={{ padding: 8, color: f.usuario.activo ? "var(--h421-green)" : "var(--h421-red-texto)" }}>{f.usuario.activo ? "Activo" : "Inactivo"}</td>
                     <td style={{ padding: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
                       <button onClick={() => seleccionarUsuario(f)} style={{ background: "var(--h421-navy)", color: "#fff", padding: "6px 10px", fontSize: 12 }}>Editar</button>
@@ -334,7 +397,7 @@ export default function UsuariosPage() {
                   </tr>
                 ))}
                 {filas.length === 0 && (
-                  <tr><td colSpan={7} style={{ padding: 16, color: "var(--h421-gray-400)", textAlign: "center" }}>Sin usuarios en esta sucursal.</td></tr>
+                  <tr><td colSpan={8} style={{ padding: 16, color: "var(--h421-gray-400)", textAlign: "center" }}>Sin usuarios en esta sucursal.</td></tr>
                 )}
               </tbody>
             </table>
@@ -342,11 +405,34 @@ export default function UsuariosPage() {
 
           <div className="card" style={{ maxWidth: 460, marginTop: 16 }}>
             <h3 style={{ marginTop: 0 }}>Nuevo usuario</h3>
+            <p style={{ fontSize: 12, color: "var(--h421-gray-400)", margin: "0 0 10px", lineHeight: 1.5 }}>
+              Para que entre al <strong>ERP (este panel)</strong> necesita usuario o correo, <strong>contraseña</strong> y rol Admin. corporativo, Admin. sucursal o Supervisor.
+              Para la <strong>terminal (tablet)</strong> basta el PIN. Puede tener los dos.
+            </p>
+            {credencialesCreadas && (
+              <div style={{ background: "var(--h421-green-bg)", border: "1px solid var(--h421-green)", borderRadius: 10, padding: 12, marginBottom: 12, fontSize: 13, textAlign: "left" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <strong>✓ {credencialesCreadas.nombre} creado</strong>
+                  <button onClick={() => setCredencialesCreadas(null)} style={{ background: "none", color: "var(--h421-gray-400)", padding: 0 }}>✕</button>
+                </div>
+                <div style={{ marginTop: 6 }}>Usuario: <code style={{ fontWeight: 700 }}>{credencialesCreadas.usuario}</code></div>
+                {credencialesCreadas.password && <div>Contraseña: <code style={{ fontWeight: 700 }}>{credencialesCreadas.password}</code></div>}
+                {credencialesCreadas.pin && <div>PIN: <code style={{ fontWeight: 700 }}>{credencialesCreadas.pin}</code></div>}
+                <div style={{ marginTop: 6, color: "var(--h421-gray-400)" }}>
+                  {credencialesCreadas.entraAlErp ? "Ya puede entrar al ERP desde cualquier dispositivo con estos datos." : credencialesCreadas.password ? "Tiene contraseña, pero con ese rol en el ERP solo verá Ventas." : "Sin contraseña no puede entrar al ERP (solo a la terminal con PIN)."}
+                  {" "}Anótalos ahora: la contraseña no se vuelve a mostrar (se guarda cifrada); si se olvida, asígnale una nueva desde Editar.
+                </div>
+              </div>
+            )}
             <input placeholder="Nombre" value={nuevo.nombre} onChange={(e) => setNuevo((n) => ({ ...n, nombre: e.target.value }))} style={inputStyle} />
-            <input placeholder="Nombre de usuario" value={nuevo.username} onChange={(e) => setNuevo((n) => ({ ...n, username: e.target.value }))} style={inputStyle} />
-            <input placeholder="Correo (opcional si ya diste nombre de usuario)" value={nuevo.email} onChange={(e) => setNuevo((n) => ({ ...n, email: e.target.value }))} style={inputStyle} />
-            <input placeholder="Contraseña" type="password" value={nuevo.password} onChange={(e) => setNuevo((n) => ({ ...n, password: e.target.value }))} style={inputStyle} />
-            <input placeholder="PIN (4 dígitos)" value={nuevo.pin} onChange={(e) => setNuevo((n) => ({ ...n, pin: e.target.value }))} style={inputStyle} />
+            <input placeholder="Nombre de usuario" value={nuevo.username} onChange={(e) => setNuevo((n) => ({ ...n, username: e.target.value }))} autoCapitalize="none" autoCorrect="off" spellCheck={false} style={inputStyle} />
+            <input placeholder="Correo (opcional si ya diste nombre de usuario)" value={nuevo.email} onChange={(e) => setNuevo((n) => ({ ...n, email: e.target.value }))} autoCapitalize="none" autoCorrect="off" spellCheck={false} inputMode="email" style={inputStyle} />
+            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+              <CampoSecreto valor={nuevo.password} onCambio={(v) => setNuevo((n) => ({ ...n, password: v }))} placeholder="Contraseña (para el ERP)" style={{ flex: 1 }} />
+              <button type="button" onClick={() => setNuevo((n) => ({ ...n, password: generarPassword() }))} title="Generar una contraseña segura y legible"
+                style={{ background: "var(--h421-gray-50)", border: "1px solid var(--h421-gray-200)", padding: "0 12px", fontSize: 12, whiteSpace: "nowrap" }}>Generar</button>
+            </div>
+            <CampoSecreto valor={nuevo.pin} onCambio={(v) => setNuevo((n) => ({ ...n, pin: v.replace(/\D/g, "").slice(0, 6) }))} placeholder="PIN (4 dígitos, para la terminal)" style={{ marginBottom: 8 }} autoComplete="off" />
             <select value={nuevo.rol} onChange={(e) => setNuevo((n) => ({ ...n, rol: e.target.value as RolUsuario }))} style={inputStyle}>
               {ROLES.map((r) => <option key={r} value={r}>{ETIQUETA_ROL[r]}</option>)}
             </select>
@@ -393,18 +479,27 @@ export default function UsuariosPage() {
                 {perfiles.filter((p) => p.activo).map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
               </select>
 
-              <label style={{ fontSize: 13, color: "var(--h421-gray-400)" }}>Nueva contraseña</label>
+              <label style={{ fontSize: 13, color: "var(--h421-gray-400)" }}>Nueva contraseña (acceso al ERP)</label>
+              <p style={{ fontSize: 12, color: "var(--h421-gray-400)", margin: "2px 0 6px" }}>
+                {usuarioEditando.usuario.tienePassword ? "Ya tiene contraseña. " : "Todavía no tiene contraseña: sin ella no puede entrar al ERP. "}
+                La contraseña guardada no se puede ver (se guarda cifrada); aquí se asigna una nueva y la ves mientras la escribes.
+              </p>
               <div style={{ display: "flex", gap: 8, marginTop: 4, marginBottom: 12 }}>
-                <input type="password" value={nuevaPassword} onChange={(e) => setNuevaPassword(e.target.value)}
-                  style={{ flex: 1, padding: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-                <button onClick={guardarPassword} style={{ background: "var(--h421-navy)", color: "#fff", padding: "0 14px" }}>Guardar</button>
+                <CampoSecreto valor={nuevaPassword} onCambio={setNuevaPassword} placeholder="Nueva contraseña" style={{ flex: 1 }} />
+                <button type="button" onClick={() => setNuevaPassword(generarPassword())} title="Generar una contraseña segura y legible"
+                  style={{ background: "var(--h421-gray-50)", border: "1px solid var(--h421-gray-200)", padding: "0 10px", fontSize: 12 }}>Generar</button>
+                <button onClick={guardarPassword} disabled={nuevaPassword.length < 6} style={{ background: "var(--h421-navy)", color: "#fff", padding: "0 14px", opacity: nuevaPassword.length < 6 ? 0.5 : 1 }}>Guardar</button>
               </div>
+              {!ROLES_DASHBOARD.includes(usuarioEditando.rol) && (
+                <p style={{ fontSize: 12, color: "var(--h421-amber-texto)", margin: "-6px 0 10px" }}>
+                  Con el rol {ETIQUETA_ROL[usuarioEditando.rol]} solo verá Ventas en el ERP. Para el panel completo cámbialo a Supervisor o Administrador.
+                </p>
+              )}
 
-              <label style={{ fontSize: 13, color: "var(--h421-gray-400)" }}>Nuevo PIN</label>
+              <label style={{ fontSize: 13, color: "var(--h421-gray-400)" }}>Nuevo PIN (acceso a la terminal)</label>
               <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-                <input value={nuevoPin} onChange={(e) => setNuevoPin(e.target.value)}
-                  style={{ flex: 1, padding: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-                <button onClick={guardarPin} style={{ background: "var(--h421-navy)", color: "#fff", padding: "0 14px" }}>Guardar</button>
+                <CampoSecreto valor={nuevoPin} onCambio={(v) => setNuevoPin(v.replace(/\D/g, "").slice(0, 6))} placeholder="PIN (4 dígitos)" style={{ flex: 1 }} autoComplete="off" />
+                <button onClick={guardarPin} disabled={nuevoPin.length < 4} style={{ background: "var(--h421-navy)", color: "#fff", padding: "0 14px", opacity: nuevoPin.length < 4 ? 0.5 : 1 }}>Guardar</button>
               </div>
             </div>
 
