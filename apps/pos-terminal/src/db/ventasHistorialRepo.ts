@@ -136,3 +136,60 @@ export async function detalleTicket(db: SQLiteDatabase, ventaId: string): Promis
     notas: i.notas ?? null,
   }));
 }
+
+export interface VentaParaReabrir {
+  nombreCliente: string | null;
+  /** Líneas tal como se cobraron (precio y modificadores del momento), listas para el carrito. */
+  items: {
+    productoId: string;
+    nombreProducto: string;
+    cantidad: number;
+    precioUnitario: number;
+    notas?: string;
+    categoria?: string;
+    promocionId?: string;
+    modificadores: { opcionModificadorId: string; nombreOpcion: string; precioExtra: number }[];
+  }[];
+}
+
+/**
+ * Lo necesario para "reabrir" una venta cobrada: sus líneas con producto, precio cobrado y
+ * modificadores (con el id de la opción, no solo el nombre, para que el carrito las conserve) y
+ * el nombre del pedido. La categoría se resuelve del catálogo actual: con ella el cobro vuelve a
+ * reconocer una venta de DIDI. Reabrir = cancelar el ticket original y cobrar uno nuevo con lo
+ * corregido (el ERP es append-only: nunca se edita una venta cobrada).
+ */
+export async function ventaParaReabrir(db: SQLiteDatabase, ventaId: string): Promise<VentaParaReabrir> {
+  const venta = await db.getFirstAsync<any>("SELECT nombre_cliente FROM ventas WHERE id = ?", ventaId);
+  const items = await db.getAllAsync<any>(
+    `SELECT vi.id, vi.producto_id, vi.nombre_snapshot, vi.cantidad, vi.precio_unit_snapshot, vi.notas, vi.promocion_id,
+            c.nombre AS categoria
+     FROM venta_items vi
+     LEFT JOIN productos p ON p.id = vi.producto_id
+     LEFT JOIN categorias_producto c ON c.id = p.categoria_id
+     WHERE vi.venta_id = ?`,
+    ventaId,
+  );
+  const mods = items.length
+    ? await db.getAllAsync<any>(
+        `SELECT venta_item_id, opcion_modificador_id, nombre_snapshot, precio_extra_snapshot FROM venta_item_modificadores
+         WHERE venta_item_id IN (${items.map(() => "?").join(",")})`,
+        ...items.map((i) => i.id),
+      )
+    : [];
+  return {
+    nombreCliente: venta?.nombre_cliente ?? null,
+    items: items.map((i) => ({
+      productoId: i.producto_id,
+      nombreProducto: i.nombre_snapshot,
+      cantidad: i.cantidad,
+      precioUnitario: i.precio_unit_snapshot,
+      notas: i.notas ?? undefined,
+      categoria: i.categoria ?? undefined,
+      promocionId: i.promocion_id ?? undefined,
+      modificadores: mods
+        .filter((m) => m.venta_item_id === i.id)
+        .map((m) => ({ opcionModificadorId: m.opcion_modificador_id, nombreOpcion: m.nombre_snapshot, precioExtra: m.precio_extra_snapshot ?? 0 })),
+    })),
+  };
+}

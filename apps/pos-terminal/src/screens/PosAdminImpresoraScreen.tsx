@@ -4,6 +4,7 @@ import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
 import { guardarConfig } from "../db/configLocalRepo";
 import { CLAVE_COMANDA_ACTIVA, comandaActiva } from "../printing/imprimirComanda";
+import { guardarTicketAlCobrar, ticketAlCobrar } from "../printing/imprimirTicket";
 import { guardarDatosFiscales, obtenerDatosFiscales } from "../db/configFiscalRepo";
 import { impresoraUsb, type ConfigImpresoraUsb, type DispositivoUsb } from "../../modules/hangar-usb-printer";
 
@@ -33,6 +34,7 @@ export function PosAdminImpresoraScreen({ onCerrar }: { onCerrar: () => void }) 
   const [config, setConfig] = useState<ConfigImpresoraUsb | null>(null);
   const [anchoMM, setAnchoMM] = useState<58 | 80>(80);
   const [comanda, setComanda] = useState(true);
+  const [ticketAuto, setTicketAuto] = useState(false);
   const [trabajando, setTrabajando] = useState<string | null>(null);
 
   async function cargar() {
@@ -46,6 +48,7 @@ export function PosAdminImpresoraScreen({ onCerrar }: { onCerrar: () => void }) 
     setConfig(cfg);
     setAnchoMM(fiscales.anchoImpresoraMM);
     setComanda(await abrirBaseDeDatos().then(comandaActiva));
+    setTicketAuto(await abrirBaseDeDatos().then(ticketAlCobrar));
   }
 
   useEffect(() => {
@@ -81,6 +84,12 @@ export function PosAdminImpresoraScreen({ onCerrar }: { onCerrar: () => void }) 
     setConfig(nueva);
     await impresoraUsb.guardarConfig(nueva).catch((e) => Alert.alert("Impresora", e?.message ?? String(e)));
     cargar().catch(() => undefined);
+  }
+
+  async function cambiarTicketAuto(activo: boolean) {
+    setTicketAuto(activo);
+    const db = await abrirBaseDeDatos();
+    await guardarTicketAlCobrar(db, activo);
   }
 
   async function cambiarComanda(activa: boolean) {
@@ -203,6 +212,7 @@ export function PosAdminImpresoraScreen({ onCerrar }: { onCerrar: () => void }) 
             <Interruptor estilos={estilos} etiqueta="Imprimir logotipo" valor={config.imprimirLogo} onCambio={(v) => cambiarConfig({ imprimirLogo: v })} />
             <Interruptor estilos={estilos} etiqueta="Cortar papel al terminar" valor={config.cortarPapel} onCambio={(v) => cambiarConfig({ cortarPapel: v })} />
             <Interruptor estilos={estilos} etiqueta="Imprimir comanda de preparación al cobrar" valor={comanda} onCambio={cambiarComanda} />
+            <Interruptor estilos={estilos} etiqueta="Imprimir ticket del cliente al cobrar (sin preguntar)" valor={ticketAuto} onCambio={cambiarTicketAuto} />
             <Interruptor estilos={estilos} etiqueta="Abrir cajón de dinero con cada ticket" valor={config.abrirCajon} onCambio={(v) => cambiarConfig({ abrirCajon: v })} />
           </View>
         </>

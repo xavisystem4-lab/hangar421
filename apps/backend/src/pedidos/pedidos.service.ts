@@ -33,6 +33,7 @@ import {
   AgregarItemsDto,
   AplicarDescuentoDto,
   CobrarPedidoDto,
+  PagoDto,
   CrearPedidoDto,
 } from "./dto/pedido.dto";
 
@@ -622,6 +623,57 @@ export class PedidosService {
     if (pedido.mesaId) {
       this.realtime.emitirASucursal(pedido.sucursalId, WS_EVENTS.MESA_ACTUALIZADA, { id: pedido.mesaId, estado: EstadoMesa.LIBRE });
     }
+    return actualizado;
+  }
+
+  /**
+   * Cambio de método de pago de una venta YA COBRADA, hecho en una terminal (APK) con el PIN de
+   * un supervisor validado allí (SyncEntidad.PAGO / UPDATE, accion CAMBIAR_METODO). El caso real:
+   * el cajero registró "efectivo" y el cliente pagó con tarjeta (o al revés).
+   *
+   * Se reemplazan los pagos del pedido por los nuevos; el pedido, sus items y su total no se
+   * tocan. El corte del turno se recalcula solo (CajaService.calcularMontoEsperado lee los pagos).
+   * No admite crédito de empleado en ninguno de los dos lados: ese pago mueve el monedero y
+   * cambiarlo a mano dejaría el saldo mal — para eso se cancela y se vuelve a cobrar.
+   * Idempotente: reenviar el mismo cambio deja los mismos pagos.
+   */
+  async cambiarPagosDesdeTerminal(
+    pedidoId: string,
+    datos: { pagos: PagoDto[]; cajeroId?: string; autorizadoPorId?: string; autorizadoPorNombre?: string; motivo?: string },
+  ) {
+    const pedido = await this.obtener(pedidoId);
+    if (pedido.estado !== EstadoPedido.COBRADO) throw new BadRequestException("Solo se puede cambiar el método de pago de una venta cobrada");
+    if (!Array.isArray(datos.pagos) || datos.pagos.length === 0) throw new BadRequestException("Hace falta al menos un pago");
+    const conMonedero = (lista: { metodo: string }[]) => lista.some((p) => p.metodo === MetodoPago.MONEDERO_EMPLEADO);
+    if (conMonedero(pedido.pagos ?? []) || conMonedero(datos.pagos)) {
+      throw new BadRequestException("Una venta con crédito de empleado no admite cambio de método de pago: cancélala y vuelve a cobrarla");
+    }
+    const { suficiente, totalPagado } = validarPagoSuficiente(datos.pagos, Number(pedido.total));
+    if (!suficiente) throw new BadRequestException(`Los pagos nuevos (${totalPagado}) no cubren el total de la venta (${pedido.total})`);
+
+    const cajeroId = await this.resolverUsuarioExistente(datos.cajeroId);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.pago.deleteMany({ where: { pedidoId } });
+      await tx.pago.createMany({
+        data: datos.pagos.map((p) => ({
+          pedidoId,
+          metodo: p.metodo,
+          monto: p.monto,
+          referencia: p.referencia,
+          montoUsd: p.metodo === MetodoPago.EFECTIVO_USD ? p.montoUsd ?? null : null,
+          tipoCambio: p.metodo === MetodoPago.EFECTIVO_USD ? p.tipoCambio ?? null : null,
+          usuarioId: cajeroId,
+        })),
+      });
+    });
+    this.logger.log(
+      `Pedido ${pedidoId}: método de pago cambiado desde la terminal a ${datos.pagos.map((p) => `${p.metodo} $${p.monto}`).join(" + ")}` +
+        ` (autorizó ${datos.autorizadoPorNombre ?? datos.autorizadoPorId ?? "—"}${datos.motivo ? `; motivo: ${datos.motivo}` : ""})`,
+    );
+
+    const actualizado = await this.obtener(pedidoId);
+    this.realtime.emitirASucursal(pedido.sucursalId, WS_EVENTS.PEDIDO_ACTUALIZADO, actualizado);
+    this.realtime.emitirAEmpresa(pedido.empresaId, WS_EVENTS.PEDIDO_ACTUALIZADO, actualizado);
     return actualizado;
   }
 

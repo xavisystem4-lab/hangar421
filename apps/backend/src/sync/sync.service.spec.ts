@@ -533,4 +533,16 @@ describe("SyncService.push — descuentos y crédito de empleado del APK", () =>
 
     expect((pedidos as any).cobrar).toHaveBeenCalledWith("venta-1", expect.objectContaining({ pagos }), expect.anything());
   });
+
+  it("PAGO/UPDATE con CAMBIAR_METODO reemplaza los pagos en vez de cobrar otra vez", async () => {
+    const { push, pedidos } = crearServicio();
+    (pedidos as any).cobrar = jest.fn(() => Promise.resolve({}));
+    (pedidos as any).cambiarPagosDesdeTerminal = jest.fn(() => Promise.resolve({}));
+    const pagos = [{ metodo: "TARJETA", monto: 250, referencia: "últimos 4: 1234" }];
+
+    await push([{ ...sobre(SyncEntidad.PAGO, { accion: "CAMBIAR_METODO", pedidoId: "venta-1", pagos, cajeroId: "user-1", autorizadoPorId: "sup-1", autorizadoPorNombre: "Sofía", motivo: "El cliente pagó con tarjeta" }), operacion: SyncOperacion.UPDATE }]);
+
+    expect((pedidos as any).cambiarPagosDesdeTerminal).toHaveBeenCalledWith("venta-1", expect.objectContaining({ pagos, autorizadoPorId: "sup-1", autorizadoPorNombre: "Sofía" }));
+    expect((pedidos as any).cobrar).not.toHaveBeenCalled();
+  });
 });

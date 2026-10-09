@@ -3,6 +3,21 @@ import type { PrinterAdapter } from "./PrinterAdapter";
 import { decidirResultadoTicket } from "./decisionImpresion";
 import { usbPrinterAdapter } from "./usbPrinterAdapter";
 import { construirTicketPayload, marcarTicketImpreso, marcarTicketPendiente } from "../db/ticketsRepo";
+import { guardarConfig, obtenerConfig } from "../db/configLocalRepo";
+
+/** Si el ticket del cliente se imprime solo al confirmar el cobro. Apagado por defecto: muchos
+ *  clientes no lo quieren y así el cajero regresa a Venta sin preguntas; se cambia desde el
+ *  propio cobro (interruptor "Imprimir ticket") o en Admin → Impresora, y se puede reimprimir
+ *  desde la pestaña Ventas. */
+export const CLAVE_TICKET_AL_COBRAR = "ticket_al_cobrar";
+
+export async function ticketAlCobrar(db: SQLiteDatabase): Promise<boolean> {
+  return (await obtenerConfig(db, CLAVE_TICKET_AL_COBRAR)) === "1";
+}
+
+export async function guardarTicketAlCobrar(db: SQLiteDatabase, activo: boolean): Promise<void> {
+  await guardarConfig(db, CLAVE_TICKET_AL_COBRAR, activo ? "1" : "0");
+}
 
 /** Se llama DESPUÉS de que ventasRepo.confirmarVenta() ya resolvió — la venta está confirmada
  *  pase lo que pase aquí abajo. Nunca lanza: cualquier error del adaptador (o de construir el

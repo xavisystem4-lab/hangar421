@@ -10,7 +10,7 @@ import { confirmarVenta } from "../db/ventasRepo";
 import { sincronizarPronto } from "../sync/syncEngine";
 import { turnoAbierto } from "../db/turnosRepo";
 import { listarMetodosPago, etiquetaMetodoPago } from "../db/metodosPagoRepo";
-import { imprimirTicket } from "../printing/imprimirTicket";
+import { guardarTicketAlCobrar, imprimirTicket, ticketAlCobrar } from "../printing/imprimirTicket";
 import { comandaActiva, imprimirComanda } from "../printing/imprimirComanda";
 import { ModalAutorizacion } from "../components/ModalAutorizacion";
 import type { Autorizador } from "../auth/autorizacion";
@@ -108,6 +108,17 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
   // Autorización / últimos 4 dígitos de la terminal del banco, o folio de la transferencia.
   const [referencia, setReferencia] = useState("");
   const [procesando, setProcesando] = useState(false);
+  // Imprimir el ticket del cliente al confirmar, sin preguntar después. Se recuerda entre
+  // ventas (config local) y se cambia aquí mismo o en Admin → Impresora.
+  const [imprimirAlCobrar, setImprimirAlCobrar] = useState(false);
+  useEffect(() => {
+    abrirBaseDeDatos().then(ticketAlCobrar).then(setImprimirAlCobrar).catch(() => undefined);
+  }, []);
+  async function cambiarImprimirAlCobrar(valor: boolean) {
+    setImprimirAlCobrar(valor);
+    const db = await abrirBaseDeDatos();
+    await guardarTicketAlCobrar(db, valor).catch(() => undefined);
+  }
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -266,33 +277,17 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
       // e irrevocable, y el cajero no debe quedarse mirando una pantalla bloqueada por la red.
       sincronizarPronto();
       // La venta ya está confirmada e irrevocable en este punto — lo que pase con la impresión
-      // de aquí en adelante nunca la afecta (ver printing/imprimirTicket.ts). Se pregunta
-      // porque muchos clientes no quieren ticket: imprimirlo siempre gasta papel. Si luego
-      // cambian de opinión, se reimprime desde la pestaña Ventas.
-      const terminar = () => onCobrado(venta.id, venta.folioLocal, venta.total);
-      // La comanda de preparación sale sola al cobrar (cocina/barra no esperan al ticket del
-      // cliente) y va primero. Si falla no estorba: se avisa y se puede reimprimir.
+      // de aquí en adelante nunca la afecta (ver printing/imprimirTicket.ts). Se regresa a Venta
+      // DE INMEDIATO, sin diálogo de por medio: el siguiente cliente no espera. La comanda de
+      // preparación y (si el interruptor está encendido) el ticket salen en segundo plano; si
+      // algo falla se avisa y se reimprime desde la pestaña Ventas.
+      onCobrado(venta.id, venta.folioLocal, venta.total);
       comandaActiva(db)
         .then((activa) => (activa ? imprimirComanda(db, venta.id) : null))
         .then((r) => { if (r && !r.impreso) Alert.alert("No se imprimió la comanda", r.motivo ?? "Revisa la impresora en Admin → Impresora."); })
+        .then(() => (imprimirAlCobrar ? imprimirTicket(db, venta.id) : null))
+        .then((r) => { if (r && !r.impreso) Alert.alert("No se imprimió el ticket", r.motivo ?? "Inténtalo desde la pestaña Ventas."); })
         .catch(() => undefined);
-      Alert.alert(
-        `Venta #${venta.folioLocal} cobrada`,
-        "¿Quieres imprimir el ticket?",
-        [
-          { text: "No", style: "cancel", onPress: terminar },
-          {
-            text: "🖨 Imprimir",
-            onPress: () => {
-              // Si falla se dice por qué; el recibo en pantalla sale igual como respaldo.
-              imprimirTicket(db, venta.id)
-                .then((r) => { if (!r.impreso) Alert.alert("No se imprimió el ticket", r.motivo ?? "Inténtalo desde la pestaña Ventas."); })
-                .finally(terminar);
-            },
-          },
-        ],
-        { cancelable: false },
-      );
     } catch (e: any) {
       setError(e.message ?? "No se pudo procesar el cobro");
     } finally {
@@ -514,6 +509,13 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
 
         {error && <Text style={estilos.error}>{error}</Text>}
 
+        {/* Ticket del cliente: se decide ANTES de confirmar, así al confirmar se vuelve a Venta
+            sin preguntas. Se recuerda para las siguientes ventas. */}
+        <View style={estilos.filaTicket}>
+          <Text style={{ color: colores.texto, fontWeight: "700", flex: 1 }}>🖨 Imprimir ticket al confirmar</Text>
+          <Switch value={imprimirAlCobrar} onValueChange={cambiarImprimirAlCobrar} />
+        </View>
+
         <View style={{ flexDirection: "row", gap: 10, marginTop: 16, marginBottom: 30 }}>
           <TouchableOpacity onPress={onCerrar} style={[estilos.botonAccion, estilos.botonCancelar]}>
             <Text style={{ color: NARANJA, fontWeight: "600", fontSize: 16 }}>Cancelar</Text>
@@ -616,6 +618,7 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     teclaBorrar: { backgroundColor: colores.red + "2E" },
     teclaBorrarTexto: { fontSize: 26, fontWeight: "800", color: colores.red },
     error: { color: colores.red, marginTop: 12 },
+    filaTicket: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 14, padding: 12, borderRadius: 10, backgroundColor: colores.superficie, borderWidth: 1, borderColor: colores.borde },
     botonAccion: { flex: 1, paddingHorizontal: 12, borderRadius: 14, alignItems: "center", height: 58, justifyContent: "center" },
     botonCancelar: { backgroundColor: "transparent", borderWidth: 1, borderColor: colores.borde },
   });

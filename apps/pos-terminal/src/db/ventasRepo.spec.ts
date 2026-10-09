@@ -12,7 +12,7 @@ jest.mock("./dispositivoLocal", () => ({
   obtenerOCrearEmpresaIdLocal: async () => "emp-1",
 }));
 
-import { cancelarVenta, confirmarVenta } from "./ventasRepo";
+import { cambiarMetodoPago, cancelarVenta, confirmarVenta } from "./ventasRepo";
 
 interface Ejecutado {
   sql: string;
@@ -196,5 +196,50 @@ describe("confirmarVenta — promociones", () => {
     const pedido = encolados.find((e) => e.entidad === "PEDIDO").payload;
     expect(pedido.items[0].promocionId).toBe("pr-1");
     expect(pedido.items[1]).not.toHaveProperty("promocionId");
+  });
+});
+
+describe("cambiarMetodoPago", () => {
+  function baseConPagos(pagosActuales: any[], estado = "COBRADA") {
+    const { db, ejecutado, de } = baseFalsa();
+    db.getFirstAsync = async () => ({ id: "venta-x", estado, total: 250, folio_local: 7 });
+    db.getAllAsync = async () => pagosActuales;
+    return { db, ejecutado, de };
+  }
+  const AUT = { solicitadaPorId: "cajero-1", autorizadaPorId: "sup-1", autorizadaPorNombre: "Sofía" };
+
+  it("reemplaza los pagos locales y encola PAGO/UPDATE con CAMBIAR_METODO para el ERP", async () => {
+    const { db, de } = baseConPagos([{ metodo: "EFECTIVO", monto: 250, monto_recibido: 300 }]);
+    await cambiarMetodoPago(db, { ventaId: "venta-x", pagos: [{ metodo: "TARJETA", monto: 250, referencia: "1234" }], ...AUT, motivo: "Pagó con tarjeta" });
+
+    expect(de("DELETE FROM pagos")).toHaveLength(1);
+    const insertados = de("INSERT INTO pagos");
+    expect(insertados).toHaveLength(1);
+    expect(insertados[0].params.slice(1, 5)).toEqual(["venta-x", "TARJETA", 250, "1234"]);
+    expect(de("UPDATE ventas SET updated_at")).toHaveLength(1);
+
+    expect(encolados).toHaveLength(1);
+    expect(encolados[0]).toMatchObject({ entidad: "PAGO", operacion: "UPDATE", entidadId: "venta-x", usuarioId: "cajero-1" });
+    expect(encolados[0].payload).toMatchObject({
+      accion: "CAMBIAR_METODO", pedidoId: "venta-x", cajeroId: "cajero-1", autorizadoPorId: "sup-1", autorizadoPorNombre: "Sofía", motivo: "Pagó con tarjeta",
+      pagos: [{ metodo: "TARJETA", monto: 250, referencia: "1234" }],
+    });
+  });
+
+  it("rechaza ventas no cobradas, pagos cortos y crédito de empleado (en los pagos viejos o en los nuevos)", async () => {
+    const cancelada = baseConPagos([{ metodo: "EFECTIVO", monto: 250 }], "CANCELADA");
+    await expect(cambiarMetodoPago(cancelada.db, { ventaId: "venta-x", pagos: [{ metodo: "TARJETA", monto: 250 }], ...AUT })).rejects.toThrow("cobrada");
+
+    const corta = baseConPagos([{ metodo: "EFECTIVO", monto: 250 }]);
+    await expect(cambiarMetodoPago(corta.db, { ventaId: "venta-x", pagos: [{ metodo: "TARJETA", monto: 200 }], ...AUT })).rejects.toThrow("no cubren");
+
+    const desdeMonedero = baseConPagos([{ metodo: "MONEDERO_EMPLEADO", monto: 250, empleado_id: "e" }]);
+    await expect(cambiarMetodoPago(desdeMonedero.db, { ventaId: "venta-x", pagos: [{ metodo: "EFECTIVO", monto: 250 }], ...AUT })).rejects.toThrow("crédito de empleado");
+
+    const haciaMonedero = baseConPagos([{ metodo: "EFECTIVO", monto: 250 }]);
+    await expect(cambiarMetodoPago(haciaMonedero.db, { ventaId: "venta-x", pagos: [{ metodo: "MONEDERO_EMPLEADO", monto: 250, empleadoId: "e" }], ...AUT })).rejects.toThrow("crédito de empleado");
+
+    expect(corta.de("DELETE FROM pagos")).toHaveLength(0);
+    expect(encolados).toHaveLength(0);
   });
 });

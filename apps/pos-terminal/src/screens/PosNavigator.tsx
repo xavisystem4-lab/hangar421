@@ -382,7 +382,7 @@ export function PosNavigator() {
         {pantalla === "venta" && <PosVentaScreen key={versionSucursal} onCobrar={() => exigir(PERMISOS_TERMINAL.VENTA_COBRAR, () => setPantalla("cobro"))} />}
         {pantalla === "cobro" && <PosCobroScreen onCerrar={() => setPantalla("venta")} onCobrado={cobroConfirmado} />}
         {pantalla === "caja" && <PosCajaScreen />}
-        {pantalla === "consultar" && <PosConsultarVentasScreen onCerrar={() => setPantalla("venta")} />}
+        {pantalla === "consultar" && <PosConsultarVentasScreen onCerrar={() => setPantalla("venta")} onReabierta={() => setPantalla("venta")} />}
         {pantalla === "admin" && (
           <View style={{ flex: 1 }}>
             {/* Horizontal: con cuatro pestañas ya no caben en el ancho de un celular. */}
