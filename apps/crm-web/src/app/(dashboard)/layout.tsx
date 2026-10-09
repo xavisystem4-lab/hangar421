@@ -6,6 +6,7 @@ import { useAuthCrm } from "@/lib/authClient";
 import { useThemeStore } from "@/store/themeStore";
 import { Sidebar } from "@/components/Sidebar";
 import { ChipSucursalActiva, SelectorSucursal } from "@/components/SelectorSucursal";
+import { BotonTema } from "@/components/BotonTema";
 import { useSucursalActiva } from "@/store/sucursalActiva";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -57,8 +58,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <main className="h421-main" style={{ flex: 1, padding: 28, overflowY: "auto" }}>
         {/* Sucursal activa siempre visible: el error caro en un ERP multisucursal es mirar los
             datos de una creyendo que son de otra. */}
-        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 18 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 18 }}>
           <ChipSucursalActiva onCambiar={() => setCambiandoSucursal(true)} />
+          <BotonTema />
         </div>
         {/* Sin sucursal elegida no se renderiza ninguna página: así ninguna puede consultar con
             un contexto a medias ni enseñar datos antes de que el usuario decida cuáles. */}

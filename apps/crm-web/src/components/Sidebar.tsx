@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { RolUsuario } from "@hangar421/shared";
 import { useAuthCrm } from "@/lib/authClient";
-import { useThemeStore } from "@/store/themeStore";
 import { useSucursalActiva } from "@/store/sucursalActiva";
 import { usarSolicitudesPendientes } from "@/lib/solicitudes";
 
@@ -37,7 +36,6 @@ export function Sidebar({ abierto, onCerrar }: { abierto: boolean; onCerrar: () 
   const { contexto, logout } = useAuthCrm();
   const rol = contexto?.rol as RolUsuario | undefined;
   const items = ITEMS.filter((item) => !item.roles || (rol && item.roles.includes(rol)));
-  const { tema, alternar } = useThemeStore();
   const { seleccion } = useSucursalActiva();
   // Contador de solicitudes de producto pendientes: solo para quien ve esa pantalla.
   const pendientes = usarSolicitudesPendientes(items.some((i) => i.href === "/solicitudes"), seleccion?.sucursalId);
@@ -71,14 +69,7 @@ export function Sidebar({ abierto, onCerrar }: { abierto: boolean; onCerrar: () 
         ))}
       </nav>
 
-      <button
-        onClick={alternar}
-        title={tema === "oscuro" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
-        style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, background: "rgba(255,255,255,0.08)", color: "#fff", marginBottom: 8 }}
-      >
-        <span>{tema === "oscuro" ? "☀️" : "🌙"}</span>
-        <span>{tema === "oscuro" ? "Modo claro" : "Modo oscuro"}</span>
-      </button>
+      {/* El botón de modo día/noche ahora está en la cabecera, junto a la sucursal (BotonTema). */}
 
       <div style={{ fontSize: 13, opacity: 0.8, padding: "0 8px" }}>
         <div>{contexto?.usuario.nombre}</div>
