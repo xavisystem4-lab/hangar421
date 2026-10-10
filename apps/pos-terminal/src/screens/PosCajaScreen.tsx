@@ -5,7 +5,7 @@ import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
 import { etiquetaMetodoPago } from "../db/metodosPagoRepo";
 import { etiquetaOrigen } from "../caja/origenVenta";
-import { descuentosDelTurno, ventasPorOrigenDelTurno, type DescuentoDelTurno, type OrigenVentas } from "../db/reportesRepo";
+import { canceladasDelTurno, descuentosDelTurno, ventasPorOrigenDelTurno, type DescuentoDelTurno, type OrigenVentas } from "../db/reportesRepo";
 import { abrirTurno, cerrarTurno, efectivoDelTurno, fijarTipoCambioTurno, listarMovimientosCaja, reasignarTurno, registrarMovimientoCaja, turnoAbierto, type MovimientoCajaLocal, type TurnoLocal } from "../db/turnosRepo";
 import { listarVentasRecientes, type VentaResumen } from "../db/ventasHistorialRepo";
 import { BILLETES_MXN, BILLETES_USD, MONEDAS_MXN, calcularDiferencia, construirDesglose, round2, type Conteo } from "../caja/denominaciones";
@@ -13,6 +13,9 @@ import { ColumnaDenominaciones, usarRefsDenominaciones } from "../components/Des
 import { sincronizarPronto } from "../sync/syncEngine";
 import { listarUsuariosLocales, type UsuarioLocal } from "../db/usuariosLocalesRepo";
 import { ModalAutorizacion } from "../components/ModalAutorizacion";
+import { ModalCorteDetallado } from "../components/ModalCorteDetallado";
+import { armarCorteDetallado, type CorteDetallado } from "../caja/corteDetallado";
+import { obtenerNombreSucursal } from "../db/dispositivoLocal";
 import type { Autorizador } from "../auth/autorizacion";
 import { useExigirPermiso } from "../hooks/useExigirPermiso";
 import { PERMISOS_TERMINAL } from "../auth/permisosTerminal";
@@ -49,6 +52,10 @@ export function PosCajaScreen() {
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [porOrigen, setPorOrigen] = useState<OrigenVentas[]>([]);
   const [descuentos, setDescuentos] = useState<DescuentoDelTurno[]>([]);
+  const [canceladas, setCanceladas] = useState(0);
+  const [sucursal, setSucursal] = useState<string | null>(null);
+  /** Corte mostrado en la ventana flotante: en vivo ("Ver corte") o el del turno recién cerrado. */
+  const [corteVisible, setCorteVisible] = useState<CorteDetallado | null>(null);
 
   async function cargar() {
     const db = await abrirBaseDeDatos();
@@ -59,7 +66,9 @@ export function PosCajaScreen() {
       setVentasEnEfectivo(await efectivoDelTurno(db, t.id));
       setPorOrigen(await ventasPorOrigenDelTurno(db, t.id));
       setDescuentos(await descuentosDelTurno(db, t.id));
+      setCanceladas(await canceladasDelTurno(db, t.id));
     }
+    setSucursal(await obtenerNombreSucursal(db));
     setVentas(await listarVentasRecientes(db, 20));
     setCajeros(await listarUsuariosLocales(db));
   }
@@ -152,6 +161,29 @@ export function PosCajaScreen() {
   const diferencia = calcularDiferencia(desglose.totalMXN, efectivoEsperado);
   const diferenciaUsd = calcularDiferencia(desglose.totalUSD, ventasEnEfectivo.usd);
 
+  /** Arma el corte desglosado con lo que hay en pantalla: sirve tanto para consultarlo en vivo
+   *  mientras se cuenta como para enseñar el resumen final al cerrar la caja. */
+  function construirCorte(cerrado: boolean): CorteDetallado | null {
+    if (!turno) return null;
+    return armarCorteDetallado({
+      sucursal,
+      cajero: cajeros.find((c) => c.id === turno.usuarioId)?.nombre ?? "Cajero no identificado",
+      abiertoAt: turno.abiertoAt,
+      cortadoAt: new Date().toISOString(),
+      cerrado,
+      montoInicial: turno.montoInicial,
+      tipoCambioUsd: turno.tipoCambioUsd,
+      porOrigen,
+      movimientos,
+      ventasEnEfectivo,
+      desglose,
+      descuentos,
+      canceladas,
+      etiquetaMetodo: (m) => etiquetaMetodoPago[m as keyof typeof etiquetaMetodoPago] ?? m,
+      etiquetaOrigen,
+    });
+  }
+
   function confirmarCierre() {
     const signo = diferencia > 0 ? "sobran" : "faltan";
     const detalle = diferencia === 0
@@ -174,6 +206,8 @@ export function PosCajaScreen() {
 
   async function cerrar() {
     if (!turno) return;
+    // El corte se arma ANTES de limpiar el conteo: es el resumen que queda en pantalla.
+    const corteFinal = construirCorte(true);
     const db = await abrirBaseDeDatos();
     await cerrarTurno(db, {
       turnoId: turno.id,
@@ -186,6 +220,7 @@ export function PosCajaScreen() {
     // siguiente tick del temporizador.
     sincronizarPronto();
     setMensaje("Turno cerrado.");
+    if (corteFinal) setCorteVisible(corteFinal);
     setBilletesMXN({});
     setMonedasMXN({});
     setBilletesUSD({});
@@ -239,6 +274,10 @@ export function PosCajaScreen() {
                 </View>
               </View>
             )}
+
+            <TouchableOpacity onPress={() => setCorteVisible(construirCorte(false))} style={estilos.botonVerCorte}>
+              <Text style={estilos.botonVerCorteTexto}>📋 Ver corte desglosado</Text>
+            </TouchableOpacity>
 
             {/* Relevo de cajero sin cerrar la caja. El arqueo no se mueve: las ventas van
                 enlazadas al turno, no a quién las cobró. */}
@@ -399,6 +438,11 @@ export function PosCajaScreen() {
               )}
             </View>
 
+            {/* Revisión antes de cerrar: el corte completo en una ventana, con el fondo aparte,
+                las ventas por método y origen, ingresos/egresos y el conteo por denominación. */}
+            <TouchableOpacity onPress={() => setCorteVisible(construirCorte(false))} style={[estilos.botonPrincipal, { backgroundColor: colores.navy }]}>
+              <Text style={estilos.botonPrincipalTexto}>📋 Ver corte desglosado</Text>
+            </TouchableOpacity>
             <TouchableOpacity onPress={() => exigir(PERMISOS_TERMINAL.CAJA_CERRAR, confirmarCierre)} style={[estilos.botonPrincipal, { backgroundColor: colores.red }]}><Text style={estilos.botonPrincipalTexto}>Cerrar caja</Text></TouchableOpacity>
           </View>
         </>
@@ -456,6 +500,7 @@ export function PosCajaScreen() {
           onAutorizado={(autorizador) => asignarA(candidato, autorizador)}
         />
       )}
+      {corteVisible && <ModalCorteDetallado corte={corteVisible} onCerrar={() => setCorteVisible(null)} />}
       {modalPermiso}
     </>
   );
@@ -463,6 +508,8 @@ export function PosCajaScreen() {
 
 function crearEstilos(colores: ReturnType<typeof usarColores>) {
   return StyleSheet.create({
+    botonVerCorte: { marginTop: 12, alignSelf: "flex-start", paddingHorizontal: 14, minHeight: 44, justifyContent: "center", borderRadius: 10, borderWidth: 1, borderColor: colores.navyTexto, backgroundColor: colores.gray50 },
+    botonVerCorteTexto: { color: colores.navyTexto, fontWeight: "800", fontSize: 14 },
     resumenCorte: { marginTop: 14, padding: 12, borderRadius: 10, backgroundColor: colores.gray50 },
     filaResumen: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 },
     filaDiferencia: { borderTopWidth: 1, borderTopColor: colores.borde, marginTop: 6, paddingTop: 8 },
