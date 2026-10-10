@@ -225,6 +225,7 @@ enum EstadoSincronizacionOrdenPlataforma {
 
 model Empresa {
   promociones Promocion[]
+  configuracionCorreo ConfiguracionCorreo?
   id         String   @id @default(uuid())
   nombre     String
   rfc        String?
@@ -1516,4 +1517,32 @@ model PromocionProducto {
   @@id([promocionId, productoId])
   @@index([productoId])
   @@map("promocion_productos")
+}
+
+// Correo saliente del ERP (reportes de inventario / lista de compras), configurado por la
+// empresa desde Admin → Correo (solo ADMIN_CORPORATIVO). La contraseña va cifrada (AES-256-GCM,
+// ver common/crypto/cifrado.service.ts) y NUNCA se devuelve al frontend. Si no hay registro se
+// usan las variables de entorno SMTP_ / RESEND_ del servidor (ver docs/correo.md).
+model ConfiguracionCorreo {
+  id               String    @id @default(uuid())
+  empresaId        String    @unique
+  proveedor        String    @default("gmail") // gmail | outlook | otro
+  host             String
+  puerto           Int       @default(587)
+  seguridad        String    @default("STARTTLS") // STARTTLS | SSL | NINGUNA
+  usuario          String
+  passwordCifrado  String?
+  remitenteNombre  String?
+  remitenteCorreo  String?
+  activo           Boolean   @default(true)
+  ultimaPruebaEn   DateTime?
+  ultimaPruebaOk   Boolean?
+  ultimoError      String?
+  actualizadoPorId String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  empresa Empresa @relation(fields: [empresaId], references: [id])
+
+  @@map("configuracion_correo")
 }

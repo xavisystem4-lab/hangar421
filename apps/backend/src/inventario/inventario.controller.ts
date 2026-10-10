@@ -66,8 +66,8 @@ export class InventarioController {
 
   /** Si el servidor puede enviar correos (para que el ERP ofrezca "Enviar por correo" o la alternativa manual). */
   @Get("reporte/correo")
-  estadoCorreo() {
-    return this.inventario.estadoCorreo();
+  estadoCorreo(@Query("sucursalId") sucursalId?: string) {
+    return this.inventario.estadoCorreo(sucursalId);
   }
 
   @Post("reporte/enviar")

@@ -256,7 +256,7 @@ export function ReporteInventario({ tipo, filas: todasLasFilas, sucursalId, sucu
     setModalCorreo(true);
     if (!estadoCorreo) {
       try {
-        setEstadoCorreo(await apiFetch<EstadoCorreo>("/inventario/reporte/correo"));
+        setEstadoCorreo(await apiFetch<EstadoCorreo>(`/inventario/reporte/correo?sucursalId=${sucursalId}`));
       } catch {
         setEstadoCorreo({ configurado: false, proveedor: null, remitente: null, detalle: "No se pudo consultar la configuración de correo del servidor." });
       }
@@ -426,8 +426,8 @@ export function ReporteInventario({ tipo, filas: todasLasFilas, sucursalId, sucu
             {estadoCorreo === null && <p style={{ fontSize: 13, color: "var(--h421-gray-400)" }}>Consultando el servidor de correo…</p>}
             {estadoCorreo && !estadoCorreo.configurado && (
               <div style={{ background: "var(--h421-amber-bg)", color: "var(--h421-amber-texto)", borderRadius: 8, padding: 10, fontSize: 13, marginBottom: 10 }}>
-                <strong>El servidor aún no tiene correo configurado.</strong> {estadoCorreo.detalle}
-                <br />Mientras tanto puedes abrir tu correo con el resumen listo y adjuntar el PDF que se descarga.
+                <strong>Aún no hay correo configurado.</strong> {estadoCorreo.detalle}
+                <br />El Administrador corporativo lo captura en el menú <strong>Correo</strong>. Mientras tanto puedes abrir tu correo con el resumen listo y adjuntar el PDF que se descarga.
               </div>
             )}
             {resultadoCorreo && (
