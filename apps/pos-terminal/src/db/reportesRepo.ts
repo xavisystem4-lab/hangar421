@@ -66,6 +66,16 @@ export async function descuentosDelTurno(db: SQLiteDatabase, turnoId: string): P
   return filas.map((f) => ({ folio: f.folio, tipo: f.tipo, valor: f.valor, motivo: f.motivo?.trim() || "Descuento" }));
 }
 
+/** Cuántos tickets se cancelaron en el turno — dato informativo del corte (una venta nunca se
+ *  borra: queda en estado CANCELADA, ver migración de cancelación lógica). */
+export async function canceladasDelTurno(db: SQLiteDatabase, turnoId: string): Promise<number> {
+  const fila = await db.getFirstAsync<{ total: number }>(
+    "SELECT COUNT(*) as total FROM ventas WHERE turno_id = ? AND estado = 'CANCELADA'",
+    turnoId,
+  );
+  return fila?.total ?? 0;
+}
+
 export interface VarianteVendida {
   /** Opciones de modificador con las que se vendió ("Grande · Leche de avena") o "Sin modificadores". */
   descripcion: string;
