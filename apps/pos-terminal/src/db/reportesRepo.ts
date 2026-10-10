@@ -66,10 +66,50 @@ export async function descuentosDelTurno(db: SQLiteDatabase, turnoId: string): P
   return filas.map((f) => ({ folio: f.folio, tipo: f.tipo, valor: f.valor, motivo: f.motivo?.trim() || "Descuento" }));
 }
 
+export interface VarianteVendida {
+  /** Opciones de modificador con las que se vendió ("Grande · Leche de avena") o "Sin modificadores". */
+  descripcion: string;
+  cantidad: number;
+}
+
 export interface ProductoVendido {
   nombre: string;
+  /** Categoría del producto: distingue dos productos que se llaman igual (Latte de Bebidas calientes vs. Latte de DIDI). */
+  categoria?: string | null;
   cantidad: number;
   total: number;
+  /** Desglose por modificadores, de mayor a menor; vacío si nunca llevó modificadores. */
+  variantes?: VarianteVendida[];
+}
+
+const SIN_MODIFICADORES = "Sin modificadores";
+
+/** Etiqueta para gráficas y reportes: añade la categoría entre paréntesis cuando otro producto de
+ *  la lista se llama igual ("Latte (Bebidas calientes)" vs "Latte (DIDI)"). */
+export function etiquetaProductoVendido(p: ProductoVendido, todos: ProductoVendido[]): string {
+  const repetido = todos.filter((o) => o.nombre === p.nombre).length > 1;
+  return repetido && p.categoria ? `${p.nombre} (${p.categoria})` : p.nombre;
+}
+/** Separador interno para GROUP_CONCAT: no aparece en nombres de opciones. */
+const SEP = "\u001f";
+
+/** Agrupa por producto las combinaciones de modificadores con las que se vendió en el rango. */
+export function agruparVariantes(filas: { producto_id: string; cantidad: number; mods: string | null }[]): Map<string, VarianteVendida[]> {
+  const porProducto = new Map<string, Map<string, number>>();
+  for (const f of filas) {
+    const nombres = (f.mods ?? "").split(SEP).map((n) => n.trim()).filter(Boolean).sort((a, b) => a.localeCompare(b, "es"));
+    const clave = nombres.length > 0 ? nombres.join(" · ") : SIN_MODIFICADORES;
+    const m = porProducto.get(f.producto_id) ?? new Map<string, number>();
+    m.set(clave, (m.get(clave) ?? 0) + Number(f.cantidad));
+    porProducto.set(f.producto_id, m);
+  }
+  const salida = new Map<string, VarianteVendida[]>();
+  for (const [productoId, m] of porProducto) {
+    const lista = [...m.entries()].map(([descripcion, cantidad]) => ({ descripcion, cantidad })).sort((a, b) => b.cantidad - a.cantidad || a.descripcion.localeCompare(b.descripcion, "es"));
+    const soloSinMods = lista.length === 1 && lista[0].descripcion === SIN_MODIFICADORES;
+    salida.set(productoId, soloSinMods ? [] : lista);
+  }
+  return salida;
 }
 
 export interface CajeroDelRango {
@@ -154,13 +194,30 @@ export async function resumenVentas(db: SQLiteDatabase, filtro: FiltroReporte): 
 export async function topProductosVendidos(db: SQLiteDatabase, filtro: FiltroReporte, limite = 10): Promise<ProductoVendido[]> {
   const sucursalId = await obtenerOCrearSucursalIdLocal(db);
   const { sql, params } = condiciones(sucursalId, filtro);
-  return db.getAllAsync<ProductoVendido>(
-    `SELECT vi.nombre_snapshot as nombre, SUM(vi.cantidad) as cantidad, SUM(vi.precio_unit_snapshot * vi.cantidad) as total
-     FROM venta_items vi JOIN ventas v ON v.id = vi.venta_id
+  const top = await db.getAllAsync<ProductoVendido & { productoId: string }>(
+    `SELECT vi.producto_id as productoId, vi.nombre_snapshot as nombre, c.nombre as categoria,
+            SUM(vi.cantidad) as cantidad, SUM(vi.precio_unit_snapshot * vi.cantidad) as total
+     FROM venta_items vi
+     JOIN ventas v ON v.id = vi.venta_id
+     LEFT JOIN productos p ON p.id = vi.producto_id
+     LEFT JOIN categorias_producto c ON c.id = p.categoria_id
      WHERE ${sql}
      GROUP BY vi.producto_id, vi.nombre_snapshot ORDER BY cantidad DESC LIMIT ?`,
     ...params, limite,
   );
+  if (top.length === 0) return [];
+  // Desglose por modificadores de esos productos: una fila por renglón vendido con sus opciones
+  // concatenadas; se agrupa en JS para ordenar los nombres y no contar "A · B" y "B · A" aparte.
+  const marcadores = top.map(() => "?").join(",");
+  const filas = await db.getAllAsync<{ producto_id: string; cantidad: number; mods: string | null }>(
+    `SELECT vi.producto_id, vi.cantidad,
+            (SELECT GROUP_CONCAT(m.nombre_snapshot, '${SEP}') FROM venta_item_modificadores m WHERE m.venta_item_id = vi.id) as mods
+     FROM venta_items vi JOIN ventas v ON v.id = vi.venta_id
+     WHERE ${sql} AND vi.producto_id IN (${marcadores})`,
+    ...params, ...top.map((t) => t.productoId),
+  );
+  const variantes = agruparVariantes(filas);
+  return top.map(({ productoId, ...p }) => ({ ...p, variantes: variantes.get(productoId) ?? [] }));
 }
 
 /**
