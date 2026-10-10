@@ -6,7 +6,7 @@ import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
 import { obtenerNombreSucursal } from "../db/dispositivoLocal";
 import {
-  cajerosDelRango, detalleVentas, productosMenosVendidos, resumenVentas, topProductosVendidos,
+  cajerosDelRango, detalleVentas, productosMenosVendidos, resumenVentas, topProductosVendidos, etiquetaProductoVendido,
   type CajeroDelRango, type FiltroReporte, type ProductoVendido, type ResumenVentas, type VentaDetalle,
 } from "../db/reportesRepo";
 import { etiquetaMetodoPago } from "../db/metodosPagoRepo";
@@ -330,12 +330,21 @@ export function PosAdminReportesScreen({ onCerrar }: { onCerrar: () => void }) {
                 {topProductos.map((p, i) => (
                   <View key={`${p.nombre}-${i}`} style={estilos.filaRanking}>
                     <Text style={[estilos.posicionRanking, i === 0 && { backgroundColor: colores.amber, color: colores.navy }]}>{i + 1}</Text>
-                    <Text style={{ color: colores.texto, flex: 1, fontWeight: i < 3 ? "800" : "600", fontSize: 14 }} numberOfLines={1}>{p.nombre}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: colores.texto, fontWeight: i < 3 ? "800" : "600", fontSize: 14 }} numberOfLines={1}>
+                        {p.nombre}{p.categoria ? <Text style={{ color: colores.textoSecundario, fontWeight: "400", fontSize: 12 }}>  · {p.categoria}</Text> : null}
+                      </Text>
+                      {(p.variantes?.length ?? 0) > 0 && (
+                        <Text style={{ color: colores.textoSecundario, fontSize: 12, marginTop: 1 }} numberOfLines={2}>
+                          {p.variantes!.map((v) => `${v.descripcion === "Sin modificadores" ? "sin modificadores" : v.descripcion} ×${v.cantidad}`).join(" · ")}
+                        </Text>
+                      )}
+                    </View>
                     <Text style={{ color: colores.texto, fontWeight: "800", fontSize: 14 }}>{p.cantidad} u.</Text>
                     <Text style={{ color: colores.textoSecundario, fontSize: 13, width: 86, textAlign: "right" }}>{formatearDinero(p.total)}</Text>
                   </View>
                 ))}
-                {topProductos.length > 0 && <BarraHorizontal colores={colores} datos={topProductos.map((p) => ({ etiqueta: p.nombre, valor: p.cantidad }))} />}
+                {topProductos.length > 0 && <BarraHorizontal colores={colores} datos={topProductos.map((p) => ({ etiqueta: etiquetaProductoVendido(p, topProductos), valor: p.cantidad }))} />}
               </View>
 
               {/* Lo que menos se mueve, contando lo que está en venta y no se vendió ni una vez:

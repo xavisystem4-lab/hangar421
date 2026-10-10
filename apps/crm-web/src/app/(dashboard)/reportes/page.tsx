@@ -3,12 +3,21 @@
 import { useEffect, useState } from "react";
 import type { Producto, Sucursal } from "@hangar421/shared";
 import { apiFetch } from "@/lib/api";
+import { ProductoVendido, etiquetaProducto, type VarianteVendida } from "@/components/ProductoVendido";
 import { useSucursalActiva } from "@/store/sucursalActiva";
 import { useAuthCrm } from "@/lib/authClient";
 import { StatTile } from "@/components/StatTile";
 import { BarChart } from "@/components/BarChart";
 
-interface VentaPorProducto { productoId: string; _sum: { cantidad: number | null }; _count: number }
+interface VentaPorProducto {
+  productoId: string;
+  _sum: { cantidad: number | null };
+  _count: number;
+  nombre?: string;
+  categoria?: string | null;
+  subcategoria?: string | null;
+  variantes?: VarianteVendida[];
+}
 interface VentaPorMetodo { metodo: string; _sum: { monto: string | null }; _count: number }
 
 const ETIQUETA_METODO: Record<string, string> = {
@@ -68,7 +77,10 @@ export default function ReportesPage() {
   }
 
   const nombreProducto = (id: string) => productos.find((p) => p.id === id)?.nombre ?? "—";
-  const topProductos = [...porProducto].sort((a, b) => (b._sum.cantidad ?? 0) - (a._sum.cantidad ?? 0)).slice(0, 10);
+  const topProductos = [...porProducto]
+    .map((p) => ({ ...p, nombre: p.nombre ?? nombreProducto(p.productoId) }))
+    .sort((a, b) => (b._sum.cantidad ?? 0) - (a._sum.cantidad ?? 0))
+    .slice(0, 10);
   const totalVentas = porMetodo.reduce((s, m) => s + Number(m._sum.monto ?? 0), 0);
   const totalPagos = porMetodo.reduce((s, m) => s + m._count, 0);
 
@@ -98,13 +110,14 @@ export default function ReportesPage() {
           <h3 style={{ marginTop: 0 }}>Top productos (por unidades vendidas)</h3>
           {topProductos.length > 0 ? (
             <>
-              <BarChart data={topProductos.map((p) => ({ etiqueta: nombreProducto(p.productoId), valor: p._sum.cantidad ?? 0 }))} alto={180} />
+              <BarChart data={topProductos.map((p) => ({ etiqueta: etiquetaProducto(p, topProductos), valor: p._sum.cantidad ?? 0 }))} alto={180} />
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, marginTop: 10 }}>
                 <tbody>
-                  {topProductos.map((p) => (
+                  {topProductos.map((p, i) => (
                     <tr key={p.productoId} style={{ borderBottom: "1px solid var(--h421-gray-200)" }}>
-                      <td style={{ padding: 6 }}>{nombreProducto(p.productoId)}</td>
-                      <td style={{ padding: 6, textAlign: "right" }}>{p._sum.cantidad ?? 0} unidades</td>
+                      <td style={{ padding: 6, width: 28, color: "var(--h421-gray-400)" }}>{i + 1}.</td>
+                      <td style={{ padding: 6 }}><ProductoVendido producto={p} /></td>
+                      <td style={{ padding: 6, textAlign: "right", whiteSpace: "nowrap", fontWeight: 700 }}>{p._sum.cantidad ?? 0} unidades</td>
                     </tr>
                   ))}
                 </tbody>

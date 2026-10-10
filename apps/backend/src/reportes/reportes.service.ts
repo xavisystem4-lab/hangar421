@@ -3,9 +3,67 @@ import { EstadoPedido } from "@hangar421/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { hoyEnZona, limiteDelDia } from "../pedidos/ventas-consulta";
 
+/** Una variante de un producto en el reporte: la combinación de opciones de modificador con la
+ *  que se vendió ("Grande · Leche de avena") y cuántas unidades llevó. */
+export interface VarianteVendida {
+  descripcion: string;
+  cantidad: number;
+}
+
+export interface DetalleProductoVendido {
+  nombre: string;
+  categoria: string | null;
+  subcategoria: string | null;
+  /** Desglose por modificadores elegidos, de mayor a menor; vacío si el producto no lleva. */
+  variantes: VarianteVendida[];
+}
+
+const SIN_MODIFICADORES = "Sin modificadores";
+
 @Injectable()
 export class ReportesService {
   constructor(private prisma: PrismaService) {}
+
+  /** Nombre + categoría + desglose por modificadores de los productos indicados, para que dos
+   *  productos que se llaman igual ("Latte" de Bebidas calientes y "Latte" de DIDI) se distingan
+   *  y se vea cuál variante (tamaño, leche, jarabe…) es la que se vende. */
+  private async detalleProductos(productoIds: string[], wherePedido: Record<string, unknown>): Promise<Map<string, DetalleProductoVendido>> {
+    const detalle = new Map<string, DetalleProductoVendido>();
+    if (productoIds.length === 0) return detalle;
+    const [productos, items] = await Promise.all([
+      this.prisma.producto.findMany({
+        where: { id: { in: productoIds } },
+        select: { id: true, nombre: true, subcategoria: true, categoria: { select: { nombre: true } } },
+      }),
+      this.prisma.pedidoItem.findMany({
+        where: { productoId: { in: productoIds }, pedido: wherePedido },
+        select: {
+          productoId: true, cantidad: true,
+          modificadores: { select: { opcionModificador: { select: { nombre: true, orden: true, modificador: { select: { nombre: true } } } } } },
+        },
+      }),
+    ]);
+    const variantes = new Map<string, Map<string, number>>();
+    for (const it of items) {
+      const opciones = it.modificadores
+        .map((m) => m.opcionModificador)
+        .sort((a, b) => a.modificador.nombre.localeCompare(b.modificador.nombre, "es") || a.orden - b.orden)
+        .map((o) => o.nombre);
+      const clave = opciones.length > 0 ? opciones.join(" · ") : SIN_MODIFICADORES;
+      const porVariante = variantes.get(it.productoId) ?? new Map<string, number>();
+      porVariante.set(clave, (porVariante.get(clave) ?? 0) + it.cantidad);
+      variantes.set(it.productoId, porVariante);
+    }
+    for (const p of productos) {
+      const porVariante = [...(variantes.get(p.id) ?? new Map<string, number>()).entries()]
+        .map(([descripcion, cantidad]) => ({ descripcion, cantidad }))
+        .sort((a, b) => b.cantidad - a.cantidad || a.descripcion.localeCompare(b.descripcion, "es"));
+      // Si la única variante es "sin modificadores", no hay nada que desglosar.
+      const soloSinMods = porVariante.length === 1 && porVariante[0].descripcion === SIN_MODIFICADORES;
+      detalle.set(p.id, { nombre: p.nombre, categoria: p.categoria?.nombre ?? null, subcategoria: p.subcategoria ?? null, variantes: soloSinMods ? [] : porVariante });
+    }
+    return detalle;
+  }
 
   /** KPIs del día para el dashboard del CRM, con opción de filtrar por sucursal.
    *
@@ -40,19 +98,23 @@ export class ReportesService {
       }),
     ]);
 
-    const productos = await this.prisma.producto.findMany({
-      where: { id: { in: topProductos.map((t) => t.productoId) } },
-    });
+    const detalle = await this.detalleProductos(topProductos.map((t) => t.productoId), whereBase);
 
     return {
       ventasHoy: Number(agregados._sum.total ?? 0),
       ticketPromedio: Number(agregados._avg.total ?? 0),
       pedidosHoy,
-      topProductos: topProductos.map((t) => ({
-        productoId: t.productoId,
-        nombre: productos.find((p) => p.id === t.productoId)?.nombre ?? "—",
-        cantidad: t._sum.cantidad ?? 0,
-      })),
+      topProductos: topProductos.map((t) => {
+        const d = detalle.get(t.productoId);
+        return {
+          productoId: t.productoId,
+          nombre: d?.nombre ?? "—",
+          categoria: d?.categoria ?? null,
+          subcategoria: d?.subcategoria ?? null,
+          cantidad: t._sum.cantidad ?? 0,
+          variantes: d?.variantes ?? [],
+        };
+      }),
       estadoSucursales: sucursales.map((s) => ({
         sucursalId: s.id,
         nombre: s.nombre,
@@ -103,14 +165,27 @@ export class ReportesService {
 
   /** `sucursalId` opcional: sin él es el consolidado de la empresa (antes no había forma de
    *  pedirlo por sucursal, así que el reporte de una sucursal mostraba lo de todas). */
+  /** Unidades por producto en el rango, con nombre, categoría y desglose por modificadores (se
+   *  conservan `_sum`/`_count` por compatibilidad con los clientes que ya los leen). */
   async ventasPorProducto(empresaId: string, desde: Date, hasta: Date, sucursalId?: string) {
-    return this.prisma.pedidoItem.groupBy({
+    const wherePedido = { empresaId, ...(sucursalId ? { sucursalId } : {}), estado: EstadoPedido.COBRADO, createdAt: { gte: desde, lte: hasta } };
+    const grupos = await this.prisma.pedidoItem.groupBy({
       by: ["productoId"],
-      where: {
-        pedido: { empresaId, ...(sucursalId ? { sucursalId } : {}), estado: EstadoPedido.COBRADO, createdAt: { gte: desde, lte: hasta } },
-      },
+      where: { pedido: wherePedido },
       _sum: { cantidad: true },
       _count: true,
+    });
+    const detalle = await this.detalleProductos(grupos.map((g) => g.productoId), wherePedido);
+    return grupos.map((g) => {
+      const d = detalle.get(g.productoId);
+      return {
+        ...g,
+        nombre: d?.nombre ?? "—",
+        categoria: d?.categoria ?? null,
+        subcategoria: d?.subcategoria ?? null,
+        cantidad: g._sum.cantidad ?? 0,
+        variantes: d?.variantes ?? [],
+      };
     });
   }
 

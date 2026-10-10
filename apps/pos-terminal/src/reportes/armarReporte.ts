@@ -4,6 +4,11 @@
  *  Aquí vive TODO lo que decide qué dice el reporte: las filas, los rótulos y el HTML. El módulo
  *  de al lado (exportar.ts) solo escribe ficheros y abre el diálogo de compartir. */
 
+/** "Grande · Leche de avena ×2 · Chico ×1" para Excel y HTML; vacío si no hay desglose. */
+export function textoVariantes(variantes?: { descripcion: string; cantidad: number }[]): string {
+  return (variantes ?? []).map((v) => `${v.descripcion} ×${v.cantidad}`).join(" · ");
+}
+
 export interface DatosReporte {
   sucursal: string;
   desde: string;
@@ -17,7 +22,7 @@ export interface DatosReporte {
   /** Mostrador y plataformas por separado (opcional: un reporte armado sin él no lo muestra). */
   porOrigen?: { origen: string; total: number; cantidad: number; porMetodo: { metodo: string; total: number; cantidad: number }[] }[];
   /** Top 10 por unidades vendidas. */
-  topProductos: { nombre: string; cantidad: number; total: number }[];
+  topProductos: { nombre: string; categoria?: string | null; cantidad: number; total: number; variantes?: { descripcion: string; cantidad: number }[] }[];
   /** Los menos vendidos del catálogo en venta (incluye los de 0 unidades); el primero es el menos vendido. */
   menosVendidos?: { nombre: string; cantidad: number; total: number }[];
   ventas: { folioLocal: number; createdAt: string; total: number; cajero: string; metodos: string; productos: string }[];
@@ -93,8 +98,8 @@ export function filasResumen(datos: DatosReporte): (string | number)[][] {
         ]
       : []),
     [],
-    ["Top 10 productos más vendidos", "Unidades", "Importe"],
-    ...datos.topProductos.map((p, i) => [`${i + 1}. ${p.nombre}`, p.cantidad, p.total]),
+    ["Top 10 productos más vendidos", "Unidades", "Importe", "Categoría", "Desglose por modificadores"],
+    ...datos.topProductos.map((p, i) => [`${i + 1}. ${p.nombre}`, p.cantidad, p.total, p.categoria ?? "", textoVariantes(p.variantes)]),
   );
   if (datos.menosVendidos && datos.menosVendidos.length > 0) {
     filas.push(
@@ -130,7 +135,10 @@ export function htmlReporte(datos: DatosReporte): string {
     ])
     .join("");
   const filaProducto = datos.topProductos
-    .map((p, i) => `<tr><td>${i + 1}. ${escaparHtml(p.nombre)}</td><td class="num">${p.cantidad}</td><td class="num">${formatearDinero(p.total)}</td></tr>`)
+    .map((p, i) => {
+      const detalle = [p.categoria, textoVariantes(p.variantes)].filter(Boolean).map((t) => escaparHtml(String(t))).join(" — ");
+      return `<tr><td>${i + 1}. ${escaparHtml(p.nombre)}${detalle ? `<br><small style="color:#6b7280">${detalle}</small>` : ""}</td><td class="num">${p.cantidad}</td><td class="num">${formatearDinero(p.total)}</td></tr>`;
+    })
     .join("");
   const filaMenosVendido = (datos.menosVendidos ?? [])
     .map((p) => `<tr><td>${escaparHtml(p.nombre)}</td><td class="num">${p.cantidad}</td><td class="num">${formatearDinero(p.total)}</td></tr>`)

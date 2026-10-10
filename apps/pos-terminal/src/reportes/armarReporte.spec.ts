@@ -137,9 +137,9 @@ describe("Top 10 y menos vendidos en el reporte", () => {
 
   it("el resumen numera el top y agrega la sección de menos vendidos solo cuando viene", () => {
     const filas = filasResumen(conMenos).map((f) => f.join("|"));
-    expect(filas).toContain("Top 10 productos más vendidos|Unidades|Importe");
-    expect(filas).toContain("1. Latte|12|840");
-    expect(filas).toContain("2. Bagel|5|300");
+    expect(filas).toContain("Top 10 productos más vendidos|Unidades|Importe|Categoría|Desglose por modificadores");
+    expect(filas).toContain("1. Latte|12|840||");
+    expect(filas).toContain("2. Bagel|5|300||");
     expect(filas).toContain("Productos menos vendidos|Unidades|Importe");
     expect(filas).toContain("Té chai|0|0");
     expect(filasResumen(BASE).map((f) => f.join("|"))).not.toContain("Productos menos vendidos|Unidades|Importe");
@@ -152,5 +152,23 @@ describe("Top 10 y menos vendidos en el reporte", () => {
     expect(html).toContain("Productos menos vendidos");
     expect(html).toContain("H &amp; T");
     expect(htmlReporte(BASE)).not.toContain("Productos menos vendidos");
+  });
+});
+
+describe("Categoría y desglose por modificadores en el top", () => {
+  it("el Excel lleva la categoría y las variantes en columnas aparte; el HTML las muestra debajo del nombre", () => {
+    const datos: DatosReporte = {
+      ...BASE,
+      topProductos: [
+        { nombre: "Latte", categoria: "Bebidas calientes", cantidad: 3, total: 150, variantes: [{ descripcion: "Grande · Leche de avena", cantidad: 2 }, { descripcion: "Chico", cantidad: 1 }] },
+        { nombre: "Latte", categoria: "DIDI", cantidad: 3, total: 180 },
+      ],
+    };
+    const filas = filasResumen(datos).map((f) => f.join("|"));
+    expect(filas).toContain("1. Latte|3|150|Bebidas calientes|Grande · Leche de avena ×2 · Chico ×1");
+    expect(filas).toContain("2. Latte|3|180|DIDI|");
+    const html = htmlReporte(datos);
+    expect(html).toContain("Bebidas calientes — Grande · Leche de avena ×2 · Chico ×1");
+    expect(html).toContain("DIDI");
   });
 });

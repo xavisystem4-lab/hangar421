@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useAuthCrm } from "@/lib/authClient";
+import { ProductoVendido, type VarianteVendida } from "@/components/ProductoVendido";
 import { useSucursalActiva } from "@/store/sucursalActiva";
 import { StatTile } from "@/components/StatTile";
 import { BarChart } from "@/components/BarChart";
@@ -13,7 +14,7 @@ interface DashboardData {
   ventasHoy: number;
   ticketPromedio: number;
   pedidosHoy: number;
-  topProductos: { productoId: string; nombre: string; cantidad: number }[];
+  topProductos: { productoId: string; nombre: string; categoria?: string | null; subcategoria?: string | null; cantidad: number; variantes?: VarianteVendida[] }[];
   estadoSucursales: { sucursalId: string; nombre: string; dispositivos: { id: string; nombre: string; enLinea: boolean }[] }[];
 }
 
@@ -85,10 +86,13 @@ export default function DashboardPage() {
 
         <div className="card">
           <h3 style={{ marginTop: 0 }}>Top productos</h3>
-          <ol style={{ paddingLeft: 18 }}>
+          <ol style={{ paddingLeft: 18, margin: 0 }}>
             {data.topProductos.map((p) => (
-              <li key={p.productoId}>{p.nombre} — {p.cantidad}</li>
+              <li key={p.productoId} style={{ marginBottom: 8 }}>
+                <ProductoVendido producto={p} /> <span style={{ fontWeight: 700 }}>— {p.cantidad}</span>
+              </li>
             ))}
+            {data.topProductos.length === 0 && <li style={{ listStyle: "none", marginLeft: -18, color: "var(--h421-gray-400)" }}>Sin ventas hoy.</li>}
           </ol>
         </div>
       </div>
