@@ -18,6 +18,7 @@ interface NativoImpresoraUsb {
   imprimirComanda?(json: string, anchoMM: number): Promise<boolean>;
   imprimirPrueba(anchoMM: number): Promise<boolean>;
   sonarAviso?(): boolean;
+  sonarMelodia?(notasJson: string): boolean;
   abrirInstalador?(contentUri: string): "ok" | "permiso";
 }
 
@@ -111,6 +112,40 @@ export function sonarAviso(): boolean {
   } catch {
     return false;
   }
+}
+
+/** Una nota de la melodía: frecuencia en Hz (0 = silencio) y duración en ms. */
+export interface Nota {
+  f: number;
+  ms: number;
+}
+
+/** Melodía sintetizada en el dispositivo (ver HangarUsbPrinterModule.sonarMelodia). En un APK
+ *  viejo sin la función cae al tono del sistema para que al menos suene algo. */
+export function sonarMelodia(notas: Nota[]): boolean {
+  try {
+    if (nativo?.sonarMelodia) return nativo.sonarMelodia(JSON.stringify(notas));
+    return sonarAviso();
+  } catch {
+    return false;
+  }
+}
+
+/** Pitido distintivo de DiDi: "ti-ti-tiii" ascendente, dos veces. Se reconoce de oído entre el
+ *  tono normal de notificación y el de la impresora/caja; dura ~1.6 s. */
+export const MELODIA_DIDI: Nota[] = [
+  { f: 880, ms: 110 }, { f: 0, ms: 50 }, { f: 1175, ms: 110 }, { f: 0, ms: 50 }, { f: 1568, ms: 320 },
+  { f: 0, ms: 220 },
+  { f: 880, ms: 110 }, { f: 0, ms: 50 }, { f: 1175, ms: 110 }, { f: 0, ms: 50 }, { f: 1568, ms: 320 },
+];
+
+/** Recordatorio corto (pedido DiDi sin atender): dos toques agudos. */
+export const MELODIA_DIDI_RECORDATORIO: Nota[] = [
+  { f: 1568, ms: 90 }, { f: 0, ms: 70 }, { f: 1568, ms: 90 },
+];
+
+export function sonarAvisoDidi(): boolean {
+  return sonarMelodia(MELODIA_DIDI);
 }
 
 /** Abre el instalador de Android con un .apk descargado (content://). "permiso" = se abrió el

@@ -5,7 +5,14 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioManager
+import android.media.AudioTrack
 import android.media.RingtoneManager
+import org.json.JSONArray
+import kotlin.math.PI
+import kotlin.math.sin
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
@@ -40,6 +47,25 @@ class HangarUsbPrinterModule : Module() {
             try {
                 val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
                 RingtoneManager.getRingtone(context, uri)?.play()
+                true
+            } catch (e: Exception) {
+                false
+            }
+        }
+
+        // Melodía propia (pitido distintivo de DiDi, etc.): lista de notas [{f: Hz, ms: duración}]
+        // con f = 0 como silencio. Se sintetiza con AudioTrack en el canal de notificaciones, así
+        // suena distinto al tono del sistema y se reconoce de oído sin mirar la pantalla. Corre en
+        // un hilo aparte para no bloquear JS; devuelve de inmediato.
+        Function("sonarMelodia") { notasJson: String ->
+            try {
+                val arr = JSONArray(notasJson)
+                val notas = (0 until arr.length()).map { i ->
+                    val n = arr.getJSONObject(i)
+                    Pair(n.optDouble("f", 0.0), n.optInt("ms", 120).coerceIn(10, 2000))
+                }
+                if (notas.isEmpty()) return@Function false
+                Thread { reproducirMelodia(notas) }.apply { isDaemon = true }.start()
                 true
             } catch (e: Exception) {
                 false
@@ -121,6 +147,58 @@ class HangarUsbPrinterModule : Module() {
             throw e
         } catch (e: Exception) {
             throw CodedException("ERR_IMPRESORA", e.message ?: e.javaClass.simpleName, e)
+        }
+    }
+
+    /** Sintetiza y reproduce las notas (seno con ataque/caída de 8 ms para que no truene). */
+    private fun reproducirMelodia(notas: List<Pair<Double, Int>>) {
+        val tasa = 22050
+        val totalMuestras = notas.sumOf { it.second * tasa / 1000 }
+        if (totalMuestras <= 0) return
+        val pcm = ShortArray(totalMuestras)
+        var pos = 0
+        val rampa = tasa * 8 / 1000
+        for ((f, ms) in notas) {
+            val n = ms * tasa / 1000
+            for (i in 0 until n) {
+                val env = when {
+                    i < rampa -> i.toDouble() / rampa
+                    i > n - rampa -> (n - i).toDouble() / rampa
+                    else -> 1.0
+                }
+                val v = if (f > 0) sin(2.0 * PI * f * i / tasa) * env * 0.85 else 0.0
+                pcm[pos + i] = (v * Short.MAX_VALUE).toInt().toShort()
+            }
+            pos += n
+        }
+        val bytes = pcm.size * 2
+        val track = AudioTrack.Builder()
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+            )
+            .setAudioFormat(
+                AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setSampleRate(tasa)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .build()
+            )
+            .setBufferSizeInBytes(bytes)
+            .setTransferMode(AudioTrack.MODE_STATIC)
+            .build()
+        try {
+            track.write(pcm, 0, pcm.size)
+            track.setVolume(AudioTrack.getMaxVolume())
+            track.play()
+            Thread.sleep((totalMuestras * 1000L / tasa) + 150)
+        } catch (e: Exception) {
+            /* sin audio disponible */
+        } finally {
+            try { track.stop() } catch (e: Exception) { /* ya detenido */ }
+            track.release()
         }
     }
 }
