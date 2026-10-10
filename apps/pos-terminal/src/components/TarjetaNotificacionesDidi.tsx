@@ -2,8 +2,11 @@ import { useEffect, useState } from "react";
 import { Alert, Modal, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
 import { notificacionesApp, type AppInstalada } from "../../modules/hangar-notificaciones";
+import { sonarAvisoDidi } from "../../modules/hangar-usb-printer";
+import { abrirBaseDeDatos } from "../db/database";
+import { guardarConfig, obtenerConfig } from "../db/configLocalRepo";
 import { formatearFechaHora } from "../reportes/armarReporte";
-import type { PedidoDetectado } from "../plataformas/useNotificacionesDidi";
+import { CLAVE_DIDI_REPETIR_AVISO, type PedidoDetectado } from "../plataformas/useNotificacionesDidi";
 
 /**
  * Admin → Plataformas: "Leer la app de DiDi en esta tablet". Aquí se concede el acceso a
@@ -27,6 +30,17 @@ export function TarjetaNotificacionesDidi({ detectados, onRegistrar, onAtender, 
   const [apps, setApps] = useState<AppInstalada[]>([]);
   const [filtroApp, setFiltroApp] = useState("didi");
   const [verTexto, setVerTexto] = useState<string | null>(null);
+  const [repetirAviso, setRepetirAviso] = useState(true);
+
+  async function cambiarRepetir(v: boolean) {
+    setRepetirAviso(v);
+    try {
+      const db = await abrirBaseDeDatos();
+      await guardarConfig(db, CLAVE_DIDI_REPETIR_AVISO, v ? "1" : "0");
+    } catch {
+      /* se conserva en memoria */
+    }
+  }
 
   function refrescar() {
     if (!disponible) return;
@@ -38,6 +52,7 @@ export function TarjetaNotificacionesDidi({ detectados, onRegistrar, onAtender, 
 
   useEffect(() => {
     refrescar();
+    abrirBaseDeDatos().then((db) => obtenerConfig(db, CLAVE_DIDI_REPETIR_AVISO)).then((v) => setRepetirAviso(v !== "0")).catch(() => {});
     // El permiso se concede en Ajustes (fuera de la app); al volver se relee cada pocos segundos.
     const t = setInterval(() => { if (disponible) setPermiso(notificacionesApp.permisoConcedido()); }, 3000);
     return () => clearInterval(t);
@@ -108,6 +123,23 @@ export function TarjetaNotificacionesDidi({ detectados, onRegistrar, onAtender, 
         <TouchableOpacity onPress={abrirSelectorApps} style={estilos.botonChico}>
           <Text style={estilos.botonChicoTexto}>Elegir app</Text>
         </TouchableOpacity>
+      </View>
+
+      <View style={[estilos.fila, { marginTop: 10 }]}>
+        <View style={{ flex: 1 }}>
+          <Text style={[estilos.dato, { marginTop: 0 }]}>🔔 Pitido distintivo de DiDi</Text>
+          <Text style={estilos.ayuda}>
+            Al llegar un pedido suena "ti-ti-tiii" (distinto al tono normal) y vibra. Con el recordatorio activo, cada 30 s vuelve a sonar
+            un toque corto hasta que el pedido se registre o se descarte.
+          </Text>
+        </View>
+        <TouchableOpacity onPress={() => sonarAvisoDidi()} style={estilos.botonChico} accessibilityLabel="Probar el pitido de DiDi">
+          <Text style={estilos.botonChicoTexto}>▶ Probar</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={[estilos.fila, { marginTop: 6 }]}>
+        <Text style={[estilos.ayuda, { flex: 1, marginTop: 0 }]}>Repetir recordatorio cada 30 s mientras haya pedidos sin registrar</Text>
+        <Switch value={repetirAviso} onValueChange={cambiarRepetir} />
       </View>
 
       <View style={{ marginTop: 12 }}>

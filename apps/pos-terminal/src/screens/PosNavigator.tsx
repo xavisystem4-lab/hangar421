@@ -386,10 +386,21 @@ export function PosNavigator() {
         <View style={estilos.avisoDelivery} accessibilityRole="alert">
           <TouchableOpacity onPress={() => registrarDidi(didi.aviso!)} style={{ flex: 1 }}>
             <Text style={estilos.avisoDeliveryTexto}>🛵 {didi.aviso.resumen}</Text>
-            <Text style={estilos.avisoDeliverySub}>Desde la app de DiDi en esta tablet · tocar para registrarlo</Text>
+            <Text style={estilos.avisoDeliverySub}>
+              Pedido por preparar y cobrar · tocar para registrarlo{didi.pendientes.length > 1 ? ` · ${didi.pendientes.length} pendientes` : ""}
+            </Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={didi.descartarAviso}><Text style={estilos.avisoDeliveryTexto}>✕</Text></TouchableOpacity>
+          <TouchableOpacity onPress={didi.descartarAviso} accessibilityLabel="Ocultar aviso"><Text style={estilos.avisoDeliveryTexto}>✕</Text></TouchableOpacity>
         </View>
+      )}
+      {/* Si cerró el banner pero sigue habiendo pedidos de DiDi sin registrar, queda una franja
+          delgada (y el recordatorio sonoro cada 30 s) hasta que se atiendan. */}
+      {!didi.aviso && didi.pendientes.length > 0 && (
+        <TouchableOpacity onPress={() => registrarDidi(didi.pendientes[0])} style={estilos.avisoDidiPendiente} accessibilityRole="button">
+          <Text style={estilos.avisoDidiPendienteTexto}>
+            🛵 {didi.pendientes.length === 1 ? "1 pedido de DiDi sin registrar" : `${didi.pendientes.length} pedidos de DiDi sin registrar`} · tocar para capturar el siguiente
+          </Text>
+        </TouchableOpacity>
       )}
 
       {puedeDelivery && delivery.aviso && (
@@ -506,6 +517,8 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     avisoDelivery: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#FF6A13", padding: 12, paddingHorizontal: 16 },
     avisoDeliveryTexto: { color: "#fff", fontWeight: "800", fontSize: 15 },
     avisoDeliverySub: { color: "#fff", fontSize: 12, marginTop: 2 },
+    avisoDidiPendiente: { backgroundColor: "#FF6A13", paddingVertical: 6, paddingHorizontal: 16 },
+    avisoDidiPendienteTexto: { color: "#fff", fontWeight: "700", fontSize: 13 },
     chipDelivery: { backgroundColor: "#FF6A13", borderRadius: 14, paddingVertical: 4, paddingHorizontal: 10 },
     chipDeliveryTexto: { color: "#fff", fontWeight: "800" },
     avisoFolioTexto: { color: "#fff", fontWeight: "700", fontSize: 13 },
