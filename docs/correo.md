@@ -5,8 +5,26 @@ PDF adjunto y, en el cuerpo, el semáforo (verde óptimo / amarillo bajo / rojo 
 insumos por surtir. El envío lo hace el backend (`apps/backend/src/correo/correo.service.ts`,
 endpoint `POST /inventario/reporte/enviar`); el ERP solo arma el PDF.
 
-Se configura **una sola vez** con variables de entorno en el servidor (Railway → Variables).
-Sin configurar, el ERP lo dice y ofrece abrir el correo del usuario con el PDF descargado.
+## Lo normal: Admin → Correo en el ERP (solo Administrador corporativo)
+
+Mismo formulario que Licencias Galaviz: **Proveedor** (Gmail / Outlook / Otro), **Servidor
+SMTP**, **Puerto y seguridad** (587 STARTTLS o 465 SSL), **Correo (usuario)**, **Contraseña**
+(en blanco = conservar la guardada), **Nombre del remitente**, y botones **Guardar** /
+**Guardar y enviar prueba**. La contraseña viaja una sola vez, se guarda cifrada (AES-256-GCM
+con `CORREO_CIFRADO_KEY`, o `PAGOS_CIFRADO_KEY` si aquella no existe) en
+`configuracion_correo` y nunca se devuelve al navegador. Endpoints: `GET/PUT /correo/configuracion`,
+`POST /correo/prueba`.
+
+Gmail: la cuenta necesita verificación en dos pasos y una *contraseña de aplicación* (Cuenta de
+Google → Seguridad → Verificación en 2 pasos → Contraseñas de aplicaciones). Los errores
+típicos (535 usuario/contraseña, conexión rechazada, SSL en puerto equivocado) se traducen a
+texto claro en el ERP (`CorreoService.explicarError`).
+
+## Respaldo: variables de entorno del servidor
+
+Si la empresa no capturó nada (o lo desactivó), el backend usa lo configurado en el servidor
+(Railway → Variables). Sin ninguna de las dos cosas, el ERP lo dice y ofrece abrir el correo
+del usuario con el PDF descargado.
 
 ## Opción A — SMTP (Gmail, Outlook, correo del dominio)
 

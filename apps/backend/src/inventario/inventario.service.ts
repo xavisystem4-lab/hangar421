@@ -225,8 +225,9 @@ export class InventarioService {
     });
   }
 
-  estadoCorreo() {
-    return this.correo.estado();
+  async estadoCorreo(sucursalId?: string) {
+    const empresaId = sucursalId ? (await this.prisma.sucursal.findUnique({ where: { id: sucursalId }, select: { empresaId: true } }))?.empresaId : undefined;
+    return this.correo.estado(empresaId);
   }
 
   /** Envía por correo el reporte de inventario o la lista de compras que el ERP ya generó en PDF
@@ -239,7 +240,7 @@ export class InventarioService {
     const destinatarios = CorreoService.normalizarDestinatarios(datos.destinatarios);
     if (destinatarios.length === 0) throw new BadRequestException("Captura al menos un correo válido.");
 
-    const sucursal = await this.prisma.sucursal.findUnique({ where: { id: datos.sucursalId }, select: { nombre: true, empresa: { select: { nombre: true } } } });
+    const sucursal = await this.prisma.sucursal.findUnique({ where: { id: datos.sucursalId }, select: { nombre: true, empresaId: true } });
     const nombreSucursal = sucursal?.nombre ?? "Sucursal";
     const esCompras = datos.tipo === "compras";
     const titulo = esCompras ? "Lista de compras" : "Reporte de inventario";
@@ -304,6 +305,6 @@ export class InventarioService {
       html,
       texto,
       adjuntos: [{ nombre: nombreArchivo.endsWith(".pdf") ? nombreArchivo : `${nombreArchivo}.pdf`, contenidoBase64: datos.pdfBase64, tipo: "application/pdf" }],
-    });
+    }, sucursal?.empresaId);
   }
 }
