@@ -28,7 +28,7 @@ export async function listarExistencias(db: SQLiteDatabase): Promise<ExistenciaI
             inv.maximo
      FROM insumos i
      LEFT JOIN inventario_local inv ON inv.insumo_id = i.id AND inv.sucursal_id = ?
-     WHERE i.activo = 1
+     WHERE i.activo = 1 AND i.es_preparacion = 0
      ORDER BY i.nombre`,
     sucursalId,
   );
@@ -170,6 +170,8 @@ interface InsumoRemoto {
   proveedorId?: string | null; proveedor?: { nombre: string } | null; activo: boolean;
   /** Empaque de compra: "Cartón" de 1000 ml (ver presentacion.ts en shared). */
   presentacionNombre?: string | null; presentacionCantidad?: number | string | null;
+  /** Preparación de la casa: no tiene existencia, se descuentan sus ingredientes. */
+  esPreparacion?: boolean;
 }
 interface ExistenciaRemota {
   insumoId: string; existencia: number | string; minimo: number | string; maximo?: number | string | null;
@@ -190,15 +192,17 @@ export async function upsertInventario(db: SQLiteDatabase, insumos: InsumoRemoto
   await db.withTransactionAsync(async () => {
     for (const i of insumos) {
       await db.runAsync(
-        `INSERT INTO insumos (id, nombre, unidad_medida, costo_unitario, proveedor_id, proveedor_nombre, activo, synced_at, presentacion_nombre, presentacion_cantidad)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO insumos (id, nombre, unidad_medida, costo_unitario, proveedor_id, proveedor_nombre, activo, synced_at, presentacion_nombre, presentacion_cantidad, es_preparacion)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET nombre = excluded.nombre, unidad_medida = excluded.unidad_medida,
            costo_unitario = excluded.costo_unitario, proveedor_id = excluded.proveedor_id,
            proveedor_nombre = excluded.proveedor_nombre, activo = excluded.activo, synced_at = excluded.synced_at,
-           presentacion_nombre = excluded.presentacion_nombre, presentacion_cantidad = excluded.presentacion_cantidad`,
+           presentacion_nombre = excluded.presentacion_nombre, presentacion_cantidad = excluded.presentacion_cantidad,
+           es_preparacion = excluded.es_preparacion`,
         i.id, i.nombre, i.unidadMedida ?? "pz", Number(i.costoUnitario) || 0,
         i.proveedorId ?? null, i.proveedor?.nombre ?? null, i.activo ? 1 : 0, ahora,
         i.presentacionNombre ?? null, i.presentacionCantidad != null ? Number(i.presentacionCantidad) : null,
+        i.esPreparacion ? 1 : 0,
       );
     }
 
@@ -242,6 +246,8 @@ export async function contarMovimientosInventarioPendientes(db: SQLiteDatabase):
 export interface RecetasRemotas {
   porProducto: { productoId: string; insumoId: string; cantidad: number }[];
   porOpcion: { opcionModificadorId: string; insumoId: string; cantidad: number }[];
+  /** Preparaciones de la casa (cold foam), por UNA unidad de la preparación. */
+  porPreparacion?: { preparacionId: string; insumoId: string; cantidad: number }[];
 }
 
 /** Reemplaza las recetas guardadas con las del ERP (copia de solo lectura, como el catálogo). */
@@ -260,6 +266,16 @@ export async function upsertRecetas(db: SQLiteDatabase, recetas: RecetasRemotas)
         "INSERT OR REPLACE INTO recetas_opcion (opcion_modificador_id, insumo_id, cantidad) VALUES (?, ?, ?)",
         r.opcionModificadorId, r.insumoId, Number(r.cantidad) || 0,
       );
+    }
+    // Un ERP anterior no manda preparaciones: entonces no se tocan las que ya hubiera.
+    if (recetas.porPreparacion) {
+      await db.runAsync("DELETE FROM recetas_preparacion");
+      for (const r of recetas.porPreparacion) {
+        await db.runAsync(
+          "INSERT OR REPLACE INTO recetas_preparacion (preparacion_id, insumo_id, cantidad) VALUES (?, ?, ?)",
+          r.preparacionId, r.insumoId, Number(r.cantidad) || 0,
+        );
+      }
     }
   });
 }
@@ -283,9 +299,16 @@ export async function recetasParaConsumo(
         ...opcionIds,
       )
     : [];
+  // Todas las preparaciones (son pocas): la expansión en cascada necesita las anidadas también.
+  const porPreparacion = porProducto.length || porOpcion.length
+    ? await db.getAllAsync<{ preparacion_id: string; insumo_id: string; cantidad: number }>(
+        "SELECT preparacion_id, insumo_id, cantidad FROM recetas_preparacion",
+      )
+    : [];
   return {
     porProducto: porProducto.map((r) => ({ productoId: r.producto_id, insumoId: r.insumo_id, cantidad: r.cantidad })),
     porOpcion: porOpcion.map((r) => ({ opcionModificadorId: r.opcion_modificador_id, insumoId: r.insumo_id, cantidad: r.cantidad })),
+    porPreparacion: porPreparacion.map((r) => ({ preparacionId: r.preparacion_id, insumoId: r.insumo_id, cantidad: r.cantidad })),
   };
 }
 

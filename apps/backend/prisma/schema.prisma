@@ -1103,6 +1103,10 @@ model Insumo {
   // insumo no se vende directo, solo se usa como ingrediente (ver RecetaItem).
   precioVenta   Decimal? @db.Decimal(10, 2)
   activo        Boolean  @default(true)
+  // Preparación de la casa (cold foam, crema batida saborizada): no se compra ni se cuenta, se
+  // hace con otros insumos. Su receta vive en RecetaPreparacion y al vender se descuentan esos
+  // ingredientes, nunca la preparación en sí.
+  esPreparacion Boolean  @default(false)
 
   empresa   Empresa    @relation(fields: [empresaId], references: [id])
   proveedor Proveedor? @relation(fields: [proveedorId], references: [id])
@@ -1116,6 +1120,26 @@ model Insumo {
   @@index([proveedorId])
   @@map("insumos")
   recetasOpcion RecetaOpcion[]
+  // Si es preparación: sus ingredientes.
+  ingredientesPreparacion RecetaPreparacion[] @relation("PreparacionIngredientes")
+  // Preparaciones en las que se usa este insumo.
+  usadoEnPreparaciones    RecetaPreparacion[] @relation("IngredienteDePreparacion")
+}
+
+// Receta de una preparación de la casa, por UNA unidad de la preparación (1 servicio de cold
+// foam = 35 g crema batida + 15 g agave + 2 g blue matcha). Ver inventarioConsumo.ts en shared.
+model RecetaPreparacion {
+  id            String  @id @default(uuid())
+  preparacionId String
+  insumoId      String
+  cantidad      Decimal @db.Decimal(12, 4)
+
+  preparacion Insumo @relation("PreparacionIngredientes", fields: [preparacionId], references: [id], onDelete: Cascade)
+  insumo      Insumo @relation("IngredienteDePreparacion", fields: [insumoId], references: [id])
+
+  @@unique([preparacionId, insumoId])
+  @@index([insumoId])
+  @@map("receta_preparaciones")
 }
 
 model Proveedor {

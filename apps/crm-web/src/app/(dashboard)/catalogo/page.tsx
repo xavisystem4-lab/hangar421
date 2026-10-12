@@ -8,7 +8,7 @@ import { useSucursalActiva } from "@/store/sucursalActiva";
 import { filtrarProductos } from "@/lib/catalogoFiltro";
 import { PanelProducto } from "@/components/PanelProducto";
 
-interface Insumo { id: string; nombre: string; unidadMedida: string }
+interface Insumo { id: string; nombre: string; unidadMedida: string; esPreparacion?: boolean }
 interface RecetaItemDto { id: string; insumoId: string; cantidad: string; insumo: { nombre: string; unidadMedida: string } }
 /** Receta de UNA opción de modificador: lo que consume cuando el cliente elige esa opción. */
 interface RecetaOpcionDto {
@@ -333,7 +333,7 @@ export default function CatalogoPage() {
             ) : (
               <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                 <select value={nuevoItem.insumoId} onChange={(e) => setNuevoItem((n) => ({ ...n, insumoId: e.target.value }))} style={{ flex: 2, padding: 8 }}>
-                  {insumos.map((i) => <option key={i.id} value={i.id}>{i.nombre}</option>)}
+                  {insumos.map((i) => <option key={i.id} value={i.id}>{i.nombre} ({i.unidadMedida}){i.esPreparacion ? " · preparación" : ""}</option>)}
                 </select>
                 <input placeholder="Cantidad" type="number" value={nuevoItem.cantidad} onChange={(e) => setNuevoItem((n) => ({ ...n, cantidad: e.target.value }))}
                   style={{ flex: 1, padding: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
@@ -376,7 +376,7 @@ export default function CatalogoPage() {
                                 style={{ flex: 2, padding: 6, fontSize: 13 }}
                               >
                                 <option value="">Insumo…</option>
-                                {insumos.map((i) => <option key={i.id} value={i.id}>{i.nombre}</option>)}
+                                {insumos.map((i) => <option key={i.id} value={i.id}>{i.nombre} ({i.unidadMedida}){i.esPreparacion ? " · preparación" : ""}</option>)}
                               </select>
                               <input
                                 placeholder="Cantidad" type="number"

@@ -8,6 +8,7 @@ import { useAuthCrm } from "@/lib/authClient";
 import { useSucursalActiva } from "@/store/sucursalActiva";
 import { ReporteInventario, SEMAFORO } from "@/components/ReporteInventario";
 import { PanelExistencias, type ExistenciaProducto } from "@/components/PanelExistencias";
+import { PanelPreparaciones, etiquetaUnidad } from "@/components/PanelPreparaciones";
 
 interface Existencia {
   insumoId: string;
@@ -35,6 +36,8 @@ interface Insumo {
   precioVenta: string | null;
   proveedorId: string | null;
   proveedor: Proveedor | null;
+  /** Preparación de la casa (cold foam): no tiene existencia, va en su propio panel. */
+  esPreparacion?: boolean;
 }
 
 interface Movimiento {
@@ -96,6 +99,8 @@ export default function InventarioPage() {
   const [sucursalId, setSucursalId] = useState("");
   const [existencias, setExistencias] = useState<Existencia[]>([]);
   const [insumos, setInsumos] = useState<Insumo[]>([]);
+  /** Todos los insumos activos, incluidas las preparaciones (para sus recetas). */
+  const [todosInsumos, setTodosInsumos] = useState<Insumo[]>([]);
   const [existenciasProducto, setExistenciasProducto] = useState<ExistenciaProducto[]>([]);
   const [actualizadoEn, setActualizadoEn] = useState<Date | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
@@ -167,7 +172,10 @@ export default function InventarioPage() {
       apiFetch<ExistenciaProducto[]>(`/inventario/productos-existencias?sucursalId=${suc}`).catch(() => [] as ExistenciaProducto[]),
     ]);
     setExistencias(ex);
-    setInsumos(ins);
+    // Las preparaciones no se cuentan ni se compran: fuera de existencias, semáforo, conteo y
+    // lista de compras. Se administran en su propio panel.
+    setInsumos(ins.filter((i) => !i.esPreparacion));
+    setTodosInsumos(ins);
     setExistenciasProducto(prods);
     setActualizadoEn(new Date());
     cargarTraspasosPendientes(suc);
@@ -539,7 +547,7 @@ export default function InventarioPage() {
                         {!(UNIDADES_INSUMO as readonly string[]).includes(borradorInsumo.unidadMedida) && (
                           <option value={borradorInsumo.unidadMedida}>{borradorInsumo.unidadMedida} (actual)</option>
                         )}
-                        {UNIDADES_INSUMO.map((u) => <option key={u} value={u}>{u}</option>)}
+                        {UNIDADES_INSUMO.map((u) => <option key={u} value={u}>{etiquetaUnidad(u)}</option>)}
                       </select>
                     </td>
                     <td style={{ padding: 8 }}>
@@ -624,7 +632,7 @@ export default function InventarioPage() {
             style={{ width: "100%", padding: 10, marginBottom: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
           <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
             <select value={nuevoInsumo.unidadMedida} onChange={(e) => setNuevoInsumo((n) => ({ ...n, unidadMedida: e.target.value }))} style={{ flex: 1, padding: 10 }}>
-              {UNIDADES_INSUMO.map((u) => <option key={u} value={u}>{u}</option>)}
+              {UNIDADES_INSUMO.map((u) => <option key={u} value={u}>{etiquetaUnidad(u)}</option>)}
             </select>
             <select value={nuevoInsumo.proveedorId} onChange={(e) => setNuevoInsumo((n) => ({ ...n, proveedorId: e.target.value }))} style={{ flex: 1, padding: 10 }}>
               <option value="">Proveedor…</option>
@@ -658,6 +666,10 @@ export default function InventarioPage() {
           </p>
           <button onClick={crearInsumo} style={{ width: "100%", marginTop: 8, background: "var(--h421-green)", color: "#fff", padding: "10px 16px" }}>Crear insumo</button>
         </div>
+
+        {contexto && (
+          <PanelPreparaciones empresaId={contexto.usuario.empresaId} insumos={todosInsumos} onCambio={() => cargar(sucursalId)} />
+        )}
 
         <div className="card">
           <h3 style={{ marginTop: 0 }}>Proveedores</h3>

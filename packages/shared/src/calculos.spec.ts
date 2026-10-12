@@ -10,6 +10,8 @@ import {
   calcularNivelInventario,
   calcularPorcionesDisponibles,
   factorConversionUnidad,
+  normalizarUnidad,
+  UNIDADES_INSUMO,
   calcularSubtotal,
   calcularTotalesPedido,
   deltaExistenciaInventario,
@@ -340,5 +342,27 @@ describe("factorConversionUnidad", () => {
     expect(factorConversionUnidad("pz", "g")).toBeNull();
     expect(factorConversionUnidad("Cartón (litros)", "ml")).toBeNull();
     expect(factorConversionUnidad("l", "")).toBeNull();
+    // Peso y volumen no se mezclan: una onza de peso no es una onza líquida.
+    expect(factorConversionUnidad("oz", "fl oz")).toBeNull();
+    expect(factorConversionUnidad("servicio", "g")).toBeNull();
+  });
+
+  it("libras, onzas y galones se convierten a su familia", () => {
+    expect(factorConversionUnidad("lb", "g")).toBe(453.59237);
+    expect(factorConversionUnidad("lb", "oz")).toBe(16);
+    expect(factorConversionUnidad("kg", "lb")).toBeCloseTo(2.20462, 5);
+    expect(factorConversionUnidad("gal", "l")).toBe(3.785411784);
+    expect(factorConversionUnidad("gal", "fl oz")).toBe(128);
+  });
+
+  it("reconoce lo que la gente ya escribió a mano", () => {
+    expect(factorConversionUnidad("Kgs", "gr")).toBe(1000);
+    expect(factorConversionUnidad("Litros", "ml")).toBe(1000);
+    expect(normalizarUnidad(" Pzas ")).toBe("pz");
+    expect(normalizarUnidad("Galón")).toBe("gal");
+  });
+
+  it("ofrece todas las unidades, abreviadas salvo servicio y unidad", () => {
+    expect(UNIDADES_INSUMO).toEqual(["pz", "g", "kg", "lb", "oz", "ml", "l", "gal", "fl oz", "servicio", "unidad"]);
   });
 });

@@ -9,7 +9,9 @@ function baseFalsa(filas: Record<string, any[]> = {}) {
   const ejecutados: { sql: string; params: any[] }[] = [];
   return {
     db: {
-      getAllAsync: jest.fn(async (sql: string) => (sql.includes("FROM recetas_opcion") ? filas.opcion ?? [] : filas.producto ?? [])),
+      getAllAsync: jest.fn(async (sql: string) =>
+        sql.includes("FROM recetas_preparacion") ? filas.preparacion ?? []
+          : sql.includes("FROM recetas_opcion") ? filas.opcion ?? [] : filas.producto ?? []),
       runAsync: jest.fn(async (sql: string, ...params: any[]) => { ejecutados.push({ sql, params }); }),
       withTransactionAsync: jest.fn(async (fn: any) => fn()),
     } as any,
@@ -26,13 +28,25 @@ describe("recetasParaConsumo", () => {
     await expect(recetasParaConsumo(db, ["latte"], ["avena"])).resolves.toEqual({
       porProducto: [{ productoId: "latte", insumoId: "cafe", cantidad: 20 }],
       porOpcion: [{ opcionModificadorId: "avena", insumoId: "leche-avena", cantidad: 240 }],
+      porPreparacion: [],
     });
   });
 
   it("sin productos ni opciones no consulta nada", async () => {
     const { db } = baseFalsa();
-    await expect(recetasParaConsumo(db, [], [])).resolves.toEqual({ porProducto: [], porOpcion: [] });
+    await expect(recetasParaConsumo(db, [], [])).resolves.toEqual({ porProducto: [], porOpcion: [], porPreparacion: [] });
     expect(db.getAllAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe("recetasParaConsumo con preparaciones", () => {
+  it("trae también las recetas de las preparaciones de la casa (cold foam)", async () => {
+    const { db } = baseFalsa({
+      producto: [{ producto_id: "cold-brew", insumo_id: "cold-foam", cantidad: 1 }],
+      preparacion: [{ preparacion_id: "cold-foam", insumo_id: "crema", cantidad: 35 }],
+    });
+    const r = await recetasParaConsumo(db, ["cold-brew"], []);
+    expect(r.porPreparacion).toEqual([{ preparacionId: "cold-foam", insumoId: "crema", cantidad: 35 }]);
   });
 });
 

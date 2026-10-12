@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ComponentProps } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { factorConversionUnidad } from "@hangar421/shared";
+import { factorConversionUnidad, normalizarUnidad } from "@hangar421/shared";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
 import { listarInsumosLocales, type InsumoLocal } from "../db/inventarioRepo";
@@ -74,7 +74,9 @@ export function PanelInsumos({ onCambio }: { onCambio: () => Promise<void> | voi
     setEditandoId(i.id);
     setBorrador({
       nombre: i.nombre,
-      unidadMedida: (UNIDADES_INSUMO as readonly string[]).includes(i.unidadMedida) ? i.unidadMedida : "pz",
+      // "Kgs" o "Litros" capturados a mano se reconocen; una unidad libre ("Cartón") se queda tal
+      // cual hasta que la persona elija una del sistema.
+      unidadMedida: (UNIDADES_INSUMO as readonly string[]).includes(normalizarUnidad(i.unidadMedida)) ? normalizarUnidad(i.unidadMedida) : i.unidadMedida,
       costoUnitario: i.costoUnitario ? String(i.costoUnitario) : "",
       proveedorId: i.proveedorId ?? "",
       minimo: i.minimo ? String(i.minimo) : "",

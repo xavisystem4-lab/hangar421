@@ -258,28 +258,67 @@ export function calcularDescuentosVenta(lineas: LineaConDescuento[], general?: D
   return { subtotal, descuentoProductos, descuentoGeneral, descuentoTotal, impuesto: 0, total: round2(subtotal - descuentoTotal), porLinea };
 }
 
-/** Unidades de insumo que maneja el sistema. */
-export const UNIDADES_INSUMO = ["pz", "g", "kg", "ml", "l"] as const;
+/**
+ * Unidades de insumo que maneja el sistema, abreviadas. "servicio" y "unidad" van completas: no
+ * tienen abreviatura reconocible y una preparación de la casa (un cold foam) se mide así.
+ */
+export const UNIDADES_INSUMO = ["pz", "g", "kg", "lb", "oz", "ml", "l", "gal", "fl oz", "servicio", "unidad"] as const;
 export type UnidadInsumo = (typeof UNIDADES_INSUMO)[number];
+
+/** Nombre completo para mostrar junto a la abreviatura en los selectores. */
+export const NOMBRE_UNIDAD: Record<UnidadInsumo, string> = {
+  pz: "piezas",
+  g: "gramos",
+  kg: "kilos",
+  lb: "libras",
+  oz: "onzas (peso)",
+  ml: "mililitros",
+  l: "litros",
+  gal: "galones",
+  "fl oz": "onzas líquidas",
+  servicio: "servicio",
+  unidad: "unidad",
+};
+
+/** Peso en gramos y volumen en mililitros de una unidad de cada familia. */
+const BASE_PESO_G: Record<string, number> = { g: 1, kg: 1000, lb: 453.59237, oz: 28.349523125 };
+const BASE_VOLUMEN_ML: Record<string, number> = { ml: 1, l: 1000, gal: 3785.411784, "fl oz": 29.5735295625 };
+
+/** Nombres que la gente ya capturó a mano ("Kgs", "Litros", "pza") → la unidad del sistema. */
+const SINONIMOS_UNIDAD: Record<string, string> = {
+  pza: "pz", pzas: "pz", pieza: "pz", piezas: "pz",
+  gr: "g", grs: "g", gramo: "g", gramos: "g",
+  kgs: "kg", kilo: "kg", kilos: "kg", kilogramo: "kg", kilogramos: "kg",
+  lbs: "lb", libra: "lb", libras: "lb",
+  onza: "oz", onzas: "oz",
+  lt: "l", lts: "l", litro: "l", litros: "l",
+  mililitro: "ml", mililitros: "ml",
+  galon: "gal", "galón": "gal", galones: "gal",
+  floz: "fl oz", "onza liquida": "fl oz", "onzas liquidas": "fl oz",
+  servicios: "servicio", unidades: "unidad",
+};
+
+/** La unidad del sistema a la que corresponde lo capturado, o el texto limpio si no se reconoce. */
+export function normalizarUnidad(u: string): string {
+  const t = String(u ?? "").trim().toLowerCase().replace(/\s+/g, " ").replace(/\.$/, "");
+  return SINONIMOS_UNIDAD[t] ?? t;
+}
 
 /**
  * Cuánto hay que multiplicar las cantidades al pasar un insumo de una unidad a otra
  * (existencias, mínimos y cantidades de receta). `null` cuando no hay conversión posible
- * (pz ↔ g, o una unidad personalizada como "Cartón"): ahí el cambio es solo de etiqueta y las
- * cantidades las tiene que recapturar una persona.
+ * (pz ↔ g, peso ↔ volumen, o una unidad personalizada como "Cartón"): ahí el cambio es solo de
+ * etiqueta y las cantidades las tiene que recapturar una persona.
  *
- *   l → ml = 1000 · ml → l = 0.001 · kg → g = 1000 · g → kg = 0.001 · misma unidad = 1
+ *   l → ml = 1000 · kg → g = 1000 · lb → g = 453.59 · gal → l = 3.785 · misma unidad = 1
  */
 export function factorConversionUnidad(de: string, a: string): number | null {
-  const d = String(de ?? "").trim().toLowerCase();
-  const h = String(a ?? "").trim().toLowerCase();
+  const d = normalizarUnidad(de);
+  const h = normalizarUnidad(a);
   if (!d || !h) return null;
   if (d === h) return 1;
-  const familias: Record<string, Record<string, number>> = {
-    l: { ml: 1000 },
-    ml: { l: 0.001 },
-    kg: { g: 1000 },
-    g: { kg: 0.001 },
-  };
-  return familias[d]?.[h] ?? null;
+  for (const familia of [BASE_PESO_G, BASE_VOLUMEN_ML]) {
+    if (familia[d] != null && familia[h] != null) return Number((familia[d] / familia[h]).toPrecision(12));
+  }
+  return null;
 }

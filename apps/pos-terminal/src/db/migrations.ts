@@ -679,6 +679,24 @@ export const MIGRACIONES: Migracion[] = [
       `);
     },
   },
+  {
+    version: 19,
+    nombre: "preparaciones",
+    up: async (db) => {
+      // Preparaciones de la casa (cold foam = crema batida + agave + blue matcha): un insumo que se
+      // hace con otros. Al vender se descuentan sus ingredientes (expandirPreparaciones en shared),
+      // y no salen en existencias ni compras porque no tienen stock propio.
+      await db.execAsync(`
+        ALTER TABLE insumos ADD COLUMN es_preparacion INTEGER NOT NULL DEFAULT 0;
+        CREATE TABLE recetas_preparacion (
+          preparacion_id TEXT NOT NULL,
+          insumo_id TEXT NOT NULL,
+          cantidad REAL NOT NULL,
+          PRIMARY KEY (preparacion_id, insumo_id)
+        );
+      `);
+    },
+  },
 ];
 
 /** Corre, en orden, toda migración con `version` mayor a la ya aplicada — cada una dentro de su
