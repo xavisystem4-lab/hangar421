@@ -573,6 +573,7 @@ model OpcionModificador {
 
   @@index([modificadorId])
   @@map("opciones_modificador")
+  recetas RecetaOpcion[]
 }
 
 model ProductoModificador {
@@ -1109,6 +1110,7 @@ model Insumo {
   @@index([empresaId])
   @@index([proveedorId])
   @@map("insumos")
+  recetasOpcion RecetaOpcion[]
 }
 
 model Proveedor {
@@ -1545,4 +1547,23 @@ model ConfiguracionCorreo {
   empresa Empresa @relation(fields: [empresaId], references: [id])
 
   @@map("configuracion_correo")
+}
+
+// Receta de una OPCIÓN de modificador: lo que consume del inventario cuando el cliente elige esa
+// opción (ej. "Leche de avena" → 240 ml del insumo Leche-Avena). Complementa RecetaItem, que es
+// la receta FIJA del producto (café, vaso…): un Latte no puede listar las cinco leches en su
+// receta, porque entonces cada venta descontaría todas. Al cobrar se descuenta la receta del
+// producto más la de cada opción elegida en ese renglón (ver PedidosService).
+model RecetaOpcion {
+  id                  String  @id @default(uuid())
+  opcionModificadorId String
+  insumoId            String
+  cantidad            Decimal @db.Decimal(10, 4)
+
+  opcionModificador OpcionModificador @relation(fields: [opcionModificadorId], references: [id], onDelete: Cascade)
+  insumo            Insumo            @relation(fields: [insumoId], references: [id])
+
+  @@unique([opcionModificadorId, insumoId])
+  @@index([insumoId])
+  @@map("receta_opciones")
 }

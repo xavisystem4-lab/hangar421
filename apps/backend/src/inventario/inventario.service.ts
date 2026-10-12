@@ -1,5 +1,5 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
-import { TipoMovimientoInventario, WS_EVENTS, calcularPorcionesDisponibles, deltaExistenciaInventario } from "@hangar421/shared";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { TipoMovimientoInventario, WS_EVENTS, calcularPorcionesDisponibles, deltaExistenciaInventario, factorConversionUnidad } from "@hangar421/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { RealtimeGateway } from "../realtime/realtime.gateway";
 import { CorreoService } from "../correo/correo.service";
@@ -86,6 +86,45 @@ export class InventarioService {
     return this.prisma.insumo.update({ where: { id }, data });
   }
 
+  /**
+   * Cambia la unidad de medida de un insumo y, cuando la conversión es conocida (l↔ml, kg↔g),
+   * convierte TODO lo que estaba expresado en la unidad vieja: existencias, mínimos y máximos de
+   * cada sucursal, y las cantidades de receta (del producto y de las opciones de modificador).
+   *
+   * Sin esto, pasar la leche de litros a mililitros dejaría "7" en el almacén queriendo decir
+   * 7 ml donde hay 7 litros, y la receta descontaría 240 litros por café.
+   *
+   * `convertir: false` cambia solo la etiqueta (lo que hace falta al corregir una unidad mal
+   * capturada, p. ej. "Cartón" → ml, donde los números hay que recapturarlos a mano).
+   */
+  async cambiarUnidadMedida(insumoId: string, unidadNueva: string, convertir = true) {
+    const insumo = await this.prisma.insumo.findUnique({ where: { id: insumoId } });
+    if (!insumo) throw new NotFoundException("Insumo no encontrado");
+    const unidad = String(unidadNueva ?? "").trim();
+    if (!unidad) throw new BadRequestException("Captura la unidad de medida.");
+
+    const factor = convertir ? factorConversionUnidad(insumo.unidadMedida, unidad) : null;
+    const aplicable = factor !== null && factor !== 1;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.insumo.update({ where: { id: insumoId }, data: { unidadMedida: unidad } });
+      if (!aplicable) return;
+      await tx.$executeRaw`UPDATE "inventario_sucursal" SET "existencia" = "existencia" * ${factor}, "minimo" = "minimo" * ${factor}, "maximo" = "maximo" * ${factor} WHERE "insumoId" = ${insumoId}`;
+      await tx.$executeRaw`UPDATE "receta_items" SET "cantidad" = "cantidad" * ${factor} WHERE "insumoId" = ${insumoId}`;
+      await tx.$executeRaw`UPDATE "receta_opciones" SET "cantidad" = "cantidad" * ${factor} WHERE "insumoId" = ${insumoId}`;
+      // El costo unitario está por unidad: si la unidad se hace mil veces más chica, el costo
+      // por unidad se divide entre mil.
+      await tx.$executeRaw`UPDATE "insumos" SET "costoUnitario" = "costoUnitario" / ${factor} WHERE "id" = ${insumoId}`;
+    });
+
+    return {
+      unidadAnterior: insumo.unidadMedida,
+      unidadMedida: unidad,
+      factorAplicado: aplicable ? factor : null,
+      convertido: aplicable,
+    };
+  }
+
   definirReceta(productoId: string, items: { insumoId: string; cantidad: number }[]) {
     return this.prisma.$transaction(
       items.map((it) =>
@@ -100,6 +139,54 @@ export class InventarioService {
 
   listarReceta(productoId: string) {
     return this.prisma.recetaItem.findMany({ where: { productoId }, include: { insumo: true } });
+  }
+
+  /**
+   * Receta de una OPCIÓN de modificador: qué consume del inventario cuando el cliente la elige
+   * (ej. "Leche de avena" → 240 ml de Leche-Avena). Reemplaza la lista completa de esa opción:
+   * lo que no venga en `items` se borra, para que quitar un insumo sea posible desde el ERP.
+   */
+  async definirRecetaOpcion(opcionModificadorId: string, items: { insumoId: string; cantidad: number }[]) {
+    const validos = (items ?? []).filter((i) => i.insumoId && Number(i.cantidad) > 0);
+    await this.prisma.$transaction([
+      this.prisma.recetaOpcion.deleteMany({
+        where: { opcionModificadorId, ...(validos.length > 0 ? { insumoId: { notIn: validos.map((i) => i.insumoId) } } : {}) },
+      }),
+      ...validos.map((i) =>
+        this.prisma.recetaOpcion.upsert({
+          where: { opcionModificadorId_insumoId: { opcionModificadorId, insumoId: i.insumoId } },
+          update: { cantidad: i.cantidad },
+          create: { opcionModificadorId, insumoId: i.insumoId, cantidad: i.cantidad },
+        }),
+      ),
+    ]);
+    return this.listarRecetaOpcion(opcionModificadorId);
+  }
+
+  listarRecetaOpcion(opcionModificadorId: string) {
+    return this.prisma.recetaOpcion.findMany({ where: { opcionModificadorId }, include: { insumo: true } });
+  }
+
+  /** Recetas de todas las opciones de los modificadores de un producto, para pintarlas juntas en
+   *  el ERP (Catálogo → Receta) sin una llamada por opción. */
+  async recetaDeModificadoresDeProducto(productoId: string) {
+    const opciones = await this.prisma.opcionModificador.findMany({
+      where: { modificador: { productos: { some: { productoId } } } },
+      select: {
+        id: true, nombre: true, activo: true,
+        modificador: { select: { id: true, nombre: true } },
+        recetas: { select: { insumoId: true, cantidad: true, insumo: { select: { nombre: true, unidadMedida: true } } } },
+      },
+      orderBy: [{ modificadorId: "asc" }, { orden: "asc" }],
+    });
+    return opciones.map((o) => ({
+      opcionId: o.id,
+      opcion: o.nombre,
+      activo: o.activo,
+      modificadorId: o.modificador.id,
+      modificador: o.modificador.nombre,
+      receta: o.recetas.map((r) => ({ insumoId: r.insumoId, nombre: r.insumo.nombre, unidadMedida: r.insumo.unidadMedida, cantidad: Number(r.cantidad) })),
+    }));
   }
 
   eliminarItemReceta(recetaItemId: string) {

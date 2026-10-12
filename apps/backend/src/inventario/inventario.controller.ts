@@ -34,6 +34,14 @@ export class InventarioController {
     return this.inventario.actualizarInsumo(id, body);
   }
 
+  /** Cambia la unidad de un insumo; con `convertir` reescala existencias, mínimos y recetas. */
+  @Post("insumos/:id/unidad")
+  @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
+  @Audit("INSUMO", "CAMBIAR_UNIDAD")
+  cambiarUnidad(@Param("id") id: string, @Body() body: { unidadMedida: string; convertir?: boolean }) {
+    return this.inventario.cambiarUnidadMedida(id, body?.unidadMedida, body?.convertir ?? true);
+  }
+
   @Post("productos/:id/receta")
   @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
   @Audit("RECETA", "DEFINIR")
@@ -44,6 +52,25 @@ export class InventarioController {
   @Get("productos/:id/receta")
   listarReceta(@Param("id") id: string) {
     return this.inventario.listarReceta(id);
+  }
+
+  /** Receta de una opción de modificador (ej. "Leche de avena" → 240 ml de Leche-Avena). */
+  @Get("opciones/:opcionId/receta")
+  listarRecetaOpcion(@Param("opcionId") opcionId: string) {
+    return this.inventario.listarRecetaOpcion(opcionId);
+  }
+
+  @Post("opciones/:opcionId/receta")
+  @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
+  @Audit("RECETA_OPCION", "DEFINIR")
+  definirRecetaOpcion(@Param("opcionId") opcionId: string, @Body("items") items: { insumoId: string; cantidad: number }[]) {
+    return this.inventario.definirRecetaOpcion(opcionId, items);
+  }
+
+  /** Todas las opciones de los modificadores de un producto con su receta, para el ERP. */
+  @Get("productos/:id/receta-modificadores")
+  recetaModificadores(@Param("id") id: string) {
+    return this.inventario.recetaDeModificadoresDeProducto(id);
   }
 
   @Delete("receta/:recetaItemId")

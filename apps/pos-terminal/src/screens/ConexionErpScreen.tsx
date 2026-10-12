@@ -4,7 +4,7 @@ import { RolUsuario, TipoDispositivo, type AccesoSucursal, type JwtPayload, type
 import { ErrorErp, erpFetch, guardarTokensErp, obtenerErpBaseUrl } from "../api/erpHttp";
 import { decodificarJwt } from "../auth/jwt";
 import { abrirBaseDeDatos } from "../db/database";
-import { guardarSucursalErp, guardarEmpresaErp, obtenerOCrearDispositivoId } from "../db/dispositivoLocal";
+import { guardarSucursalErp, guardarEmpresaErp, obtenerNombreSucursal, obtenerOCrearDispositivoId, obtenerSucursalErp } from "../db/dispositivoLocal";
 import { refrescarCatalogo, ejecutarPull } from "../sync/pullEngine";
 import { refrescarMonederos, refrescarTerminalMultisucursal } from "../sync/terminalErp";
 import { guardarAlcanceTerminal } from "../db/multisucursalRepo";
@@ -152,7 +152,20 @@ export function ConexionErpScreen({ onConectado, onCerrar }: { onConectado: () =
         },
       );
       await guardarTokensErp(resp.accessToken, resp.refreshToken);
+      // Cada código pertenece a UNA sucursal: el que se genera en la tarjeta de "Mecanicos"
+      // deja la tablet operando en Mecanicos. Si eso cambia la sucursal de esta terminal se dice
+      // en claro y de inmediato — descubrirlo días después, porque el ERP rechaza las ventas por
+      // "no tienes acceso a esta sucursal", es exactamente lo que pasó en producción.
+      const sucursalPrevia = await obtenerNombreSucursal(db);
+      const sucursalPreviaId = await obtenerSucursalErp(db);
       await finalizarConexion(resp.sucursalId, resp.empresaId, resp.sucursal, resp.alcance ?? "SUCURSAL");
+      if (sucursalPreviaId && sucursalPreviaId !== resp.sucursalId) {
+        Alert.alert(
+          `Esta tablet ahora es de ${resp.sucursal}`,
+          `Estaba enlazada a ${sucursalPrevia ?? "otra sucursal"}. A partir de ahora sus ventas, cortes e inventario se registran en ${resp.sucursal}.\n\n` +
+            "Si no era lo que querías, pide al administrador un código de la sucursal correcta: el código se genera en la tarjeta de ESA sucursal del ERP.",
+        );
+      }
     } catch (e: any) {
       setError(describirError(e, "No se pudo enlazar la terminal"));
     } finally {

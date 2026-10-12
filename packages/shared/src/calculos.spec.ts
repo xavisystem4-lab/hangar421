@@ -9,6 +9,7 @@ import {
   calcularDescuentosVenta,
   calcularNivelInventario,
   calcularPorcionesDisponibles,
+  factorConversionUnidad,
   calcularSubtotal,
   calcularTotalesPedido,
   deltaExistenciaInventario,
@@ -319,5 +320,25 @@ describe("calcularPorcionesDisponibles", () => {
 
   it("ignora cantidades de receta en 0 y existencias negativas", () => {
     expect(calcularPorcionesDisponibles([{ insumoId: "x", cantidad: 0 }, { insumoId: "y", cantidad: 2 }], { x: 0, y: -4 }).porciones).toBe(0);
+  });
+});
+
+describe("factorConversionUnidad", () => {
+  it("convierte dentro de la misma familia", () => {
+    expect(factorConversionUnidad("l", "ml")).toBe(1000);
+    expect(factorConversionUnidad("ml", "l")).toBe(0.001);
+    expect(factorConversionUnidad("kg", "g")).toBe(1000);
+    expect(factorConversionUnidad("g", "kg")).toBe(0.001);
+  });
+
+  it("la misma unidad no cambia nada", () => {
+    expect(factorConversionUnidad("ml", "ml")).toBe(1);
+    expect(factorConversionUnidad("ML", " ml ")).toBe(1);
+  });
+
+  it("sin conversión posible devuelve null (hay que recapturar las cantidades)", () => {
+    expect(factorConversionUnidad("pz", "g")).toBeNull();
+    expect(factorConversionUnidad("Cartón (litros)", "ml")).toBeNull();
+    expect(factorConversionUnidad("l", "")).toBeNull();
   });
 });

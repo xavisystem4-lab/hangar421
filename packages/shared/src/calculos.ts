@@ -257,3 +257,29 @@ export function calcularDescuentosVenta(lineas: LineaConDescuento[], general?: D
   const descuentoTotal = round2(descuentoProductos + descuentoGeneral);
   return { subtotal, descuentoProductos, descuentoGeneral, descuentoTotal, impuesto: 0, total: round2(subtotal - descuentoTotal), porLinea };
 }
+
+/** Unidades de insumo que maneja el sistema. */
+export const UNIDADES_INSUMO = ["pz", "g", "kg", "ml", "l"] as const;
+export type UnidadInsumo = (typeof UNIDADES_INSUMO)[number];
+
+/**
+ * Cuánto hay que multiplicar las cantidades al pasar un insumo de una unidad a otra
+ * (existencias, mínimos y cantidades de receta). `null` cuando no hay conversión posible
+ * (pz ↔ g, o una unidad personalizada como "Cartón"): ahí el cambio es solo de etiqueta y las
+ * cantidades las tiene que recapturar una persona.
+ *
+ *   l → ml = 1000 · ml → l = 0.001 · kg → g = 1000 · g → kg = 0.001 · misma unidad = 1
+ */
+export function factorConversionUnidad(de: string, a: string): number | null {
+  const d = String(de ?? "").trim().toLowerCase();
+  const h = String(a ?? "").trim().toLowerCase();
+  if (!d || !h) return null;
+  if (d === h) return 1;
+  const familias: Record<string, Record<string, number>> = {
+    l: { ml: 1000 },
+    ml: { l: 0.001 },
+    kg: { g: 1000 },
+    g: { kg: 0.001 },
+  };
+  return familias[d]?.[h] ?? null;
+}

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { NivelInventario, Sucursal } from "@hangar421/shared";
-import { calcularNivelInventario, resumenSemaforoInventario } from "@hangar421/shared";
+import { UNIDADES_INSUMO, calcularNivelInventario, factorConversionUnidad, resumenSemaforoInventario } from "@hangar421/shared";
 import { apiFetch } from "@/lib/api";
 import { useAuthCrm } from "@/lib/authClient";
 import { useSucursalActiva } from "@/store/sucursalActiva";
@@ -265,12 +265,32 @@ export default function InventarioPage() {
 
   async function guardarEdicionInsumo(id: string) {
     if (!borradorInsumo.nombre.trim()) return;
+    // La unidad va por su propio endpoint: cambiarla reescala existencias, mínimos y recetas
+    // (240 l pasan a 240 000 ml). Se pregunta antes, porque es irreversible desde la pantalla.
+    const unidadAnterior = insumos.find((x) => x.id === id)?.unidadMedida ?? "";
+    const unidadNueva = borradorInsumo.unidadMedida.trim();
+    if (unidadNueva && unidadNueva !== unidadAnterior) {
+      const factor = factorConversionUnidad(unidadAnterior, unidadNueva);
+      let convertir = false;
+      if (factor && factor !== 1) {
+        convertir = confirm(
+          `Vas a cambiar "${borradorInsumo.nombre}" de ${unidadAnterior} a ${unidadNueva}.\n\n` +
+          `Aceptar: convierte las cantidades (×${factor}) — existencias, mínimos, máximos, el costo y las recetas.\n` +
+          `Cancelar: solo cambia la etiqueta y las cantidades se quedan como están (tendrás que corregirlas a mano).`,
+        );
+      } else if (!confirm(
+        `De "${unidadAnterior}" a "${unidadNueva}" no hay conversión automática.\n\n` +
+        `Se cambia solo la etiqueta: revisa después las existencias y las recetas de este insumo.`,
+      )) {
+        return;
+      }
+      await apiFetch(`/inventario/insumos/${id}/unidad`, { method: "POST", body: JSON.stringify({ unidadMedida: unidadNueva, convertir }) });
+    }
     await Promise.all([
       apiFetch(`/inventario/insumos/${id}`, {
         method: "PATCH",
         body: JSON.stringify({
           nombre: borradorInsumo.nombre,
-          unidadMedida: borradorInsumo.unidadMedida,
           costoUnitario: Number(borradorInsumo.costoUnitario) || 0,
           precioVenta: borradorInsumo.precioVenta ? Number(borradorInsumo.precioVenta) : null,
           proveedorId: borradorInsumo.proveedorId || null,
@@ -466,6 +486,14 @@ export default function InventarioPage() {
                     <td style={{ padding: 8 }}>
                       <input value={borradorInsumo.nombre} onChange={(e) => setBorradorInsumo((b) => ({ ...b, nombre: e.target.value }))}
                         style={{ width: "100%", padding: 6, borderRadius: 6, border: "1px solid var(--h421-gray-200)" }} />
+                      {/* Unidad editable: cambiarla de l a ml (o kg a g) convierte las cantidades. */}
+                      <select value={borradorInsumo.unidadMedida} onChange={(e) => setBorradorInsumo((b) => ({ ...b, unidadMedida: e.target.value }))}
+                        title="Unidad de medida" style={{ marginTop: 4, padding: 4, fontSize: 12 }}>
+                        {!(UNIDADES_INSUMO as readonly string[]).includes(borradorInsumo.unidadMedida) && (
+                          <option value={borradorInsumo.unidadMedida}>{borradorInsumo.unidadMedida} (actual)</option>
+                        )}
+                        {UNIDADES_INSUMO.map((u) => <option key={u} value={u}>{u}</option>)}
+                      </select>
                     </td>
                     <td style={{ padding: 8 }}>
                       <select value={borradorInsumo.proveedorId} onChange={(e) => setBorradorInsumo((b) => ({ ...b, proveedorId: e.target.value }))} style={{ padding: 6 }}>
@@ -544,11 +572,7 @@ export default function InventarioPage() {
             style={{ width: "100%", padding: 10, marginBottom: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
           <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
             <select value={nuevoInsumo.unidadMedida} onChange={(e) => setNuevoInsumo((n) => ({ ...n, unidadMedida: e.target.value }))} style={{ flex: 1, padding: 10 }}>
-              <option value="pz">pz</option>
-              <option value="g">g</option>
-              <option value="kg">kg</option>
-              <option value="ml">ml</option>
-              <option value="l">l</option>
+              {UNIDADES_INSUMO.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
             <select value={nuevoInsumo.proveedorId} onChange={(e) => setNuevoInsumo((n) => ({ ...n, proveedorId: e.target.value }))} style={{ flex: 1, padding: 10 }}>
               <option value="">Proveedor…</option>
