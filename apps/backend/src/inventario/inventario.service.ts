@@ -163,6 +163,25 @@ export class InventarioService {
     return this.listarRecetaOpcion(opcionModificadorId);
   }
 
+  /** TODAS las recetas de la empresa, planas, para que la tablet las guarde y descuente sin
+   *  conexión (ver pullEngine del POS terminal). */
+  async recetasDeEmpresa(empresaId: string) {
+    const [producto, opcion] = await Promise.all([
+      this.prisma.recetaItem.findMany({
+        where: { producto: { empresaId } },
+        select: { productoId: true, insumoId: true, cantidad: true },
+      }),
+      this.prisma.recetaOpcion.findMany({
+        where: { opcionModificador: { modificador: { empresaId } } },
+        select: { opcionModificadorId: true, insumoId: true, cantidad: true },
+      }),
+    ]);
+    return {
+      porProducto: producto.map((r) => ({ productoId: r.productoId, insumoId: r.insumoId, cantidad: Number(r.cantidad) })),
+      porOpcion: opcion.map((r) => ({ opcionModificadorId: r.opcionModificadorId, insumoId: r.insumoId, cantidad: Number(r.cantidad) })),
+    };
+  }
+
   listarRecetaOpcion(opcionModificadorId: string) {
     return this.prisma.recetaOpcion.findMany({ where: { opcionModificadorId }, include: { insumo: true } });
   }

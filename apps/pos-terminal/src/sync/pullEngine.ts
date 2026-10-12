@@ -6,7 +6,7 @@ import { obtenerSucursalErp } from "../db/dispositivoLocal";
 import { obtenerConfig, guardarConfig } from "../db/configLocalRepo";
 import { upsertCatalogo, upsertMesas, upsertModificadores, repararProductosLocalesEnOutbox } from "../db/catalogoSyncRepo";
 import { guardarPromocionesRemotas } from "../db/promocionesRepo";
-import { upsertInventario } from "../db/inventarioRepo";
+import { upsertInventario, upsertRecetas } from "../db/inventarioRepo";
 import { asegurarSesionEnSucursalActiva } from "./terminalErp";
 
 const CLAVE_EMPRESA_ERP = "empresa_id_erp";
@@ -74,9 +74,12 @@ export async function refrescarInventario(): Promise<void> {
   if (!empresaId || !sucursalId || !tokens) return;
   await asegurarSesionEnSucursalActiva();
 
-  const [insumos, existencias] = await Promise.all([
+  const [insumos, existencias, recetas] = await Promise.all([
     erpFetch<any[]>(`/inventario/insumos?empresaId=${empresaId}`),
     erpFetch<any[]>(`/inventario/existencias?sucursalId=${sucursalId}`),
+    // Un APK nuevo contra un ERP viejo todavía no tiene este endpoint: sin recetas la tablet
+    // simplemente no descuenta en local y el ERP lo hace al recibir la venta, como antes.
+    erpFetch<{ porProducto: any[]; porOpcion: any[] }>(`/inventario/recetas?empresaId=${empresaId}`).catch(() => null),
   ]);
 
   await upsertInventario(
@@ -87,6 +90,13 @@ export async function refrescarInventario(): Promise<void> {
     })),
     existencias.map((e) => ({ insumoId: e.insumoId, existencia: e.existencia, minimo: e.minimo, maximo: e.maximo })),
   );
+
+  if (recetas) {
+    await upsertRecetas(db, {
+      porProducto: (recetas.porProducto ?? []).map((r) => ({ productoId: r.productoId, insumoId: r.insumoId, cantidad: Number(r.cantidad) || 0 })),
+      porOpcion: (recetas.porOpcion ?? []).map((r) => ({ opcionModificadorId: r.opcionModificadorId, insumoId: r.insumoId, cantidad: Number(r.cantidad) || 0 })),
+    });
+  }
 }
 
 /** Deltas operativos vía /sync/pull (mesas, por ahora — PEDIDO/INVENTARIO_SUCURSAL quedan fuera

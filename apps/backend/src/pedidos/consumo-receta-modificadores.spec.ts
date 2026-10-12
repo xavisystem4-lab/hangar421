@@ -35,10 +35,11 @@ describe("consumo de un renglón de venta", () => {
     const consumo = await (service as any).consumoDeItem({
       productoId: "latte", cantidad: 1, modificadores: [{ opcionModificadorId: "op-avena" }],
     });
+    // El consumo sale ordenado por insumo (contrato de consumoDeVenta en shared).
     expect(consumo).toEqual([
       { insumoId: "cafe", cantidad: 20 },
-      { insumoId: "vaso", cantidad: 1 },
       { insumoId: "leche-avena", cantidad: 240 },
+      { insumoId: "vaso", cantidad: 1 },
     ]);
     expect(consumo.find((c: any) => c.insumoId === "leche-entera")).toBeUndefined();
   });

@@ -13,6 +13,8 @@ import {
   calcularCortesia,
   precioConPromocion,
   calcularDescuentosVenta,
+  consumoDeVenta,
+  agruparRecetas,
   validarPagoSuficiente,
 } from "@hangar421/shared";
 import { Prisma } from "@prisma/client";
@@ -1032,20 +1034,15 @@ export class PedidosService {
         ? this.prisma.recetaOpcion.findMany({ where: { opcionModificadorId: { in: opcionIds } } })
         : Promise.resolve([] as { insumoId: string; cantidad: any; opcionModificadorId: string }[]),
     ]);
-
-    const porInsumo = new Map<string, number>();
-    const sumar = (insumoId: string, cantidadUnitaria: number) => {
-      porInsumo.set(insumoId, (porInsumo.get(insumoId) ?? 0) + cantidadUnitaria * item.cantidad);
-    };
-    for (const r of recetaProducto) sumar(r.insumoId, Number(r.cantidad));
-    // Una opción elegida dos veces en el mismo renglón (dos shots) consume dos veces.
-    for (const id of opcionIds) {
-      for (const r of recetaOpciones.filter((x) => x.opcionModificadorId === id)) sumar(r.insumoId, Number(r.cantidad));
-    }
-    // 4 decimales, como la columna de existencias: en gramos y mililitros el redondeo a 2
-    // perdería fracciones reales de receta.
-    const redondear4 = (n: number) => Math.round((n + Number.EPSILON) * 10_000) / 10_000;
-    return [...porInsumo.entries()].map(([insumoId, cantidad]) => ({ insumoId, cantidad: redondear4(cantidad) }));
+    // La regla vive en shared (consumoDeVenta): la tablet descuenta exactamente lo mismo cuando
+    // cobra sin conexión, y una sola prueba cubre a los dos.
+    return consumoDeVenta(
+      [item],
+      agruparRecetas(
+        recetaProducto.map((r) => ({ productoId: item.productoId, insumoId: r.insumoId, cantidad: Number(r.cantidad) })),
+        recetaOpciones.map((r) => ({ opcionModificadorId: r.opcionModificadorId, insumoId: r.insumoId, cantidad: Number(r.cantidad) })),
+      ),
+    );
   }
 
   private async reponerInventarioPorReceta(

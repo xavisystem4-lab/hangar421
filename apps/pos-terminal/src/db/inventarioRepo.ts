@@ -213,3 +213,79 @@ export async function contarMovimientosInventarioPendientes(db: SQLiteDatabase):
   );
   return fila?.total ?? 0;
 }
+
+// ---------------------------------------------------------------------------- recetas locales
+
+export interface RecetasRemotas {
+  porProducto: { productoId: string; insumoId: string; cantidad: number }[];
+  porOpcion: { opcionModificadorId: string; insumoId: string; cantidad: number }[];
+}
+
+/** Reemplaza las recetas guardadas con las del ERP (copia de solo lectura, como el catálogo). */
+export async function upsertRecetas(db: SQLiteDatabase, recetas: RecetasRemotas): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    await db.runAsync("DELETE FROM recetas");
+    await db.runAsync("DELETE FROM recetas_opcion");
+    for (const r of recetas.porProducto) {
+      await db.runAsync(
+        "INSERT OR REPLACE INTO recetas (producto_id, insumo_id, cantidad) VALUES (?, ?, ?)",
+        r.productoId, r.insumoId, Number(r.cantidad) || 0,
+      );
+    }
+    for (const r of recetas.porOpcion) {
+      await db.runAsync(
+        "INSERT OR REPLACE INTO recetas_opcion (opcion_modificador_id, insumo_id, cantidad) VALUES (?, ?, ?)",
+        r.opcionModificadorId, r.insumoId, Number(r.cantidad) || 0,
+      );
+    }
+  });
+}
+
+/** Recetas que hacen falta para calcular lo que consume una venta (ver consumoDeVenta en shared). */
+export async function recetasParaConsumo(
+  db: SQLiteDatabase,
+  productoIds: string[],
+  opcionIds: string[],
+): Promise<RecetasRemotas> {
+  const marcas = (n: number) => Array.from({ length: n }, () => "?").join(",");
+  const porProducto = productoIds.length
+    ? await db.getAllAsync<{ producto_id: string; insumo_id: string; cantidad: number }>(
+        `SELECT producto_id, insumo_id, cantidad FROM recetas WHERE producto_id IN (${marcas(productoIds.length)})`,
+        ...productoIds,
+      )
+    : [];
+  const porOpcion = opcionIds.length
+    ? await db.getAllAsync<{ opcion_modificador_id: string; insumo_id: string; cantidad: number }>(
+        `SELECT opcion_modificador_id, insumo_id, cantidad FROM recetas_opcion WHERE opcion_modificador_id IN (${marcas(opcionIds.length)})`,
+        ...opcionIds,
+      )
+    : [];
+  return {
+    porProducto: porProducto.map((r) => ({ productoId: r.producto_id, insumoId: r.insumo_id, cantidad: r.cantidad })),
+    porOpcion: porOpcion.map((r) => ({ opcionModificadorId: r.opcion_modificador_id, insumoId: r.insumo_id, cantidad: r.cantidad })),
+  };
+}
+
+/**
+ * Baja del almacén local lo que consumió una venta.
+ *
+ * NO encola nada al ERP: el servidor descuenta por su cuenta al recibir la venta (ver
+ * PedidosService.descontarInventarioPorReceta), así que mandar también un movimiento desde aquí
+ * descontaría dos veces. Esto es para que la tablet muestre la existencia real en el momento —
+ * aunque esté sin conexión — hasta que el siguiente pull traiga la cifra oficial del ERP.
+ */
+export async function descontarConsumoLocal(
+  db: SQLiteDatabase,
+  consumo: { insumoId: string; cantidad: number }[],
+  sucursalId: string,
+): Promise<void> {
+  for (const c of consumo) {
+    if (!(c.cantidad > 0)) continue;
+    await db.runAsync(
+      `INSERT INTO inventario_local (sucursal_id, insumo_id, existencia, minimo)
+       VALUES (?, ?, ?, 0)
+       ON CONFLICT(sucursal_id, insumo_id) DO UPDATE SET existencia = existencia - ?`,
+      sucursalId, c.insumoId, -c.cantidad, c.cantidad,
+    );
+  }
+}

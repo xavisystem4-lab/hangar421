@@ -54,6 +54,13 @@ export class InventarioController {
     return this.inventario.listarReceta(id);
   }
 
+  /** Todas las recetas de la empresa (producto y opciones): el POS terminal las guarda para
+   *  descontar el inventario al cobrar aunque esté sin conexión. */
+  @Get("recetas")
+  recetasDeEmpresa(@Query("empresaId") empresaId: string) {
+    return this.inventario.recetasDeEmpresa(empresaId);
+  }
+
   /** Receta de una opción de modificador (ej. "Leche de avena" → 240 ml de Leche-Avena). */
   @Get("opciones/:opcionId/receta")
   listarRecetaOpcion(@Param("opcionId") opcionId: string) {
