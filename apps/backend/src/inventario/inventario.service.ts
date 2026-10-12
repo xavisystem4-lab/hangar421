@@ -47,6 +47,8 @@ export class InventarioService {
    *  insumo, el admin ya no tiene que ir sucursal por sucursal a fijarlo a mano (ver
    *  fijarMinimo, que sigue disponible aparte para ajustarlo por sucursal después). */
   async crearInsumo(data: {
+    /** Lo manda una tablet que lo creó sin conexión (uuid7); el ERP web lo deja vacío. */
+    id?: string;
     empresaId: string;
     nombre: string;
     unidadMedida: string;
@@ -92,6 +94,60 @@ export class InventarioService {
     }>,
   ) {
     return this.prisma.insumo.update({ where: { id }, data });
+  }
+
+  /**
+   * Alta o edición de un insumo hecha en una tablet, que llega por la cola de sincronización.
+   *
+   * La tablet guarda el cambio primero en su base y lo manda cuando hay conexión, así que esto
+   * tiene que poder recibir el mismo sobre dos veces sin duplicar nada:
+   *  - CREATE usa el id de la tablet; si ya existe (reenvío), se trata como edición.
+   *  - UPDATE trae solo lo que cambió. La unidad va con su conversión (como el ERP web) y los
+   *    mínimos aplican a la sucursal de la tablet. La empresa sale del token, nunca del payload.
+   */
+  async aplicarInsumoDesdeTerminal(sobre: {
+    id: string;
+    empresaId: string;
+    sucursalId: string;
+    operacion: "CREATE" | "UPDATE";
+    datos: {
+      nombre?: string; unidadMedida?: string; costoUnitario?: number; proveedorId?: string | null;
+      minimo?: number; maximo?: number | null; presentacionNombre?: string | null; presentacionCantidad?: number | null;
+      activo?: boolean; cambioUnidad?: { unidadMedida: string; convertir: boolean };
+    };
+  }) {
+    const d = sobre.datos;
+    const existente = await this.prisma.insumo.findUnique({ where: { id: sobre.id }, select: { empresaId: true } });
+    if (existente && existente.empresaId !== sobre.empresaId) throw new BadRequestException("Ese insumo es de otra empresa.");
+
+    if (!existente) {
+      if (sobre.operacion === "UPDATE") throw new NotFoundException("El insumo que se quiere editar no existe en el ERP.");
+      await this.crearInsumo({
+        id: sobre.id,
+        empresaId: sobre.empresaId,
+        nombre: String(d.nombre ?? "").trim() || "Insumo",
+        unidadMedida: d.unidadMedida ?? "pz",
+        costoUnitario: d.costoUnitario,
+        proveedorId: d.proveedorId ?? undefined,
+        minimo: d.minimo,
+        maximo: d.maximo ?? undefined,
+        presentacionNombre: d.presentacionNombre ?? null,
+        presentacionCantidad: d.presentacionCantidad ?? null,
+      });
+      return;
+    }
+
+    const cambios: Record<string, unknown> = {};
+    for (const k of ["nombre", "costoUnitario", "proveedorId", "presentacionNombre", "presentacionCantidad", "activo"] as const) {
+      if (d[k] !== undefined) cambios[k] = d[k];
+    }
+    if (Object.keys(cambios).length > 0) await this.prisma.insumo.update({ where: { id: sobre.id }, data: cambios });
+    if (d.cambioUnidad?.unidadMedida) await this.cambiarUnidadMedida(sobre.id, d.cambioUnidad.unidadMedida, d.cambioUnidad.convertir);
+    // En un CREATE reenviado la unidad viene suelta: se fija sin conversión.
+    else if (sobre.operacion === "CREATE" && d.unidadMedida) await this.prisma.insumo.update({ where: { id: sobre.id }, data: { unidadMedida: d.unidadMedida } });
+    if ((d.minimo !== undefined || d.maximo !== undefined) && sobre.sucursalId) {
+      await this.fijarMinimo(sobre.sucursalId, sobre.id, d.minimo ?? 0, d.maximo ?? undefined);
+    }
   }
 
   /**

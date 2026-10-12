@@ -316,6 +316,17 @@ export class SyncService {
         });
         break;
 
+      // Insumo dado de alta o editado en la tablet (guardado primero allá, sin depender del ERP).
+      case SyncEntidad.INSUMO:
+        await this.inventario.aplicarInsumoDesdeTerminal({
+          id: item.id,
+          empresaId,
+          sucursalId: item.sucursalId,
+          operacion: item.operacion === SyncOperacion.CREATE ? "CREATE" : "UPDATE",
+          datos: p ?? {},
+        });
+        break;
+
       case SyncEntidad.TURNO:
         if (item.operacion === SyncOperacion.CREATE) {
           // Con el MISMO id que el turno de la terminal: el corte, los movimientos y las ventas

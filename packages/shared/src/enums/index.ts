@@ -256,6 +256,10 @@ export enum SyncEntidad {
    *  editada en una terminal. Viaja con el MISMO id (uuid7) y la definición COMPLETA, así que
    *  CREATE y UPDATE son un upsert idempotente; apagarla es UPDATE con activo = false. */
   PROMOCION = "PROMOCION",
+  /** Alta o edición de un INSUMO hecha en una terminal (Admin → Inventario → Insumos), guardada
+   *  primero en la tablet. Viaja con el MISMO id (uuid7). CREATE es idempotente por id; UPDATE
+   *  trae solo lo que cambió (datos, unidad con o sin conversión, mínimos de la sucursal, baja). */
+  INSUMO = "INSUMO",
 }
 
 export enum EstadoSolicitudProducto {

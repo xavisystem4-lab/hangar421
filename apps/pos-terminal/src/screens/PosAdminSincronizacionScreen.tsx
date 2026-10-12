@@ -15,6 +15,7 @@ const ETIQUETA_ENTIDAD: Record<string, string> = {
   TURNO: "Turno de caja",
   MOVIMIENTO_CAJA: "Movimiento de caja",
   MOVIMIENTO_INVENTARIO: "Movimiento de inventario",
+  INSUMO: "Insumo (alta o edición)",
 };
 
 /**
