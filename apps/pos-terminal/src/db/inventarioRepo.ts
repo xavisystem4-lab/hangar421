@@ -22,6 +22,7 @@ export async function listarExistencias(db: SQLiteDatabase): Promise<ExistenciaI
   const sucursalId = await obtenerOCrearSucursalIdLocal(db);
   const filas = await db.getAllAsync<any>(
     `SELECT i.id, i.nombre, i.unidad_medida, i.costo_unitario, i.proveedor_nombre,
+            i.presentacion_nombre, i.presentacion_cantidad,
             COALESCE(inv.existencia, 0) AS existencia,
             COALESCE(inv.minimo, 0) AS minimo,
             inv.maximo
@@ -40,6 +41,8 @@ export async function listarExistencias(db: SQLiteDatabase): Promise<ExistenciaI
     maximo: f.maximo,
     costoUnitario: f.costo_unitario,
     proveedorNombre: f.proveedor_nombre,
+    presentacionNombre: f.presentacion_nombre ?? null,
+    presentacionCantidad: f.presentacion_cantidad ?? null,
   }));
 }
 
@@ -53,6 +56,8 @@ export interface InsumoLocal {
   activo: boolean;
   minimo: number;
   maximo: number | null;
+  presentacionNombre: string | null;
+  presentacionCantidad: number | null;
 }
 
 /** Catálogo de insumos tal como bajó del ERP, INCLUIDOS los dados de baja: la pestaña de
@@ -61,6 +66,7 @@ export async function listarInsumosLocales(db: SQLiteDatabase): Promise<InsumoLo
   const sucursalId = await obtenerOCrearSucursalIdLocal(db);
   const filas = await db.getAllAsync<any>(
     `SELECT i.id, i.nombre, i.unidad_medida, i.costo_unitario, i.proveedor_id, i.proveedor_nombre, i.activo,
+            i.presentacion_nombre, i.presentacion_cantidad,
             COALESCE(inv.minimo, 0) AS minimo, inv.maximo
      FROM insumos i
      LEFT JOIN inventario_local inv ON inv.insumo_id = i.id AND inv.sucursal_id = ?
@@ -77,6 +83,8 @@ export async function listarInsumosLocales(db: SQLiteDatabase): Promise<InsumoLo
     activo: f.activo === 1,
     minimo: Number(f.minimo) || 0,
     maximo: f.maximo != null ? Number(f.maximo) : null,
+    presentacionNombre: f.presentacion_nombre ?? null,
+    presentacionCantidad: f.presentacion_cantidad != null ? Number(f.presentacion_cantidad) : null,
   }));
 }
 
@@ -160,6 +168,8 @@ export async function listarMovimientosRecientes(db: SQLiteDatabase, limite = 30
 interface InsumoRemoto {
   id: string; nombre: string; unidadMedida: string; costoUnitario: number;
   proveedorId?: string | null; proveedor?: { nombre: string } | null; activo: boolean;
+  /** Empaque de compra: "Cartón" de 1000 ml (ver presentacion.ts en shared). */
+  presentacionNombre?: string | null; presentacionCantidad?: number | string | null;
 }
 interface ExistenciaRemota {
   insumoId: string; existencia: number | string; minimo: number | string; maximo?: number | string | null;
@@ -180,13 +190,26 @@ export async function upsertInventario(db: SQLiteDatabase, insumos: InsumoRemoto
   await db.withTransactionAsync(async () => {
     for (const i of insumos) {
       await db.runAsync(
-        `INSERT INTO insumos (id, nombre, unidad_medida, costo_unitario, proveedor_id, proveedor_nombre, activo, synced_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO insumos (id, nombre, unidad_medida, costo_unitario, proveedor_id, proveedor_nombre, activo, synced_at, presentacion_nombre, presentacion_cantidad)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET nombre = excluded.nombre, unidad_medida = excluded.unidad_medida,
            costo_unitario = excluded.costo_unitario, proveedor_id = excluded.proveedor_id,
-           proveedor_nombre = excluded.proveedor_nombre, activo = excluded.activo, synced_at = excluded.synced_at`,
+           proveedor_nombre = excluded.proveedor_nombre, activo = excluded.activo, synced_at = excluded.synced_at,
+           presentacion_nombre = excluded.presentacion_nombre, presentacion_cantidad = excluded.presentacion_cantidad`,
         i.id, i.nombre, i.unidadMedida ?? "pz", Number(i.costoUnitario) || 0,
         i.proveedorId ?? null, i.proveedor?.nombre ?? null, i.activo ? 1 : 0, ahora,
+        i.presentacionNombre ?? null, i.presentacionCantidad != null ? Number(i.presentacionCantidad) : null,
+      );
+    }
+
+    // Igual que con los productos (catalogoSyncRepo.upsertCatalogo): el ERP solo manda los
+    // insumos activos, así que uno dado de baja —incluso desde esta misma tablet— dejaba de
+    // llegar y aquí se quedaba activo para siempre. Lo que no vino en esta descarga se apaga.
+    // Con lista vacía no se toca nada: puede ser una respuesta rara y dejaría la pantalla vacía.
+    if (insumos.length > 0) {
+      await db.runAsync(
+        "UPDATE insumos SET activo = 0 WHERE synced_at IS NOT NULL AND synced_at <> ? AND activo = 1",
+        ahora,
       );
     }
 
@@ -212,4 +235,80 @@ export async function contarMovimientosInventarioPendientes(db: SQLiteDatabase):
     SyncEntidad.MOVIMIENTO_INVENTARIO,
   );
   return fila?.total ?? 0;
+}
+
+// ---------------------------------------------------------------------------- recetas locales
+
+export interface RecetasRemotas {
+  porProducto: { productoId: string; insumoId: string; cantidad: number }[];
+  porOpcion: { opcionModificadorId: string; insumoId: string; cantidad: number }[];
+}
+
+/** Reemplaza las recetas guardadas con las del ERP (copia de solo lectura, como el catálogo). */
+export async function upsertRecetas(db: SQLiteDatabase, recetas: RecetasRemotas): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    await db.runAsync("DELETE FROM recetas");
+    await db.runAsync("DELETE FROM recetas_opcion");
+    for (const r of recetas.porProducto) {
+      await db.runAsync(
+        "INSERT OR REPLACE INTO recetas (producto_id, insumo_id, cantidad) VALUES (?, ?, ?)",
+        r.productoId, r.insumoId, Number(r.cantidad) || 0,
+      );
+    }
+    for (const r of recetas.porOpcion) {
+      await db.runAsync(
+        "INSERT OR REPLACE INTO recetas_opcion (opcion_modificador_id, insumo_id, cantidad) VALUES (?, ?, ?)",
+        r.opcionModificadorId, r.insumoId, Number(r.cantidad) || 0,
+      );
+    }
+  });
+}
+
+/** Recetas que hacen falta para calcular lo que consume una venta (ver consumoDeVenta en shared). */
+export async function recetasParaConsumo(
+  db: SQLiteDatabase,
+  productoIds: string[],
+  opcionIds: string[],
+): Promise<RecetasRemotas> {
+  const marcas = (n: number) => Array.from({ length: n }, () => "?").join(",");
+  const porProducto = productoIds.length
+    ? await db.getAllAsync<{ producto_id: string; insumo_id: string; cantidad: number }>(
+        `SELECT producto_id, insumo_id, cantidad FROM recetas WHERE producto_id IN (${marcas(productoIds.length)})`,
+        ...productoIds,
+      )
+    : [];
+  const porOpcion = opcionIds.length
+    ? await db.getAllAsync<{ opcion_modificador_id: string; insumo_id: string; cantidad: number }>(
+        `SELECT opcion_modificador_id, insumo_id, cantidad FROM recetas_opcion WHERE opcion_modificador_id IN (${marcas(opcionIds.length)})`,
+        ...opcionIds,
+      )
+    : [];
+  return {
+    porProducto: porProducto.map((r) => ({ productoId: r.producto_id, insumoId: r.insumo_id, cantidad: r.cantidad })),
+    porOpcion: porOpcion.map((r) => ({ opcionModificadorId: r.opcion_modificador_id, insumoId: r.insumo_id, cantidad: r.cantidad })),
+  };
+}
+
+/**
+ * Baja del almacén local lo que consumió una venta.
+ *
+ * NO encola nada al ERP: el servidor descuenta por su cuenta al recibir la venta (ver
+ * PedidosService.descontarInventarioPorReceta), así que mandar también un movimiento desde aquí
+ * descontaría dos veces. Esto es para que la tablet muestre la existencia real en el momento —
+ * aunque esté sin conexión — hasta que el siguiente pull traiga la cifra oficial del ERP.
+ */
+export async function descontarConsumoLocal(
+  db: SQLiteDatabase,
+  consumo: { insumoId: string; cantidad: number }[],
+  sucursalId: string,
+): Promise<void> {
+  for (const c of consumo) {
+    if (!(c.cantidad > 0)) continue;
+    await db.runAsync(
+      `INSERT INTO inventario_local (sucursal_id, insumo_id, existencia, minimo)
+       VALUES (?, ?, ?, 0)
+       ON CONFLICT(sucursal_id, insumo_id) DO UPDATE SET existencia = existencia - ?`,
+      sucursalId, c.insumoId, -c.cantidad, c.cantidad,
+    );
+  }
 }

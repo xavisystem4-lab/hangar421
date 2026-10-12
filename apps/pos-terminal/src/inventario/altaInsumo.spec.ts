@@ -17,7 +17,10 @@ describe("validarInsumo", () => {
     const r = validarInsumo(b({ nombre: " Vasos  12oz ", unidadMedida: "pz", costoUnitario: "1,50", minimo: "100", maximo: "500" }), existentes);
     expect(r).toEqual({
       ok: true,
-      datos: { nombre: "Vasos 12oz", unidadMedida: "pz", costoUnitario: 1.5, proveedorId: null, minimo: 100, maximo: 500 },
+      datos: {
+        nombre: "Vasos 12oz", unidadMedida: "pz", costoUnitario: 1.5, proveedorId: null, minimo: 100, maximo: 500,
+        presentacionNombre: null, presentacionCantidad: null,
+      },
     });
   });
 
@@ -46,5 +49,18 @@ describe("validarInsumo", () => {
 
   it("rechaza un máximo menor que el mínimo", () => {
     expect(validarInsumo(b({ nombre: "Azúcar", minimo: "10", maximo: "5" }), existentes).ok).toBe(false);
+  });
+
+  it("acepta el empaque de compra: Cartón de 1000 ml", () => {
+    const r = validarInsumo(b({ nombre: "Leche de soya", unidadMedida: "ml", presentacionNombre: " Cartón ", presentacionCantidad: "1000" }), existentes);
+    expect(r.ok && r.datos).toMatchObject({ presentacionNombre: "Cartón", presentacionCantidad: 1000 });
+  });
+
+  it("el empaque va completo o no va: nombre sin cantidad, cantidad sin nombre o cantidad 0 se rechazan", () => {
+    expect(validarInsumo(b({ nombre: "Soya", unidadMedida: "ml", presentacionNombre: "Cartón" }), existentes)).toEqual({
+      ok: false, error: "Escribe cuántos ml trae cada cartón.",
+    });
+    expect(validarInsumo(b({ nombre: "Soya", presentacionCantidad: "1000" }), existentes).ok).toBe(false);
+    expect(validarInsumo(b({ nombre: "Soya", presentacionNombre: "Cartón", presentacionCantidad: "0" }), existentes).ok).toBe(false);
   });
 });

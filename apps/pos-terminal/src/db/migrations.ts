@@ -637,6 +637,48 @@ export const MIGRACIONES: Migracion[] = [
       `);
     },
   },
+  {
+    version: 17,
+    nombre: "recetas_locales",
+    up: async (db) => {
+      // Recetas en la tablet para descontar el inventario al cobrar, también sin conexión.
+      // `recetas` es la receta FIJA del producto (café, vaso) y `recetas_opcion` lo que aporta
+      // cada opción de modificador elegida (leche de avena, shot extra): sin esta segunda tabla
+      // un Latte tendría que listar las cinco leches y cada venta las descontaría todas.
+      //
+      // Son copia de solo lectura del ERP (se reemplazan en cada pull), igual que el catálogo.
+      await db.execAsync(`
+        CREATE TABLE recetas (
+          producto_id TEXT NOT NULL,
+          insumo_id TEXT NOT NULL,
+          cantidad REAL NOT NULL,
+          PRIMARY KEY (producto_id, insumo_id)
+        );
+        CREATE INDEX idx_recetas_insumo ON recetas(insumo_id);
+
+        CREATE TABLE recetas_opcion (
+          opcion_modificador_id TEXT NOT NULL,
+          insumo_id TEXT NOT NULL,
+          cantidad REAL NOT NULL,
+          PRIMARY KEY (opcion_modificador_id, insumo_id)
+        );
+        CREATE INDEX idx_recetas_opcion_insumo ON recetas_opcion(insumo_id);
+      `);
+    },
+  },
+  {
+    version: 18,
+    nombre: "presentacion_insumo",
+    up: async (db) => {
+      // Empaque con el que se compra y se cuenta un insumo (cartón de 1000 ml), separado de la
+      // unidad en la que se consume (ml): permite capturar "4 cartones" o "2 cartones y 300 ml"
+      // sin que el encargado multiplique de cabeza. La existencia sigue en unidad de consumo.
+      await db.execAsync(`
+        ALTER TABLE insumos ADD COLUMN presentacion_nombre TEXT;
+        ALTER TABLE insumos ADD COLUMN presentacion_cantidad REAL;
+      `);
+    },
+  },
 ];
 
 /** Corre, en orden, toda migración con `version` mayor a la ya aplicada — cada una dentro de su

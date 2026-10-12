@@ -60,6 +60,22 @@ export async function upsertCatalogo(db: SQLiteDatabase, categorias: CategoriaRe
     // Condicionado a que la respuesta traiga productos: una respuesta vacía (empresa recién
     // creada, un filtro que no devolvió nada) dejaría al POS sin catálogo alguno.
     if (productos.length > 0) {
+      // Lo que el ERP YA NO MANDA se apaga. El ERP solo devuelve lo activo, así que un producto
+      // dado de baja (o borrado) simplemente desaparecía de la respuesta y la tablet lo seguía
+      // ofreciendo para siempre: el upsert solo toca lo que llega. Cada fila que sí llegó acaba
+      // de recibir `synced_at = ahora`; las del ERP con otra marca son las que dejaron de venir.
+      // `synced_at IS NOT NULL` deja fuera lo creado en esta tablet que el ERP aún no confirma
+      // (nace con synced_at NULL y no puede venir en la respuesta todavía).
+      await db.runAsync(
+        "UPDATE productos SET activo = 0 WHERE origen = 'ERP' AND synced_at IS NOT NULL AND synced_at <> ? AND activo = 1",
+        ahora,
+      );
+      if (categorias.length > 0) {
+        await db.runAsync(
+          "UPDATE categorias_producto SET activo = 0 WHERE origen = 'ERP' AND synced_at IS NOT NULL AND synced_at <> ? AND activo = 1",
+          ahora,
+        );
+      }
       await db.runAsync("UPDATE productos SET activo = 0 WHERE origen = 'LOCAL' AND activo = 1");
       await db.runAsync("UPDATE categorias_producto SET activo = 0 WHERE origen = 'LOCAL' AND activo = 1");
       await db.runAsync("UPDATE modificadores SET activo = 0 WHERE origen = 'LOCAL' AND activo = 1");

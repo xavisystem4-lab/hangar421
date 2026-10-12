@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ComponentProps } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { factorConversionUnidad } from "@hangar421/shared";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
 import { listarInsumosLocales, type InsumoLocal } from "../db/inventarioRepo";
@@ -78,6 +79,8 @@ export function PanelInsumos({ onCambio }: { onCambio: () => Promise<void> | voi
       proveedorId: i.proveedorId ?? "",
       minimo: i.minimo ? String(i.minimo) : "",
       maximo: i.maximo != null ? String(i.maximo) : "",
+      presentacionNombre: i.presentacionNombre ?? "",
+      presentacionCantidad: i.presentacionCantidad != null ? String(i.presentacionCantidad) : "",
     });
     setFormularioAbierto(true);
   }
@@ -88,6 +91,33 @@ export function PanelInsumos({ onCambio }: { onCambio: () => Promise<void> | voi
     setBorrador(BORRADOR_VACIO);
   }
 
+  /** Sí = convertir las cantidades · No = solo la etiqueta · null = el usuario canceló. */
+  function preguntarConversion(anterior: string, nueva: string, factor: number | null): Promise<boolean | null> {
+    return new Promise((resolver) => {
+      if (factor && factor !== 1) {
+        Alert.alert(
+          `Cambiar de ${anterior} a ${nueva}`,
+          `¿Convertir las cantidades? Se multiplican por ${factor}: existencias y mínimos de todas las sucursales, el costo y las recetas.\n\n` +
+            "Si eliges 'Solo la etiqueta', los números se quedan como están y habrá que corregirlos a mano.",
+          [
+            { text: "Cancelar", style: "cancel", onPress: () => resolver(null) },
+            { text: "Solo la etiqueta", onPress: () => resolver(false) },
+            { text: `Convertir (×${factor})`, onPress: () => resolver(true) },
+          ],
+        );
+        return;
+      }
+      Alert.alert(
+        `Cambiar de ${anterior} a ${nueva}`,
+        "No hay conversión automática entre esas unidades: se cambia solo la etiqueta y las existencias y recetas de este insumo hay que revisarlas después (haz un conteo físico).",
+        [
+          { text: "Cancelar", style: "cancel", onPress: () => resolver(null) },
+          { text: "Cambiar igual", onPress: () => resolver(false) },
+        ],
+      );
+    });
+  }
+
   async function guardar() {
     if (guardando) return;
     const r = validarInsumo(borrador, insumos, editandoId ?? undefined);
@@ -95,9 +125,22 @@ export function PanelInsumos({ onCambio }: { onCambio: () => Promise<void> | voi
       Alert.alert("Insumo", r.error);
       return;
     }
+    // Cambiar la unidad de un insumo que ya existe reescala existencias y recetas en todas las
+    // sucursales: se pregunta antes, con el factor a la vista.
+    let cambioUnidad: { convertir: boolean } | undefined;
+    if (editandoId) {
+      const unidadAnterior = insumos.find((i) => i.id === editandoId)?.unidadMedida ?? "";
+      if (unidadAnterior && unidadAnterior !== r.datos.unidadMedida) {
+        const factor = factorConversionUnidad(unidadAnterior, r.datos.unidadMedida);
+        const convertir = await preguntarConversion(unidadAnterior, r.datos.unidadMedida, factor);
+        if (convertir === null) return;
+        cambioUnidad = { convertir };
+      }
+    }
+
     setGuardando(true);
     try {
-      if (editandoId) await actualizarInsumo(editandoId, r.datos);
+      if (editandoId) await actualizarInsumo(editandoId, r.datos, cambioUnidad);
       else await crearInsumo(r.datos);
       await cargar();
       await onCambio();
@@ -186,6 +229,19 @@ export function PanelInsumos({ onCambio }: { onCambio: () => Promise<void> | voi
             {campo("minimo", editandoId ? "Mínimo (esta sucursal)" : "Mínimo", { keyboardType: "decimal-pad", placeholder: "—" })}
             {campo("maximo", editandoId ? "Máximo (esta sucursal)" : "Máximo", { keyboardType: "decimal-pad", placeholder: "—" })}
           </View>
+
+          {/* Empaque: se compra y se cuenta en cartones, pero la receta descuenta ml. */}
+          <Text style={estilos.etiqueta}>Empaque de compra (opcional)</Text>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            {campo("presentacionNombre", "Se compra por", { placeholder: "Ej. Cartón", autoCapitalize: "sentences" })}
+            {campo("presentacionCantidad", `${borrador.unidadMedida} por empaque`, { keyboardType: "decimal-pad", placeholder: "Ej. 1000" })}
+          </View>
+          {borrador.presentacionNombre.trim() !== "" && Number(borrador.presentacionCantidad) > 0 && (
+            <Text style={estilos.ayuda}>
+              1 {borrador.presentacionNombre.trim()} = {borrador.presentacionCantidad} {borrador.unidadMedida}. En Entrada, Merma y Conteo podrás capturar
+              {" "}{borrador.presentacionNombre.trim().toLowerCase()}s completos y aparte los {borrador.unidadMedida} sueltos.
+            </Text>
+          )}
 
           <Text style={estilos.etiqueta}>Proveedor (opcional)</Text>
           {proveedores === null ? (

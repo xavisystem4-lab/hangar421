@@ -6,10 +6,24 @@ import { obtenerSucursalErp } from "../db/dispositivoLocal";
 import { obtenerConfig, guardarConfig } from "../db/configLocalRepo";
 import { upsertCatalogo, upsertMesas, upsertModificadores, repararProductosLocalesEnOutbox } from "../db/catalogoSyncRepo";
 import { guardarPromocionesRemotas } from "../db/promocionesRepo";
-import { upsertInventario } from "../db/inventarioRepo";
+import { upsertInventario, upsertRecetas } from "../db/inventarioRepo";
 import { asegurarSesionEnSucursalActiva } from "./terminalErp";
 
 const CLAVE_EMPRESA_ERP = "empresa_id_erp";
+
+/**
+ * Una sola ejecución a la vez por función: si se pide otra mientras corre, recibe la misma
+ * promesa. El temporizador, abrir Inventario y recuperar la red pueden coincidir, y dos
+ * descargas intercaladas se pisarían al apagar "lo que el ERP ya no manda" (cada una vería las
+ * filas de la otra como no recibidas).
+ */
+function unaALaVez(fn: () => Promise<void>): () => Promise<void> {
+  let enCurso: Promise<void> | null = null;
+  return () => {
+    if (!enCurso) enCurso = fn().finally(() => { enCurso = null; });
+    return enCurso;
+  };
+}
 const CLAVE_CURSOR_PULL = "cursor_pull";
 
 /** Guardarla vive en db/dispositivoLocal.guardarEmpresaErp, junto a la de sucursal: además de
@@ -24,7 +38,7 @@ export async function obtenerEmpresaErp(db: SQLiteDatabase): Promise<string | nu
  *  base completo con nombre/categoría — ver sync.service.ts::pull() del backend), así que no
  *  sirve para sembrar el catálogo desde cero. Se llama al conectar y cada tanto en segundo
  *  plano (ver syncEngine). */
-export async function refrescarCatalogo(): Promise<void> {
+export const refrescarCatalogo = unaALaVez(async function refrescarCatalogo(): Promise<void> {
   const db = await abrirBaseDeDatos();
   const [empresaId, sucursalId, tokens] = await Promise.all([obtenerConfig(db, CLAVE_EMPRESA_ERP), obtenerSucursalErp(db), obtenerTokensErp()]);
   if (!empresaId || !sucursalId || !tokens) return;
@@ -56,7 +70,7 @@ export async function refrescarCatalogo(): Promise<void> {
   // tiene el endpoint y la venta sigue con los precios de catálogo.
   const promociones = await erpFetch<any[]>("/catalogo/promociones").catch(() => null);
   if (Array.isArray(promociones)) await guardarPromocionesRemotas(db, promociones);
-}
+});
 
 /** Trae insumos y existencias por los mismos endpoints REST que usa el ERP web
  *  (GET /inventario/insumos, GET /inventario/existencias). Igual que el catálogo, va aparte de
@@ -64,7 +78,7 @@ export async function refrescarCatalogo(): Promise<void> {
  *  insumo, así que no sirve para poblar la pantalla desde cero.
  *
  *  Best-effort de principio a fin: el inventario es consulta, nunca puede impedir vender. */
-export async function refrescarInventario(): Promise<void> {
+export const refrescarInventario = unaALaVez(async function refrescarInventario(): Promise<void> {
   const db = await abrirBaseDeDatos();
   const [empresaId, sucursalId, tokens] = await Promise.all([
     obtenerEmpresaErp(db),
@@ -74,9 +88,12 @@ export async function refrescarInventario(): Promise<void> {
   if (!empresaId || !sucursalId || !tokens) return;
   await asegurarSesionEnSucursalActiva();
 
-  const [insumos, existencias] = await Promise.all([
+  const [insumos, existencias, recetas] = await Promise.all([
     erpFetch<any[]>(`/inventario/insumos?empresaId=${empresaId}`),
     erpFetch<any[]>(`/inventario/existencias?sucursalId=${sucursalId}`),
+    // Un APK nuevo contra un ERP viejo todavía no tiene este endpoint: sin recetas la tablet
+    // simplemente no descuenta en local y el ERP lo hace al recibir la venta, como antes.
+    erpFetch<{ porProducto: any[]; porOpcion: any[] }>(`/inventario/recetas?empresaId=${empresaId}`).catch(() => null),
   ]);
 
   await upsertInventario(
@@ -84,10 +101,21 @@ export async function refrescarInventario(): Promise<void> {
     insumos.map((i) => ({
       id: i.id, nombre: i.nombre, unidadMedida: i.unidadMedida, costoUnitario: Number(i.costoUnitario) || 0,
       proveedorId: i.proveedorId, proveedor: i.proveedor, activo: i.activo,
+      // Empaque de compra (cartón de 1000 ml). Sin pasarlo aquí el upsert lo dejaba siempre en
+      // NULL y la tablet nunca ofrecía capturar por cartones.
+      presentacionNombre: i.presentacionNombre ?? null,
+      presentacionCantidad: i.presentacionCantidad != null ? Number(i.presentacionCantidad) : null,
     })),
     existencias.map((e) => ({ insumoId: e.insumoId, existencia: e.existencia, minimo: e.minimo, maximo: e.maximo })),
   );
-}
+
+  if (recetas) {
+    await upsertRecetas(db, {
+      porProducto: (recetas.porProducto ?? []).map((r) => ({ productoId: r.productoId, insumoId: r.insumoId, cantidad: Number(r.cantidad) || 0 })),
+      porOpcion: (recetas.porOpcion ?? []).map((r) => ({ opcionModificadorId: r.opcionModificadorId, insumoId: r.insumoId, cantidad: Number(r.cantidad) || 0 })),
+    });
+  }
+});
 
 /** Deltas operativos vía /sync/pull (mesas, por ahora — PEDIDO/INVENTARIO_SUCURSAL quedan fuera
  *  de esta fase a propósito: las ventas de este dispositivo son su propia fuente de verdad, no

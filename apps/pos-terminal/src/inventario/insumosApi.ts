@@ -49,6 +49,8 @@ export async function crearInsumo(datos: InsumoValidado): Promise<void> {
       proveedorId: datos.proveedorId ?? undefined,
       minimo: datos.minimo,
       maximo: datos.maximo,
+      presentacionNombre: datos.presentacionNombre,
+      presentacionCantidad: datos.presentacionCantidad,
     }),
   });
   await refrescarInventario();
@@ -56,17 +58,34 @@ export async function crearInsumo(datos: InsumoValidado): Promise<void> {
 
 /** Al editar, mínimo y máximo se fijan solo para la sucursal de esta terminal — cada sucursal
  *  consume a su ritmo y así lo maneja también el ERP web. */
-export async function actualizarInsumo(id: string, datos: InsumoValidado): Promise<void> {
+/**
+ * `cambioUnidad` solo cuando la unidad cambió: va por su propio endpoint porque pasar un insumo
+ * de l a ml (o de kg a g) tiene que reescalar las existencias de TODAS las sucursales, los
+ * mínimos, el costo y las cantidades de receta. Mandarla en el PATCH cambiaría solo la etiqueta y
+ * dejaría "7" queriendo decir 7 ml donde hay 7 litros.
+ */
+export async function actualizarInsumo(
+  id: string,
+  datos: InsumoValidado,
+  cambioUnidad?: { convertir: boolean },
+): Promise<void> {
   const { sucursalId } = await contexto();
   await erpFetch(`/inventario/insumos/${id}`, {
     method: "PATCH",
     body: JSON.stringify({
       nombre: datos.nombre,
-      unidadMedida: datos.unidadMedida,
       costoUnitario: datos.costoUnitario,
       proveedorId: datos.proveedorId,
+      presentacionNombre: datos.presentacionNombre,
+      presentacionCantidad: datos.presentacionCantidad,
     }),
   });
+  if (cambioUnidad) {
+    await erpFetch(`/inventario/insumos/${id}/unidad`, {
+      method: "POST",
+      body: JSON.stringify({ unidadMedida: datos.unidadMedida, convertir: cambioUnidad.convertir }),
+    });
+  }
   if (datos.minimo !== undefined || datos.maximo !== undefined) {
     await erpFetch("/inventario/minimos", {
       method: "POST",

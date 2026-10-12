@@ -106,6 +106,10 @@ export interface ProblemaSync {
   createdAt: string;
   /** Folio de la venta cuando la entidad es un PEDIDO — es por lo que pregunta el cajero. */
   folioLocal: number | null;
+  /** Sucursal con la que se encoló: si no es la de ahora, el rechazo es por eso. */
+  sucursalId: string;
+  /** El ERP lo rechaza por pertenecer a una sucursal que esta terminal ya no tiene. */
+  sinAccesoASucursal: boolean;
 }
 
 /**
@@ -118,7 +122,7 @@ export interface ProblemaSync {
  */
 export async function listarProblemasSync(db: SQLiteDatabase, limite = 50): Promise<ProblemaSync[]> {
   const filas = await db.getAllAsync<any>(
-    `SELECT o.local_id, o.entidad, o.entidad_id, o.intentos, o.ultimo_error, o.created_at, v.folio_local
+    `SELECT o.local_id, o.entidad, o.entidad_id, o.intentos, o.ultimo_error, o.created_at, o.sucursal_id, v.folio_local
      FROM sync_outbox o LEFT JOIN ventas v ON v.id = o.entidad_id
      WHERE o.estado = 'ERROR' AND o.ultimo_error IS NOT NULL
      ORDER BY o.orden_secuencia DESC LIMIT ?`,
@@ -132,7 +136,44 @@ export async function listarProblemasSync(db: SQLiteDatabase, limite = 50): Prom
     ultimoError: f.ultimo_error,
     createdAt: f.created_at,
     folioLocal: f.folio_local ?? null,
+    sucursalId: f.sucursal_id,
+    sinAccesoASucursal: String(f.ultimo_error ?? "").includes("No tienes acceso a esta sucursal"),
   }));
+}
+
+/**
+ * Saca de la cola un evento que el ERP nunca va a aceptar (típico: una venta de pruebas de otra
+ * sucursal, rechazada para siempre con "No tienes acceso a esta sucursal"). Solo borra el envío
+ * pendiente: la venta, el movimiento o el turno siguen guardados en la tablet, con su historial
+ * intacto; lo único que se pierde es el intento de subirlos.
+ */
+export async function descartarProblema(db: SQLiteDatabase, localId: string): Promise<void> {
+  await db.runAsync("DELETE FROM sync_outbox WHERE local_id = ? AND estado = 'ERROR'", localId);
+}
+
+/**
+ * Reasigna un evento atascado a la sucursal con la que opera hoy la terminal y lo devuelve a la
+ * cola. Es para el caso en que la tablet se enlazó por error a otra sucursal y lo que se registró
+ * aquí en realidad pertenece a esta: sin esto el evento se queda bloqueado para siempre.
+ *
+ * No toca eventos de una sucursal a la que la terminal SÍ tiene acceso: ahí el rechazo tiene otra
+ * causa y moverlo falsearía en qué local ocurrió la venta.
+ */
+export async function moverProblemaASucursalActual(
+  db: SQLiteDatabase,
+  localId: string,
+  sucursalActual: string,
+): Promise<boolean> {
+  const fila = await db.getFirstAsync<{ sucursal_id: string; ultimo_error: string | null }>(
+    "SELECT sucursal_id, ultimo_error FROM sync_outbox WHERE local_id = ? AND estado = 'ERROR'",
+    localId,
+  );
+  if (!fila || fila.sucursal_id === sucursalActual) return false;
+  await db.runAsync(
+    "UPDATE sync_outbox SET sucursal_id = ?, estado = 'PENDING', ultimo_error = NULL, next_retry_at = NULL WHERE local_id = ?",
+    sucursalActual, localId,
+  );
+  return true;
 }
 
 /** Devuelve a la cola una fila en ERROR, para reintentar después de arreglar la causa (por

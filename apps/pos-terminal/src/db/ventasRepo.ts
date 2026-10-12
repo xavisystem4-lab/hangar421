@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from "expo-sqlite";
-import { uuid7, round2, validarPagoSuficiente, CanalOrigen, SyncEntidad, SyncOperacion, TipoPedido, type TotalesPedido } from "@hangar421/shared";
+import { uuid7, round2, validarPagoSuficiente, agruparRecetas, consumoDeVenta, CanalOrigen, SyncEntidad, SyncOperacion, TipoPedido, type TotalesPedido } from "@hangar421/shared";
 import { motivoDescuentoGeneral, motivoDescuentoProducto, totalesConDescuentos, type DescuentosVenta } from "../caja/descuentoVenta";
 import { registrarConsumoMonedero, revertirConsumoMonedero } from "./monederoRepo";
 import type { ItemCarrito } from "../store/carritoStore";
@@ -7,6 +7,7 @@ import type { CodigoOrigen } from "../caja/origenVenta";
 import { normalizarNombreCliente, notasConNombreCliente } from "../caja/nombreCliente";
 import { encolarSync } from "./outboxRepo";
 import { obtenerOCrearDispositivoId, obtenerOCrearSucursalIdLocal, obtenerOCrearEmpresaIdLocal } from "./dispositivoLocal";
+import { descontarConsumoLocal, recetasParaConsumo } from "./inventarioRepo";
 
 export interface PagoVenta {
   metodo: string;
@@ -249,7 +250,38 @@ export async function confirmarVenta(
     });
   });
 
+  // Baja del almacén local lo que consumió la venta (receta del producto + la de cada opción
+  // elegida). Va DESPUÉS de la transacción y sin cortar la venta si algo falla: el ERP descuenta
+  // por su cuenta al recibir el pedido y el siguiente pull trae la cifra oficial — esto solo hace
+  // que la tablet enseñe la existencia correcta en el momento, también sin conexión.
+  try {
+    await descontarInventarioDeVenta(db, datos.items, sucursalId);
+  } catch {
+    /* el inventario local se corrige en el siguiente pull */
+  }
+
   return { id: ventaId, folioLocal, total: totales.total };
+}
+
+/** Consumo de una venta aplicado al almacén local. Expuesta para poder probarla. */
+export async function descontarInventarioDeVenta(
+  db: SQLiteDatabase,
+  items: ItemCarrito[],
+  sucursalId: string,
+): Promise<void> {
+  const productoIds = [...new Set(items.map((i) => i.productoId))];
+  const opcionIds = [...new Set(items.flatMap((i) => (i.modificadores ?? []).map((m) => m.opcionModificadorId)))];
+  const recetas = await recetasParaConsumo(db, productoIds, opcionIds);
+  if (recetas.porProducto.length === 0 && recetas.porOpcion.length === 0) return;
+  const consumo = consumoDeVenta(
+    items.map((i) => ({
+      productoId: i.productoId,
+      cantidad: i.cantidad,
+      modificadores: (i.modificadores ?? []).map((m) => ({ opcionModificadorId: m.opcionModificadorId })),
+    })),
+    agruparRecetas(recetas.porProducto, recetas.porOpcion),
+  );
+  await descontarConsumoLocal(db, consumo, sucursalId);
 }
 
 export interface DatosCancelacion {

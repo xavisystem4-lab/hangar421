@@ -1,11 +1,12 @@
 import { createRef, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { aUnidadBase, describirEnPaquetes, tienePresentacion } from "@hangar421/shared";
 import { usarColores } from "../store/temaStore";
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { abrirBaseDeDatos } from "../db/database";
 import { obtenerNombreSucursal } from "../db/dispositivoLocal";
 import { contarMovimientosInventarioPendientes, listarExistencias, listarMovimientosRecientes, registrarMovimiento, type MovimientoInventarioLocal } from "../db/inventarioRepo";
-import { procesarCola } from "../sync/syncEngine";
+import { actualizarDesdeErp, procesarCola } from "../sync/syncEngine";
 import { refrescarInventario } from "../sync/pullEngine";
 import { coincideBusqueda } from "../db/busqueda";
 import {
@@ -35,9 +36,13 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
   const [pendientes, setPendientes] = useState(0);
   /** Lo tecleado en el conteo físico, por insumo. Vacío = ese insumo no se contó. */
   const [conteo, setConteo] = useState<Record<string, string>>({});
+  /** Empaques completos contados (cartones), para los insumos que tienen presentación. */
+  const [conteoEmpaques, setConteoEmpaques] = useState<Record<string, string>>({});
   /** Entrada/merma en captura (modal propio: Alert.prompt solo existe en iOS, en Android no hacía nada). */
   const [ajuste, setAjuste] = useState<{ item: ExistenciaInsumo; tipo: "ENTRADA" | "MERMA" } | null>(null);
   const [cantidadAjuste, setCantidadAjuste] = useState("");
+  /** Empaques completos capturados en la entrada/merma (4 cartones), cuando el insumo los tiene. */
+  const [empaquesAjuste, setEmpaquesAjuste] = useState("");
   const [guardandoAjuste, setGuardandoAjuste] = useState(false);
 
   const COLOR_NIVEL: Record<NivelStock, string> = {
@@ -73,6 +78,16 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
   useEffect(() => {
     cargar();
     abrirBaseDeDatos().then(obtenerNombreSucursal).then((n) => n && setSucursal(n)).catch(() => undefined);
+
+    // Al abrir se baja el catálogo del ERP sin que nadie tenga que acordarse del botón: un insumo
+    // dado de alta en el ERP (o desde otra terminal) aparecía aquí solo si alguien sincronizaba a
+    // mano, y con el cambio de turno eso se pierde. Es best-effort: sin red se sigue trabajando
+    // con lo que ya bajó, y los conteos pendientes no se tocan (viven en la cola, no aquí).
+    let vigente = true;
+    actualizarDesdeErp()
+      .then(() => { if (vigente) return cargar(); })
+      .catch(() => undefined);
+    return () => { vigente = false; };
   }, []);
 
   /**
@@ -148,20 +163,35 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
   // en el desglose de caja. Se recalculan solo si cambia la lista visible.
   const refsConteo = useMemo(() => visibles.map(() => createRef<TextInput>()), [visibles.length]);
 
+  /**
+   * Lo contado de un insumo en su unidad base, o `null` si no se capturó nada. Con empaque
+   * ("2 cartones" + "300 ml") se suman las dos casillas: 2 × 1000 + 300 = 2300 ml.
+   */
+  function contadoDe(i: ExistenciaInsumo): number | null {
+    const sueltosTxt = conteo[i.insumoId] ?? "";
+    const pres = presentacionDe(i);
+    const empaquesTxt = pres ? (conteoEmpaques[i.insumoId] ?? "") : "";
+    if (sueltosTxt.trim() === "" && empaquesTxt.trim() === "") return null;
+    const sueltos = Number(sueltosTxt || 0);
+    const empaques = Number(empaquesTxt || 0);
+    if (Number.isNaN(sueltos) || Number.isNaN(empaques) || sueltos < 0 || empaques < 0) return null;
+    return pres ? aUnidadBase({ paquetes: empaques, sueltos }, pres.porPaquete) : sueltos;
+  }
+
   async function guardarConteo() {
     // Guarda contra el doble toque: sin esto, dos pulsaciones rápidas crearían dos movimientos
     // CONTEO del mismo insumo y el segundo pisaría al primero en el ERP.
     if (!usuario || guardandoConteo) return;
     const aGuardar = visibles
-      .map((i) => ({ item: i, valor: conteo[i.insumoId] }))
-      .filter((x) => x.valor !== undefined && x.valor !== "" && !Number.isNaN(Number(x.valor)));
+      .map((i) => ({ item: i, valor: contadoDe(i) }))
+      .filter((x): x is { item: ExistenciaInsumo; valor: number } => x.valor !== null);
 
     if (aGuardar.length === 0) {
       Alert.alert("Conteo", "No has capturado ninguna cantidad.");
       return;
     }
 
-    const conDiferencia = aGuardar.filter((x) => diferenciaConteo(Number(x.valor), x.item.existencia) !== 0);
+    const conDiferencia = aGuardar.filter((x) => diferenciaConteo(x.valor, x.item.existencia) !== 0);
     Alert.alert(
       "Guardar conteo físico",
       `Vas a fijar la existencia de ${aGuardar.length} insumo(s).\n` +
@@ -179,12 +209,13 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
                 await registrarMovimiento(db, {
                   insumoId: item.insumoId,
                   tipo: "CONTEO",
-                  cantidad: Number(valor),
+                  cantidad: valor,
                   motivo: "Conteo físico desde el Punto de Venta",
                   usuarioId: usuario.id,
                 });
               }
               setConteo({});
+              setConteoEmpaques({});
               await cargar();
               Alert.alert(
                 "Conteo guardado",
@@ -204,15 +235,28 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
     );
   }
 
+  /** Empaque del insumo ("Cartón" de 1000 ml), si está configurado en el ERP. */
+  function presentacionDe(i: ExistenciaInsumo) {
+    return i.presentacionNombre && i.presentacionCantidad
+      ? { nombre: i.presentacionNombre, porPaquete: Number(i.presentacionCantidad) }
+      : null;
+  }
+
   function ajustar(item: ExistenciaInsumo, tipo: "ENTRADA" | "MERMA") {
     if (!usuario) return;
     setCantidadAjuste("");
+    setEmpaquesAjuste("");
     setAjuste({ item, tipo });
   }
 
   async function confirmarAjuste() {
     if (!usuario || !ajuste) return;
-    const cantidad = Number(cantidadAjuste.replace(",", "."));
+    // Con empaque se capturan cartones y sueltos; lo que se guarda es siempre la unidad de consumo.
+    const pres = presentacionDe(ajuste.item);
+    const sueltos = Number(cantidadAjuste.replace(",", "."));
+    const cantidad = tienePresentacion(pres)
+      ? aUnidadBase({ paquetes: Number(empaquesAjuste.replace(",", ".")), sueltos }, pres.porPaquete)
+      : sueltos;
     if (!cantidad || cantidad <= 0) {
       Alert.alert("Cantidad", `Escribe cuántos ${ajuste.item.unidadMedida} ${ajuste.tipo === "ENTRADA" ? "llegaron" : "se perdieron"}.`);
       return;
@@ -254,10 +298,7 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
   }
 
   // Cuántos insumos llevan cantidad capturada — alimenta la barra fija de guardado.
-  const capturados = visibles.filter((i) => {
-    const v = conteo[i.insumoId];
-    return v !== undefined && v !== "" && !Number.isNaN(Number(v));
-  }).length;
+  const capturados = visibles.filter((i) => contadoDe(i) !== null).length;
 
   return (
     <View style={{ flex: 1, backgroundColor: colores.fondo }}>
@@ -351,6 +392,11 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
                         <Text style={[estilos.existenciaGrande, { color: COLOR_NIVEL[nivel] }]}>{i.existencia}</Text>
                         <Text style={[estilos.ayuda, { fontWeight: "700", color: COLOR_NIVEL[nivel] }]}>{i.unidadMedida}</Text>
                       </View>
+                      {tienePresentacion(presentacionDe(i)) && (
+                        <Text style={[estilos.ayuda, { fontWeight: "700" }]}>
+                          = {describirEnPaquetes(i.existencia, presentacionDe(i), i.unidadMedida)}
+                        </Text>
+                      )}
                       <Text style={estilos.ayuda}>
                         mínimo {i.minimo} · {ETIQUETA_NIVEL[nivel]}{i.proveedorNombre ? ` · ${i.proveedorNombre}` : ""}
                       </Text>
@@ -375,14 +421,34 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
                 Captura lo que hay físicamente. Enter baja al siguiente insumo. El conteo FIJA la existencia, no la suma.
               </Text>
               {visibles.map((i, indice) => {
+                const pres = presentacionDe(i);
+                const conEmpaque = tienePresentacion(pres);
                 const capturado = conteo[i.insumoId];
-                const dif = capturado !== undefined && capturado !== "" ? diferenciaConteo(Number(capturado), i.existencia) : null;
+                const empaques = conteoEmpaques[i.insumoId];
+                const contado = contadoDe(i);
+                const dif = contado !== null ? diferenciaConteo(contado, i.existencia) : null;
                 return (
                   <View key={i.insumoId} style={estilos.filaConteo}>
                     <View style={{ flex: 1 }}>
                       <Text style={estilos.nombreInsumo} numberOfLines={1}>{i.nombre}</Text>
-                      <Text style={estilos.ayuda}>Sistema: {i.existencia} {i.unidadMedida}</Text>
+                      <Text style={estilos.ayuda}>
+                        Sistema: {i.existencia} {i.unidadMedida}
+                        {conEmpaque ? ` · ${describirEnPaquetes(i.existencia, pres, i.unidadMedida)}` : ""}
+                      </Text>
                     </View>
+                    {/* Con empaque se cuenta como está en el almacén: cartones cerrados + lo abierto. */}
+                    {conEmpaque && (
+                      <TextInput
+                        value={empaques ?? ""}
+                        onChangeText={(v) => setConteoEmpaques((s) => ({ ...s, [i.insumoId]: v.replace(/[^0-9.]/g, "") }))}
+                        keyboardType="decimal-pad"
+                        blurOnSubmit={false}
+                        placeholder={pres!.nombre.slice(0, 6)}
+                        placeholderTextColor={colores.textoSecundario}
+                        style={[estilos.inputConteo, { marginRight: 4 }]}
+                        accessibilityLabel={`${pres!.nombre}s contados de ${i.nombre}`}
+                      />
+                    )}
                     <TextInput
                       ref={refsConteo[indice]}
                       value={capturado ?? ""}
@@ -391,7 +457,7 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
                       keyboardType="decimal-pad"
                       returnKeyType={indice === visibles.length - 1 ? "done" : "next"}
                       blurOnSubmit={false}
-                      placeholder="—"
+                      placeholder={conEmpaque ? i.unidadMedida : "—"}
                       placeholderTextColor={colores.textoSecundario}
                       style={estilos.inputConteo}
                       accessibilityLabel={`Conteo de ${i.nombre}`}
@@ -514,24 +580,65 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
           <View style={estilos.hojaModal}>
             <Text style={estilos.subtitulo}>{ajuste.tipo === "ENTRADA" ? "+ Entrada" : "− Merma"} · {ajuste.item.nombre}</Text>
             <Text style={estilos.ayuda}>
-              Existencia actual: {ajuste.item.existencia} {ajuste.item.unidadMedida}.{" "}
+              Existencia actual: {ajuste.item.existencia} {ajuste.item.unidadMedida}
+              {tienePresentacion(presentacionDe(ajuste.item)) ? ` (${describirEnPaquetes(ajuste.item.existencia, presentacionDe(ajuste.item), ajuste.item.unidadMedida)})` : ""}.{" "}
               {ajuste.tipo === "ENTRADA" ? "¿Cuántos llegaron? Se suman a la existencia." : "¿Cuántos se perdieron? Se restan de la existencia."}
             </Text>
-            <TextInput
-              value={cantidadAjuste}
-              onChangeText={setCantidadAjuste}
-              placeholder={`Cantidad en ${ajuste.item.unidadMedida}`}
-              placeholderTextColor={colores.textoSecundario}
-              keyboardType="decimal-pad"
-              autoFocus
-              style={[estilos.input, { marginTop: 10, fontSize: 22, fontWeight: "800", textAlign: "center" }]}
-              onSubmitEditing={confirmarAjuste}
-            />
-            {Number(cantidadAjuste.replace(",", ".")) > 0 && (
-              <Text style={[estilos.ayuda, { textAlign: "center", marginBottom: 8 }]}>
-                Quedarán {Math.max(0, ajuste.item.existencia + (ajuste.tipo === "ENTRADA" ? 1 : -1) * Number(cantidadAjuste.replace(",", "."))).toLocaleString("es-MX", { maximumFractionDigits: 2 })} {ajuste.item.unidadMedida}
-              </Text>
+            {/* Con empaque se captura como está en el almacén: cartones completos + lo suelto. */}
+            {tienePresentacion(presentacionDe(ajuste.item)) ? (
+              <>
+                <Text style={[estilos.ayuda, { marginTop: 8 }]}>
+                  1 {presentacionDe(ajuste.item)!.nombre} = {presentacionDe(ajuste.item)!.porPaquete} {ajuste.item.unidadMedida}
+                </Text>
+                <View style={{ flexDirection: "row", gap: 8, marginTop: 6, alignItems: "center" }}>
+                  <TextInput
+                    value={empaquesAjuste}
+                    onChangeText={setEmpaquesAjuste}
+                    placeholder={presentacionDe(ajuste.item)!.nombre}
+                    placeholderTextColor={colores.textoSecundario}
+                    keyboardType="decimal-pad"
+                    autoFocus
+                    style={[estilos.input, { flex: 1, fontSize: 20, fontWeight: "800", textAlign: "center" }]}
+                  />
+                  <Text style={{ color: colores.textoSecundario, fontSize: 18 }}>+</Text>
+                  <TextInput
+                    value={cantidadAjuste}
+                    onChangeText={setCantidadAjuste}
+                    placeholder={ajuste.item.unidadMedida}
+                    placeholderTextColor={colores.textoSecundario}
+                    keyboardType="decimal-pad"
+                    style={[estilos.input, { flex: 1, fontSize: 20, fontWeight: "800", textAlign: "center" }]}
+                    onSubmitEditing={confirmarAjuste}
+                  />
+                </View>
+              </>
+            ) : (
+              <TextInput
+                value={cantidadAjuste}
+                onChangeText={setCantidadAjuste}
+                placeholder={`Cantidad en ${ajuste.item.unidadMedida}`}
+                placeholderTextColor={colores.textoSecundario}
+                keyboardType="decimal-pad"
+                autoFocus
+                style={[estilos.input, { marginTop: 10, fontSize: 22, fontWeight: "800", textAlign: "center" }]}
+                onSubmitEditing={confirmarAjuste}
+              />
             )}
+            {(() => {
+              const pres = presentacionDe(ajuste.item);
+              const cantidad = tienePresentacion(pres)
+                ? aUnidadBase({ paquetes: Number(empaquesAjuste.replace(",", ".")), sueltos: Number(cantidadAjuste.replace(",", ".")) }, pres.porPaquete)
+                : Number(cantidadAjuste.replace(",", "."));
+              if (!(cantidad > 0)) return null;
+              const queda = Math.max(0, ajuste.item.existencia + (ajuste.tipo === "ENTRADA" ? 1 : -1) * cantidad);
+              return (
+                <Text style={[estilos.ayuda, { textAlign: "center", marginBottom: 8 }]}>
+                  {tienePresentacion(pres) ? `Son ${cantidad} ${ajuste.item.unidadMedida}. ` : ""}
+                  Quedarán {queda.toLocaleString("es-MX", { maximumFractionDigits: 2 })} {ajuste.item.unidadMedida}
+                  {tienePresentacion(pres) ? ` (${describirEnPaquetes(queda, pres, ajuste.item.unidadMedida)})` : ""}
+                </Text>
+              );
+            })()}
             <View style={{ flexDirection: "row", gap: 10 }}>
               <TouchableOpacity onPress={() => setAjuste(null)} style={[estilos.botonMini, { flex: 1, backgroundColor: colores.gray50, borderWidth: 1, borderColor: colores.borde, minHeight: 46 }]}>
                 <Text style={{ color: colores.texto, fontWeight: "700" }}>Cancelar</Text>

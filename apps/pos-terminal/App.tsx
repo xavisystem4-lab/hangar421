@@ -47,6 +47,17 @@ export default function App() {
     return () => detenerSync();
   }, [auth.usuario]);
 
+  // La escucha de red y la tarea en segundo plano estaban importadas pero nunca se arrancaban:
+  // al volver el wifi la tablet esperaba al siguiente ciclo, y con la app cerrada (o tras
+  // reiniciar la tablet) no se subía nada hasta que alguien volviera a abrirla. Se arrancan una
+  // vez, con o sin sesión: subir ventas ya hechas no necesita a nadie logeado.
+  useEffect(() => {
+    if (!dbLista) return;
+    iniciarEscuchaDeRed();
+    registrarTareaSegundoPlano().catch(() => undefined);
+    return () => detenerEscuchaDeRed();
+  }, [dbLista]);
+
   if (errorDb) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: colores.navy, alignItems: "center", justifyContent: "center", padding: 24 }}>

@@ -13,6 +13,8 @@ import {
   calcularCortesia,
   precioConPromocion,
   calcularDescuentosVenta,
+  consumoDeVenta,
+  agruparRecetas,
   validarPagoSuficiente,
 } from "@hangar421/shared";
 import { Prisma } from "@prisma/client";
@@ -1013,14 +1015,43 @@ export class PedidosService {
    * Se registra como ENTRADA con `referenciaId` del pedido, así que el rastro queda emparejado
    * con la SALIDA original y se puede auditar el par completo.
    */
+  /**
+   * Qué consume del inventario UN renglón de la venta: la receta fija del producto más la receta
+   * de cada opción de modificador elegida en ese renglón.
+   *
+   * Sin la parte de las opciones, un Latte tendría que listar en su receta las cinco leches, y
+   * cada venta descontaría las cinco (ver RecetaOpcion en el esquema). Con esto, el Latte lleva
+   * en su receta solo lo fijo (café, vaso) y la leche la aporta la opción que eligió el cliente.
+   *
+   * Devuelve una línea por insumo, ya sumadas las repeticiones y multiplicadas por la cantidad
+   * del renglón.
+   */
+  private async consumoDeItem(item: { productoId: string; cantidad: number; modificadores?: { opcionModificadorId: string }[] }) {
+    const opcionIds = (item.modificadores ?? []).map((m) => m.opcionModificadorId);
+    const [recetaProducto, recetaOpciones] = await Promise.all([
+      this.prisma.recetaItem.findMany({ where: { productoId: item.productoId } }),
+      opcionIds.length > 0
+        ? this.prisma.recetaOpcion.findMany({ where: { opcionModificadorId: { in: opcionIds } } })
+        : Promise.resolve([] as { insumoId: string; cantidad: any; opcionModificadorId: string }[]),
+    ]);
+    // La regla vive en shared (consumoDeVenta): la tablet descuenta exactamente lo mismo cuando
+    // cobra sin conexión, y una sola prueba cubre a los dos.
+    return consumoDeVenta(
+      [item],
+      agruparRecetas(
+        recetaProducto.map((r) => ({ productoId: item.productoId, insumoId: r.insumoId, cantidad: Number(r.cantidad) })),
+        recetaOpciones.map((r) => ({ opcionModificadorId: r.opcionModificadorId, insumoId: r.insumoId, cantidad: Number(r.cantidad) })),
+      ),
+    );
+  }
+
   private async reponerInventarioPorReceta(
     pedido: Awaited<ReturnType<PedidosService["obtener"]>>,
     pedidoId: string,
   ) {
     for (const item of pedido.items) {
-      const receta = await this.prisma.recetaItem.findMany({ where: { productoId: item.productoId } });
-      for (const r of receta) {
-        const cantidadReponer = Number(r.cantidad) * item.cantidad;
+      for (const r of await this.consumoDeItem(item)) {
+        const cantidadReponer = r.cantidad;
         await this.prisma.$transaction(async (tx) => {
           await tx.movimientoInventario.create({
             data: {
@@ -1044,9 +1075,8 @@ export class PedidosService {
 
   private async descontarInventarioPorReceta(pedido: Awaited<ReturnType<PedidosService["obtener"]>>) {
     for (const item of pedido.items) {
-      const receta = await this.prisma.recetaItem.findMany({ where: { productoId: item.productoId } });
-      for (const r of receta) {
-        const cantidadDescontar = Number(r.cantidad) * item.cantidad;
+      for (const r of await this.consumoDeItem(item)) {
+        const cantidadDescontar = r.cantidad;
         await this.prisma.$transaction(async (tx) => {
           await tx.movimientoInventario.create({
             data: {

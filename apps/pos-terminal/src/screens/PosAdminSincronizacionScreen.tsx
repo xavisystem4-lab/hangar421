@@ -2,9 +2,12 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
-import { contarPendientes, listarProblemasSync, type ProblemaSync } from "../db/outboxRepo";
+import { contarPendientes, descartarProblema, listarProblemasSync, moverProblemaASucursalActual, type ProblemaSync } from "../db/outboxRepo";
+import { obtenerNombreSucursal, obtenerSucursalErp } from "../db/dispositivoLocal";
 import { subirAlErp, textoResumenSubida } from "../sync/subirAlErp";
 import { formatearFechaHora } from "../reportes/armarReporte";
+import { actualizarDesdeErp } from "../sync/syncEngine";
+import { descargaAtrasada, haceCuanto, leerEstadoDescarga, type EstadoDescarga } from "../db/estadoDescargaRepo";
 
 const ETIQUETA_ENTIDAD: Record<string, string> = {
   PEDIDO: "Venta",
@@ -29,13 +32,57 @@ export function PosAdminSincronizacionScreen({ onCerrar }: { onCerrar: () => voi
   const [pendientes, setPendientes] = useState(0);
   const [cargando, setCargando] = useState(true);
   const [trabajando, setTrabajando] = useState(false);
+  const [sucursalActual, setSucursalActual] = useState<{ id: string; nombre: string } | null>(null);
+  const [descarga, setDescarga] = useState<EstadoDescarga | null>(null);
+  const [bajando, setBajando] = useState(false);
 
   async function cargar() {
     const db = await abrirBaseDeDatos();
-    const [p, n] = await Promise.all([listarProblemasSync(db), contarPendientes(db)]);
+    const [p, n, id, nombre, d] = await Promise.all([
+      listarProblemasSync(db), contarPendientes(db), obtenerSucursalErp(db), obtenerNombreSucursal(db), leerEstadoDescarga(db),
+    ]);
+    setDescarga(d);
     setProblemas(p);
     setPendientes(n);
+    setSucursalActual(id ? { id, nombre: nombre ?? "esta sucursal" } : null);
     setCargando(false);
+  }
+
+  /**
+   * Un evento rechazado por pertenecer a otra sucursal no se arregla reintentando: el ERP lo va a
+   * negar siempre. Se resuelve diciendo qué era — algo que de verdad pasó aquí (se reasigna) o
+   * una prueba de cuando la tablet estuvo enlazada a otra sucursal (se saca de la cola).
+   */
+  function resolverAtascado(p: ProblemaSync) {
+    const quees = `${ETIQUETA_ENTIDAD[p.entidad] ?? p.entidad}${p.folioLocal != null ? ` #${p.folioLocal}` : ""}`;
+    Alert.alert(
+      `${quees}: es de otra sucursal`,
+      "El ERP lo rechaza porque se registró cuando esta tablet estaba enlazada a otra sucursal, y seguirá rechazándolo.\n\n" +
+        `• Pasarlo a ${sucursalActual?.nombre ?? "esta sucursal"}: úsalo si la operación ocurrió de verdad en este local.\n` +
+        "• Quitarlo de la cola: úsalo si fue una prueba. Se deja de intentar subirlo; en la tablet sigue guardado.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: `Pasarlo a ${sucursalActual?.nombre ?? "esta sucursal"}`,
+          onPress: async () => {
+            if (!sucursalActual) return;
+            const db = await abrirBaseDeDatos();
+            const movido = await moverProblemaASucursalActual(db, p.localId, sucursalActual.id);
+            await cargar();
+            Alert.alert(movido ? "Listo" : "Sin cambios", movido ? "Se reasignó y volverá a intentarse al subir." : "Ese registro ya era de esta sucursal: el rechazo tiene otra causa.");
+          },
+        },
+        {
+          text: "Quitarlo de la cola",
+          style: "destructive",
+          onPress: async () => {
+            const db = await abrirBaseDeDatos();
+            await descartarProblema(db, p.localId);
+            await cargar();
+          },
+        },
+      ],
+    );
   }
 
   useEffect(() => {
@@ -53,6 +100,24 @@ export function PosAdminSincronizacionScreen({ onCerrar }: { onCerrar: () => voi
       Alert.alert("Subir a ERP", e?.message ?? "No se pudo subir. No se perdió nada: inténtalo de nuevo.");
     } finally {
       setTrabajando(false);
+    }
+  }
+
+  /** Sentido contrario a "Subir": trae del ERP los cambios hechos allá (productos, precios,
+   *  insumos, recetas) sin esperar al ciclo automático de 5 minutos. */
+  async function bajar() {
+    setBajando(true);
+    try {
+      const r = await actualizarDesdeErp();
+      await cargar();
+      Alert.alert(
+        r.ok ? "Cambios del ERP descargados" : "Descarga incompleta",
+        r.ok
+          ? "Esta tablet ya tiene el catálogo, los precios y el inventario que hay en el ERP."
+          : `No se pudo bajar todo:\n\n${r.errores.join("\n")}\n\nLa tablet sigue funcionando con lo último que bajó.`,
+      );
+    } finally {
+      setBajando(false);
     }
   }
 
@@ -90,6 +155,32 @@ export function PosAdminSincronizacionScreen({ onCerrar }: { onCerrar: () => voi
           : <Text style={estilos.botonPrincipalTexto}>⬆ Subir a ERP</Text>}
       </TouchableOpacity>
 
+      {/* Lo que baja del ERP (catálogo, precios, inventario). Antes no se veía en ningún lado si
+          la tablet llevaba horas sin poder descargar: solo se notaba porque "no salía" un cambio. */}
+      {(() => {
+        const fallo = descarga?.ultimoIntento && !descarga.ultimoIntento.ok ? descarga.ultimoIntento : null;
+        const atrasada = descarga ? descargaAtrasada(descarga) : true;
+        const color = fallo ? colores.red : atrasada ? colores.amber : colores.green;
+        return (
+          <View style={[estilos.tarjeta, { borderLeftWidth: 4, borderLeftColor: color }]}>
+            <Text style={estilos.subtitulo}>Cambios del ERP: {haceCuanto(descarga?.ultimaCompleta ?? null)}</Text>
+            <Text style={estilos.ayuda}>
+              Productos, precios, insumos y recetas que se editan en el ERP se descargan solos cada 5 minutos y al volver la red.
+            </Text>
+            {fallo && (
+              <Text style={estilos.mensajeError}>
+                Último intento ({haceCuanto(fallo.fecha)}) con error:{"\n"}{fallo.errores.join("\n")}
+              </Text>
+            )}
+            <TouchableOpacity onPress={bajar} disabled={bajando} style={[estilos.botonResolver, { alignSelf: "stretch", alignItems: "center" }]}>
+              {bajando
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={estilos.botonResolverTexto}>⬇ Bajar cambios del ERP ahora</Text>}
+            </TouchableOpacity>
+          </View>
+        );
+      })()}
+
       {problemas.map((p) => (
         <View key={p.localId} style={estilos.tarjetaProblema}>
           <Text style={estilos.tituloProblema}>
@@ -99,6 +190,11 @@ export function PosAdminSincronizacionScreen({ onCerrar }: { onCerrar: () => voi
           <Text style={estilos.ayuda}>{formatearFechaHora(p.createdAt)} · {p.intentos} intento(s)</Text>
           {/* El mensaje del servidor, tal cual: suele decir exactamente qué hacer. */}
           <Text style={estilos.mensajeError}>{p.ultimoError}</Text>
+          {p.sinAccesoASucursal && (
+            <TouchableOpacity onPress={() => resolverAtascado(p)} style={estilos.botonResolver}>
+              <Text style={estilos.botonResolverTexto}>Resolver: es de otra sucursal</Text>
+            </TouchableOpacity>
+          )}
         </View>
       ))}
 
@@ -117,6 +213,8 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     cerrar: { color: colores.textoSecundario, fontSize: 20 },
     subtitulo: { fontSize: 15, fontWeight: "800", color: colores.texto, marginBottom: 4 },
     ayuda: { fontSize: 12, color: colores.textoSecundario, lineHeight: 17 },
+    botonResolver: { marginTop: 10, alignSelf: "flex-start", paddingHorizontal: 12, minHeight: 40, justifyContent: "center", borderRadius: 8, backgroundColor: colores.navy },
+    botonResolverTexto: { color: "#fff", fontWeight: "800", fontSize: 13 },
     tarjeta: { backgroundColor: colores.superficie, borderRadius: 12, padding: 14, marginBottom: 14 },
     tarjetaProblema: { backgroundColor: colores.superficie, borderRadius: 10, padding: 12, marginBottom: 10, borderLeftWidth: 4, borderLeftColor: colores.red },
     tituloProblema: { fontSize: 14, fontWeight: "700", color: colores.texto },

@@ -56,7 +56,7 @@ describe("textoResumenSubida", () => {
       enviados: 0,
       pendientes: 2,
       corregidas: 0,
-      problemas: [{ localId: "1", entidad: "PEDIDO", entidadId: "v", intentos: 3, ultimoError: "Producto inexistente", createdAt: "", folioLocal: 12 }],
+      problemas: [{ localId: "1", entidad: "PEDIDO", entidadId: "v", intentos: 3, ultimoError: "Producto inexistente", createdAt: "", folioLocal: 12, sucursalId: "suc-1", sinAccesoASucursal: false }],
       errorGeneral: null,
     });
     expect(t.titulo).toBe("No se pudo subir");

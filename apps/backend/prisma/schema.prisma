@@ -573,6 +573,7 @@ model OpcionModificador {
 
   @@index([modificadorId])
   @@map("opciones_modificador")
+  recetas RecetaOpcion[]
 }
 
 model ProductoModificador {
@@ -1091,6 +1092,11 @@ model Insumo {
   proveedorId   String? // opcional: de qué proveedor se compra este insumo
   nombre        String
   unidadMedida  String // "g", "ml", "pz", "kg", "l"
+  // Empaque con el que se COMPRA y se cuenta, cuando no coincide con la unidad de consumo: la
+  // leche se consume en ml y se cuenta en cartones de 1000 ml. La existencia sigue guardándose en
+  // unidadMedida; esto solo permite capturar "4 cartones" o "2 cartones y 300 ml".
+  presentacionNombre   String?
+  presentacionCantidad Decimal? @db.Decimal(12, 4)
   costoUnitario Decimal  @default(0) @db.Decimal(10, 4)
   // Precio de venta directa (opcional) — solo aplica a insumos que también se venden tal cual
   // (ej. agua embotellada, refresco de lata) sin pasar por una receta de producto. null = este
@@ -1109,6 +1115,7 @@ model Insumo {
   @@index([empresaId])
   @@index([proveedorId])
   @@map("insumos")
+  recetasOpcion RecetaOpcion[]
 }
 
 model Proveedor {
@@ -1545,4 +1552,23 @@ model ConfiguracionCorreo {
   empresa Empresa @relation(fields: [empresaId], references: [id])
 
   @@map("configuracion_correo")
+}
+
+// Receta de una OPCIÓN de modificador: lo que consume del inventario cuando el cliente elige esa
+// opción (ej. "Leche de avena" → 240 ml del insumo Leche-Avena). Complementa RecetaItem, que es
+// la receta FIJA del producto (café, vaso…): un Latte no puede listar las cinco leches en su
+// receta, porque entonces cada venta descontaría todas. Al cobrar se descuenta la receta del
+// producto más la de cada opción elegida en ese renglón (ver PedidosService).
+model RecetaOpcion {
+  id                  String  @id @default(uuid())
+  opcionModificadorId String
+  insumoId            String
+  cantidad            Decimal @db.Decimal(10, 4)
+
+  opcionModificador OpcionModificador @relation(fields: [opcionModificadorId], references: [id], onDelete: Cascade)
+  insumo            Insumo            @relation(fields: [insumoId], references: [id])
+
+  @@unique([opcionModificadorId, insumoId])
+  @@index([insumoId])
+  @@map("receta_opciones")
 }

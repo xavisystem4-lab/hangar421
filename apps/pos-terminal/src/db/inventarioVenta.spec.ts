@@ -1,0 +1,53 @@
+import { descontarConsumoLocal, recetasParaConsumo } from "./inventarioRepo";
+
+/**
+ * La tablet descuenta el almacén al cobrar para enseñar la existencia real en el momento, también
+ * sin conexión. No encola nada al ERP: el servidor descuenta por su cuenta al recibir la venta, y
+ * mandar además un movimiento desde aquí descontaría dos veces.
+ */
+function baseFalsa(filas: Record<string, any[]> = {}) {
+  const ejecutados: { sql: string; params: any[] }[] = [];
+  return {
+    db: {
+      getAllAsync: jest.fn(async (sql: string) => (sql.includes("FROM recetas_opcion") ? filas.opcion ?? [] : filas.producto ?? [])),
+      runAsync: jest.fn(async (sql: string, ...params: any[]) => { ejecutados.push({ sql, params }); }),
+      withTransactionAsync: jest.fn(async (fn: any) => fn()),
+    } as any,
+    ejecutados,
+  };
+}
+
+describe("recetasParaConsumo", () => {
+  it("devuelve la receta del producto y la de las opciones elegidas", async () => {
+    const { db } = baseFalsa({
+      producto: [{ producto_id: "latte", insumo_id: "cafe", cantidad: 20 }],
+      opcion: [{ opcion_modificador_id: "avena", insumo_id: "leche-avena", cantidad: 240 }],
+    });
+    await expect(recetasParaConsumo(db, ["latte"], ["avena"])).resolves.toEqual({
+      porProducto: [{ productoId: "latte", insumoId: "cafe", cantidad: 20 }],
+      porOpcion: [{ opcionModificadorId: "avena", insumoId: "leche-avena", cantidad: 240 }],
+    });
+  });
+
+  it("sin productos ni opciones no consulta nada", async () => {
+    const { db } = baseFalsa();
+    await expect(recetasParaConsumo(db, [], [])).resolves.toEqual({ porProducto: [], porOpcion: [] });
+    expect(db.getAllAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe("descontarConsumoLocal", () => {
+  it("resta la cantidad consumida en la sucursal de la terminal", async () => {
+    const { db, ejecutados } = baseFalsa();
+    await descontarConsumoLocal(db, [{ insumoId: "leche-avena", cantidad: 240 }], "suc-1");
+    expect(ejecutados).toHaveLength(1);
+    expect(ejecutados[0].sql).toContain("existencia = existencia - ?");
+    expect(ejecutados[0].params).toEqual(["suc-1", "leche-avena", -240, 240]);
+  });
+
+  it("ignora cantidades en cero o negativas", async () => {
+    const { db, ejecutados } = baseFalsa();
+    await descontarConsumoLocal(db, [{ insumoId: "a", cantidad: 0 }, { insumoId: "b", cantidad: -5 }], "suc-1");
+    expect(ejecutados).toHaveLength(0);
+  });
+});

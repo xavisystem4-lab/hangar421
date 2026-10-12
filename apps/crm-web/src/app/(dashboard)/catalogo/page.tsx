@@ -10,6 +10,15 @@ import { PanelProducto } from "@/components/PanelProducto";
 
 interface Insumo { id: string; nombre: string; unidadMedida: string }
 interface RecetaItemDto { id: string; insumoId: string; cantidad: string; insumo: { nombre: string; unidadMedida: string } }
+/** Receta de UNA opción de modificador: lo que consume cuando el cliente elige esa opción. */
+interface RecetaOpcionDto {
+  opcionId: string;
+  opcion: string;
+  activo: boolean;
+  modificadorId: string;
+  modificador: string;
+  receta: { insumoId: string; nombre: string; unidadMedida: string; cantidad: number }[];
+}
 
 export default function CatalogoPage() {
   const { contexto } = useAuthCrm();
@@ -22,6 +31,9 @@ export default function CatalogoPage() {
   const [insumos, setInsumos] = useState<Insumo[]>([]);
   const [productoReceta, setProductoReceta] = useState<Producto | null>(null);
   const [receta, setReceta] = useState<RecetaItemDto[]>([]);
+  const [recetaOpciones, setRecetaOpciones] = useState<RecetaOpcionDto[]>([]);
+  /** Alta por opción: {opcionId: {insumoId, cantidad}}. */
+  const [nuevoPorOpcion, setNuevoPorOpcion] = useState<Record<string, { insumoId: string; cantidad: string }>>({});
   const [nuevoItem, setNuevoItem] = useState({ insumoId: "", cantidad: "" });
 
   // Panel lateral de alta/edición de producto (mismos datos que pide la terminal: categoría,
@@ -117,6 +129,9 @@ export default function CatalogoPage() {
       contexto ? apiFetch<Insumo[]>(`/inventario/insumos?empresaId=${contexto.usuario.empresaId}`).catch(() => [] as Insumo[]) : Promise.resolve([] as Insumo[]),
     ]);
     setReceta(items);
+    apiFetch<RecetaOpcionDto[]>(`/inventario/productos/${p.id}/receta-modificadores`)
+      .then(setRecetaOpciones)
+      .catch(() => setRecetaOpciones([]));
     setInsumos(lista);
     setNuevoItem((n) => ({ ...n, insumoId: n.insumoId || lista[0]?.id || "" }));
   }
@@ -130,6 +145,30 @@ export default function CatalogoPage() {
     setNuevoItem((n) => ({ ...n, cantidad: "" }));
     const items = await apiFetch<RecetaItemDto[]>(`/inventario/productos/${productoReceta.id}/receta`);
     setReceta(items);
+  }
+
+  /** Guarda la receta completa de una opción (el endpoint reemplaza la lista de esa opción). */
+  async function guardarRecetaOpcion(opcionId: string, items: { insumoId: string; cantidad: number }[]) {
+    await apiFetch(`/inventario/opciones/${opcionId}/receta`, { method: "POST", body: JSON.stringify({ items }) });
+    if (!productoReceta) return;
+    setRecetaOpciones(await apiFetch<RecetaOpcionDto[]>(`/inventario/productos/${productoReceta.id}/receta-modificadores`));
+  }
+
+  async function agregarAOpcion(o: RecetaOpcionDto) {
+    const borrador = nuevoPorOpcion[o.opcionId];
+    const insumoId = borrador?.insumoId || insumos[0]?.id;
+    const cantidad = Number(borrador?.cantidad);
+    if (!insumoId || !(cantidad > 0)) return;
+    const items = [
+      ...o.receta.filter((r) => r.insumoId !== insumoId).map((r) => ({ insumoId: r.insumoId, cantidad: r.cantidad })),
+      { insumoId, cantidad },
+    ];
+    await guardarRecetaOpcion(o.opcionId, items);
+    setNuevoPorOpcion((n) => ({ ...n, [o.opcionId]: { insumoId: "", cantidad: "" } }));
+  }
+
+  async function quitarDeOpcion(o: RecetaOpcionDto, insumoId: string) {
+    await guardarRecetaOpcion(o.opcionId, o.receta.filter((r) => r.insumoId !== insumoId).map((r) => ({ insumoId: r.insumoId, cantidad: r.cantidad })));
   }
 
   async function quitarItemReceta(id: string) {
@@ -299,6 +338,60 @@ export default function CatalogoPage() {
                 <input placeholder="Cantidad" type="number" value={nuevoItem.cantidad} onChange={(e) => setNuevoItem((n) => ({ ...n, cantidad: e.target.value }))}
                   style={{ flex: 1, padding: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
                 <button onClick={agregarItemReceta} style={{ background: "var(--h421-green)", color: "#fff", padding: "0 14px" }}>+</button>
+              </div>
+            )}
+
+            {/* Receta POR OPCIÓN de modificador: así un Latte no tiene que listar las cinco
+                leches (si las lista, cada venta descuenta las cinco). Aquí se dice qué consume
+                cada opción y se descuenta solo la que eligió el cliente. */}
+            {recetaOpciones.length > 0 && (
+              <div style={{ marginTop: 22, borderTop: "2px solid var(--h421-gray-200)", paddingTop: 14 }}>
+                <h4 style={{ margin: "0 0 4px" }}>Según lo que elija el cliente</h4>
+                <p style={{ fontSize: 12, color: "var(--h421-gray-400)", margin: "0 0 10px" }}>
+                  Lo que consume cada opción de los modificadores de este producto. Se descuenta <strong>solo la opción elegida</strong>, además de la receta de arriba.
+                  Ejemplo: en el modificador <em>Tipo de leche</em>, la opción <em>Avena</em> → 240 ml de Leche-Avena.
+                </p>
+                {[...new Set(recetaOpciones.map((o) => o.modificadorId))].map((modId) => {
+                  const opciones = recetaOpciones.filter((o) => o.modificadorId === modId);
+                  return (
+                    <div key={modId} style={{ marginBottom: 14 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>{opciones[0].modificador}</div>
+                      {opciones.map((o) => (
+                        <div key={o.opcionId} style={{ border: "1px solid var(--h421-gray-200)", borderRadius: 8, padding: 8, marginBottom: 8 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+                            {o.opcion}{o.activo ? "" : " (dada de baja)"}
+                            {o.receta.length === 0 && <span style={{ color: "var(--h421-gray-400)", fontWeight: 400 }}> — sin insumo asignado</span>}
+                          </div>
+                          {o.receta.map((r) => (
+                            <div key={r.insumoId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, padding: "3px 0" }}>
+                              <span>{r.nombre} — {r.cantidad} {r.unidadMedida}</span>
+                              <button onClick={() => quitarDeOpcion(o, r.insumoId)} style={{ background: "var(--h421-red-bg)", color: "var(--h421-red-texto)", padding: "2px 8px", fontSize: 12 }}>Quitar</button>
+                            </div>
+                          ))}
+                          {insumos.length > 0 && (
+                            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                              <select
+                                value={nuevoPorOpcion[o.opcionId]?.insumoId ?? ""}
+                                onChange={(e) => setNuevoPorOpcion((n) => ({ ...n, [o.opcionId]: { insumoId: e.target.value, cantidad: n[o.opcionId]?.cantidad ?? "" } }))}
+                                style={{ flex: 2, padding: 6, fontSize: 13 }}
+                              >
+                                <option value="">Insumo…</option>
+                                {insumos.map((i) => <option key={i.id} value={i.id}>{i.nombre}</option>)}
+                              </select>
+                              <input
+                                placeholder="Cantidad" type="number"
+                                value={nuevoPorOpcion[o.opcionId]?.cantidad ?? ""}
+                                onChange={(e) => setNuevoPorOpcion((n) => ({ ...n, [o.opcionId]: { insumoId: n[o.opcionId]?.insumoId ?? "", cantidad: e.target.value } }))}
+                                style={{ flex: 1, padding: 6, borderRadius: 8, border: "1px solid var(--h421-gray-200)", fontSize: 13 }}
+                              />
+                              <button onClick={() => agregarAOpcion(o)} style={{ background: "var(--h421-green)", color: "#fff", padding: "0 12px" }}>+</button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
