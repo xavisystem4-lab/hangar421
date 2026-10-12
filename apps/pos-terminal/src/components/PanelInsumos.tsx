@@ -79,6 +79,8 @@ export function PanelInsumos({ onCambio }: { onCambio: () => Promise<void> | voi
       proveedorId: i.proveedorId ?? "",
       minimo: i.minimo ? String(i.minimo) : "",
       maximo: i.maximo != null ? String(i.maximo) : "",
+      presentacionNombre: i.presentacionNombre ?? "",
+      presentacionCantidad: i.presentacionCantidad != null ? String(i.presentacionCantidad) : "",
     });
     setFormularioAbierto(true);
   }
@@ -227,6 +229,19 @@ export function PanelInsumos({ onCambio }: { onCambio: () => Promise<void> | voi
             {campo("minimo", editandoId ? "Mínimo (esta sucursal)" : "Mínimo", { keyboardType: "decimal-pad", placeholder: "—" })}
             {campo("maximo", editandoId ? "Máximo (esta sucursal)" : "Máximo", { keyboardType: "decimal-pad", placeholder: "—" })}
           </View>
+
+          {/* Empaque: se compra y se cuenta en cartones, pero la receta descuenta ml. */}
+          <Text style={estilos.etiqueta}>Empaque de compra (opcional)</Text>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            {campo("presentacionNombre", "Se compra por", { placeholder: "Ej. Cartón", autoCapitalize: "sentences" })}
+            {campo("presentacionCantidad", `${borrador.unidadMedida} por empaque`, { keyboardType: "decimal-pad", placeholder: "Ej. 1000" })}
+          </View>
+          {borrador.presentacionNombre.trim() !== "" && Number(borrador.presentacionCantidad) > 0 && (
+            <Text style={estilos.ayuda}>
+              1 {borrador.presentacionNombre.trim()} = {borrador.presentacionCantidad} {borrador.unidadMedida}. En Entrada, Merma y Conteo podrás capturar
+              {" "}{borrador.presentacionNombre.trim().toLowerCase()}s completos y aparte los {borrador.unidadMedida} sueltos.
+            </Text>
+          )}
 
           <Text style={estilos.etiqueta}>Proveedor (opcional)</Text>
           {proveedores === null ? (

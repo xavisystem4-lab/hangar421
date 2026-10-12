@@ -14,6 +14,9 @@ export interface ExistenciaInsumo {
   maximo?: number | null;
   costoUnitario: number;
   proveedorNombre?: string | null;
+  /** Empaque de compra ("Cartón") y cuántas unidades base trae (1000 ml). */
+  presentacionNombre?: string | null;
+  presentacionCantidad?: number | null;
 }
 
 /**

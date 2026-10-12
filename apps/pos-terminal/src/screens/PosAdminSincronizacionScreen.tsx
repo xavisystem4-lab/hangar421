@@ -6,6 +6,8 @@ import { contarPendientes, descartarProblema, listarProblemasSync, moverProblema
 import { obtenerNombreSucursal, obtenerSucursalErp } from "../db/dispositivoLocal";
 import { subirAlErp, textoResumenSubida } from "../sync/subirAlErp";
 import { formatearFechaHora } from "../reportes/armarReporte";
+import { actualizarDesdeErp } from "../sync/syncEngine";
+import { descargaAtrasada, haceCuanto, leerEstadoDescarga, type EstadoDescarga } from "../db/estadoDescargaRepo";
 
 const ETIQUETA_ENTIDAD: Record<string, string> = {
   PEDIDO: "Venta",
@@ -31,12 +33,15 @@ export function PosAdminSincronizacionScreen({ onCerrar }: { onCerrar: () => voi
   const [cargando, setCargando] = useState(true);
   const [trabajando, setTrabajando] = useState(false);
   const [sucursalActual, setSucursalActual] = useState<{ id: string; nombre: string } | null>(null);
+  const [descarga, setDescarga] = useState<EstadoDescarga | null>(null);
+  const [bajando, setBajando] = useState(false);
 
   async function cargar() {
     const db = await abrirBaseDeDatos();
-    const [p, n, id, nombre] = await Promise.all([
-      listarProblemasSync(db), contarPendientes(db), obtenerSucursalErp(db), obtenerNombreSucursal(db),
+    const [p, n, id, nombre, d] = await Promise.all([
+      listarProblemasSync(db), contarPendientes(db), obtenerSucursalErp(db), obtenerNombreSucursal(db), leerEstadoDescarga(db),
     ]);
+    setDescarga(d);
     setProblemas(p);
     setPendientes(n);
     setSucursalActual(id ? { id, nombre: nombre ?? "esta sucursal" } : null);
@@ -98,6 +103,24 @@ export function PosAdminSincronizacionScreen({ onCerrar }: { onCerrar: () => voi
     }
   }
 
+  /** Sentido contrario a "Subir": trae del ERP los cambios hechos allá (productos, precios,
+   *  insumos, recetas) sin esperar al ciclo automático de 5 minutos. */
+  async function bajar() {
+    setBajando(true);
+    try {
+      const r = await actualizarDesdeErp();
+      await cargar();
+      Alert.alert(
+        r.ok ? "Cambios del ERP descargados" : "Descarga incompleta",
+        r.ok
+          ? "Esta tablet ya tiene el catálogo, los precios y el inventario que hay en el ERP."
+          : `No se pudo bajar todo:\n\n${r.errores.join("\n")}\n\nLa tablet sigue funcionando con lo último que bajó.`,
+      );
+    } finally {
+      setBajando(false);
+    }
+  }
+
   if (cargando) {
     return <View style={estilos.centro}><ActivityIndicator color={colores.navy} size="large" /></View>;
   }
@@ -131,6 +154,32 @@ export function PosAdminSincronizacionScreen({ onCerrar }: { onCerrar: () => voi
           ? <ActivityIndicator color="#fff" />
           : <Text style={estilos.botonPrincipalTexto}>⬆ Subir a ERP</Text>}
       </TouchableOpacity>
+
+      {/* Lo que baja del ERP (catálogo, precios, inventario). Antes no se veía en ningún lado si
+          la tablet llevaba horas sin poder descargar: solo se notaba porque "no salía" un cambio. */}
+      {(() => {
+        const fallo = descarga?.ultimoIntento && !descarga.ultimoIntento.ok ? descarga.ultimoIntento : null;
+        const atrasada = descarga ? descargaAtrasada(descarga) : true;
+        const color = fallo ? colores.red : atrasada ? colores.amber : colores.green;
+        return (
+          <View style={[estilos.tarjeta, { borderLeftWidth: 4, borderLeftColor: color }]}>
+            <Text style={estilos.subtitulo}>Cambios del ERP: {haceCuanto(descarga?.ultimaCompleta ?? null)}</Text>
+            <Text style={estilos.ayuda}>
+              Productos, precios, insumos y recetas que se editan en el ERP se descargan solos cada 5 minutos y al volver la red.
+            </Text>
+            {fallo && (
+              <Text style={estilos.mensajeError}>
+                Último intento ({haceCuanto(fallo.fecha)}) con error:{"\n"}{fallo.errores.join("\n")}
+              </Text>
+            )}
+            <TouchableOpacity onPress={bajar} disabled={bajando} style={[estilos.botonResolver, { alignSelf: "stretch", alignItems: "center" }]}>
+              {bajando
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={estilos.botonResolverTexto}>⬇ Bajar cambios del ERP ahora</Text>}
+            </TouchableOpacity>
+          </View>
+        );
+      })()}
 
       {problemas.map((p) => (
         <View key={p.localId} style={estilos.tarjetaProblema}>

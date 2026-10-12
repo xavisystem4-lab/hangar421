@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { NivelInventario, Sucursal } from "@hangar421/shared";
-import { UNIDADES_INSUMO, calcularNivelInventario, factorConversionUnidad, resumenSemaforoInventario } from "@hangar421/shared";
+import { UNIDADES_INSUMO, aUnidadBase, calcularNivelInventario, describirEnPaquetes, factorConversionUnidad, resumenSemaforoInventario, tienePresentacion } from "@hangar421/shared";
 import { apiFetch } from "@/lib/api";
 import { useAuthCrm } from "@/lib/authClient";
 import { useSucursalActiva } from "@/store/sucursalActiva";
@@ -28,6 +28,9 @@ interface Insumo {
   id: string;
   nombre: string;
   unidadMedida: string;
+  /** Empaque con el que se compra ("Cartón") y cuántas unidades base trae (1000 ml). */
+  presentacionNombre?: string | null;
+  presentacionCantidad?: number | null;
   costoUnitario: string;
   precioVenta: string | null;
   proveedorId: string | null;
@@ -102,18 +105,19 @@ export default function InventarioPage() {
 
   const [nuevoInsumo, setNuevoInsumo] = useState({
     nombre: "", unidadMedida: "pz", costoUnitario: "", precioVenta: "", proveedorId: "", minimo: "", maximo: "",
+    presentacionNombre: "", presentacionCantidad: "",
   });
 
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const [nuevoProveedor, setNuevoProveedor] = useState({ nombre: "", telefono: "" });
 
   const [editandoInsumoId, setEditandoInsumoId] = useState<string | null>(null);
-  const [borradorInsumo, setBorradorInsumo] = useState({ nombre: "", unidadMedida: "pz", costoUnitario: "", precioVenta: "", proveedorId: "", minimo: "", maximo: "" });
+  const [borradorInsumo, setBorradorInsumo] = useState({ nombre: "", unidadMedida: "pz", costoUnitario: "", precioVenta: "", proveedorId: "", minimo: "", maximo: "", presentacionNombre: "", presentacionCantidad: "" });
 
   // Movimientos: registrar uno nuevo (para un insumo puntual, botón "Movimiento" de la fila) y
   // ver los recientes de la sucursal (botón "Movimientos" del encabezado).
   const [modalMovimiento, setModalMovimiento] = useState<Insumo | null>(null);
-  const [mov, setMov] = useState({ tipo: "ENTRADA", cantidad: "", motivo: "" });
+  const [mov, setMov] = useState({ tipo: "ENTRADA", cantidad: "", motivo: "", empaques: "" });
   const [modalMovimientosRecientes, setModalMovimientosRecientes] = useState(false);
   const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
 
@@ -130,6 +134,8 @@ export default function InventarioPage() {
   // existencia actual, respeta el signo — ver deltaExistenciaInventario en @hangar421/shared).
   const [modalConteo, setModalConteo] = useState(false);
   const [conteo, setConteo] = useState<Record<string, string>>({});
+  /** Empaques completos contados (cartones), cuando el insumo tiene presentación. */
+  const [conteoEmpaques, setConteoEmpaques] = useState<Record<string, string>>({});
   const [guardandoConteo, setGuardandoConteo] = useState(false);
   const inputsConteoRef = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -225,6 +231,13 @@ export default function InventarioPage() {
       .filter((f) => (filtroNivel === "TODOS" ? true : f.nivel === filtroNivel));
   }, [insumos, existencias, busqueda, filtroNivel]);
 
+  /** Empaque del insumo, cuando lo tiene ("Cartón" de 1000 ml). */
+  function presentacionDe(i: Insumo) {
+    return i.presentacionNombre && i.presentacionCantidad
+      ? { nombre: i.presentacionNombre, porPaquete: Number(i.presentacionCantidad) }
+      : null;
+  }
+
   // Semáforo de TODO el inventario de la sucursal (sin buscador ni filtro), para las tarjetas de arriba.
   const resumenSemaforo = useMemo(
     () => resumenSemaforoInventario(insumos.map((i) => {
@@ -247,9 +260,11 @@ export default function InventarioPage() {
         proveedorId: nuevoInsumo.proveedorId || undefined,
         minimo: nuevoInsumo.minimo ? Number(nuevoInsumo.minimo) : undefined,
         maximo: nuevoInsumo.maximo ? Number(nuevoInsumo.maximo) : undefined,
+        presentacionNombre: nuevoInsumo.presentacionNombre.trim() || undefined,
+        presentacionCantidad: nuevoInsumo.presentacionCantidad ? Number(nuevoInsumo.presentacionCantidad) : undefined,
       }),
     });
-    setNuevoInsumo({ nombre: "", unidadMedida: "pz", costoUnitario: "", precioVenta: "", proveedorId: "", minimo: "", maximo: "" });
+    setNuevoInsumo({ nombre: "", unidadMedida: "pz", costoUnitario: "", precioVenta: "", proveedorId: "", minimo: "", maximo: "", presentacionNombre: "", presentacionCantidad: "" });
     setMensaje("Insumo creado.");
     cargar(sucursalId);
   }
@@ -260,6 +275,8 @@ export default function InventarioPage() {
       nombre: f.insumo.nombre, unidadMedida: f.insumo.unidadMedida, costoUnitario: f.insumo.costoUnitario,
       precioVenta: f.insumo.precioVenta ?? "", proveedorId: f.insumo.proveedorId ?? "",
       minimo: String(f.minimo), maximo: f.maximo != null ? String(f.maximo) : "",
+      presentacionNombre: f.insumo.presentacionNombre ?? "",
+      presentacionCantidad: f.insumo.presentacionCantidad != null ? String(f.insumo.presentacionCantidad) : "",
     });
   }
 
@@ -291,6 +308,8 @@ export default function InventarioPage() {
         method: "PATCH",
         body: JSON.stringify({
           nombre: borradorInsumo.nombre,
+          presentacionNombre: borradorInsumo.presentacionNombre.trim() || null,
+          presentacionCantidad: borradorInsumo.presentacionCantidad ? Number(borradorInsumo.presentacionCantidad) : null,
           costoUnitario: Number(borradorInsumo.costoUnitario) || 0,
           precioVenta: borradorInsumo.precioVenta ? Number(borradorInsumo.precioVenta) : null,
           proveedorId: borradorInsumo.proveedorId || null,
@@ -334,38 +353,60 @@ export default function InventarioPage() {
   }
 
   async function registrarMovimiento() {
-    if (!contexto || !modalMovimiento || !mov.cantidad) return;
+    if (!contexto || !modalMovimiento) return;
+    // Con empaque se capturan cartones y sueltos; lo que se guarda siempre es la unidad base.
+    const pres = presentacionDe(modalMovimiento);
+    const cantidad = tienePresentacion(pres)
+      ? aUnidadBase({ paquetes: Number(mov.empaques), sueltos: Number(mov.cantidad) }, pres.porPaquete)
+      : Number(mov.cantidad);
+    if (!(cantidad > 0)) return;
     await apiFetch("/inventario/movimientos", {
       method: "POST",
       body: JSON.stringify({
-        sucursalId, insumoId: modalMovimiento.id, tipo: mov.tipo, cantidad: Number(mov.cantidad),
+        sucursalId, insumoId: modalMovimiento.id, tipo: mov.tipo, cantidad,
         motivo: mov.motivo || undefined, usuarioId: contexto.usuario.id,
       }),
     });
-    setMov({ tipo: "ENTRADA", cantidad: "", motivo: "" });
+    setMov({ tipo: "ENTRADA", cantidad: "", motivo: "", empaques: "" });
     setModalMovimiento(null);
     setMensaje("Movimiento registrado.");
     cargar(sucursalId);
   }
 
+  /** Lo contado de un insumo, en unidad base: con empaque son dos casillas (cartones + sueltos). */
+  function contadoDe(f: (typeof filas)[number]): number | null {
+    const pres = presentacionDe(f.insumo);
+    const sueltos = conteo[f.insumo.id];
+    const empaques = conteoEmpaques[f.insumo.id];
+    if (tienePresentacion(pres)) {
+      if ((empaques === undefined || empaques === "") && (sueltos === undefined || sueltos === "")) return null;
+      return aUnidadBase({ paquetes: Number(empaques), sueltos: Number(sueltos) }, pres.porPaquete);
+    }
+    if (sueltos === undefined || sueltos === "") return null;
+    return Number(sueltos);
+  }
+
   async function guardarConteo() {
     if (!contexto) return;
-    const cambios = filas.filter((f) => conteo[f.insumo.id] !== undefined && conteo[f.insumo.id] !== "" && Number(conteo[f.insumo.id]) !== f.existencia);
+    const cambios = filas
+      .map((f) => ({ fila: f, contado: contadoDe(f) }))
+      .filter((x): x is { fila: (typeof filas)[number]; contado: number } => x.contado !== null && x.contado !== x.fila.existencia);
     if (cambios.length === 0) { setModalConteo(false); return; }
     setGuardandoConteo(true);
     try {
-      await Promise.all(cambios.map((f) =>
+      await Promise.all(cambios.map(({ fila: f, contado }) =>
         apiFetch("/inventario/movimientos", {
           method: "POST",
           body: JSON.stringify({
             sucursalId, insumoId: f.insumo.id, tipo: "CONTEO",
-            cantidad: Number(conteo[f.insumo.id]) - f.existencia,
+            cantidad: contado - f.existencia,
             motivo: "Conteo físico de inventario", usuarioId: contexto.usuario.id,
           }),
         }),
       ));
       setMensaje(`Conteo guardado: ${cambios.length} insumo(s) ajustado(s).`);
       setConteo({});
+      setConteoEmpaques({});
       setModalConteo(false);
       cargar(sucursalId);
     } finally {
@@ -487,6 +528,12 @@ export default function InventarioPage() {
                       <input value={borradorInsumo.nombre} onChange={(e) => setBorradorInsumo((b) => ({ ...b, nombre: e.target.value }))}
                         style={{ width: "100%", padding: 6, borderRadius: 6, border: "1px solid var(--h421-gray-200)" }} />
                       {/* Unidad editable: cambiarla de l a ml (o kg a g) convierte las cantidades. */}
+                      <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                        <input value={borradorInsumo.presentacionNombre} onChange={(e) => setBorradorInsumo((b) => ({ ...b, presentacionNombre: e.target.value }))}
+                          placeholder="Empaque" title="Se compra en (ej. Cartón)" style={{ width: 80, padding: 4, fontSize: 12, borderRadius: 6, border: "1px solid var(--h421-gray-200)" }} />
+                        <input value={borradorInsumo.presentacionCantidad} onChange={(e) => setBorradorInsumo((b) => ({ ...b, presentacionCantidad: e.target.value }))}
+                          type="number" placeholder="trae" title={`Cuántos ${borradorInsumo.unidadMedida} trae el empaque`} style={{ width: 64, padding: 4, fontSize: 12, borderRadius: 6, border: "1px solid var(--h421-gray-200)" }} />
+                      </div>
                       <select value={borradorInsumo.unidadMedida} onChange={(e) => setBorradorInsumo((b) => ({ ...b, unidadMedida: e.target.value }))}
                         title="Unidad de medida" style={{ marginTop: 4, padding: 4, fontSize: 12 }}>
                         {!(UNIDADES_INSUMO as readonly string[]).includes(borradorInsumo.unidadMedida) && (
@@ -533,6 +580,11 @@ export default function InventarioPage() {
                   <td style={{ padding: 8, whiteSpace: "nowrap" }}>
                     <span style={{ fontSize: 22, fontWeight: 800, color: SEMAFORO[f.nivel].color, lineHeight: 1 }}>{f.existencia}</span>
                     <span style={{ fontSize: 12, marginLeft: 4, color: "var(--h421-gray-400)" }}>{i.unidadMedida}</span>
+                    {tienePresentacion(presentacionDe(i)) && (
+                      <div style={{ fontSize: 11, color: "var(--h421-gray-400)" }}>
+                        = {describirEnPaquetes(f.existencia, presentacionDe(i), i.unidadMedida)}
+                      </div>
+                    )}
                   </td>
                   <td style={{ padding: 8 }}>{f.minimo} {i.unidadMedida}</td>
                   <td style={{ padding: 8, minWidth: 140 }}>
@@ -551,7 +603,7 @@ export default function InventarioPage() {
                   <td style={{ padding: 8 }}>{i.precioVenta != null ? `$${Number(i.precioVenta).toFixed(2)}` : "—"}</td>
                   <td style={{ padding: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
                     <button onClick={() => empezarEdicionInsumo(f)} style={{ background: "var(--h421-gray-50)", padding: "4px 10px", fontSize: 12 }}>✏️ Editar</button>
-                    <button onClick={() => { setModalMovimiento(i); setMov({ tipo: "ENTRADA", cantidad: "", motivo: "" }); }} style={{ background: "transparent", color: "var(--h421-blue)", border: "1px solid var(--h421-blue)", padding: "4px 10px", fontSize: 12 }}>Menú</button>
+                    <button onClick={() => { setModalMovimiento(i); setMov({ tipo: "ENTRADA", cantidad: "", motivo: "", empaques: "" }); }} style={{ background: "transparent", color: "var(--h421-blue)", border: "1px solid var(--h421-blue)", padding: "4px 10px", fontSize: 12 }}>Menú</button>
                     <button onClick={() => { setModalTraspaso(i); setTraspaso({ sucursalDestinoId: "", cantidad: "" }); }} style={{ background: "transparent", color: "#8b5cf6", border: "1px solid #8b5cf6", padding: "4px 10px", fontSize: 12 }}>Traspasar</button>
                     <button onClick={() => eliminarInsumo(i)} style={{ background: "var(--h421-red-bg)", color: "var(--h421-red-texto)", padding: "4px 10px", fontSize: 12 }}>Eliminar</button>
                   </td>
@@ -591,6 +643,16 @@ export default function InventarioPage() {
             <input placeholder="Stock máximo" type="number" value={nuevoInsumo.maximo} onChange={(e) => setNuevoInsumo((n) => ({ ...n, maximo: e.target.value }))}
               style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
           </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <input placeholder="Se compra en (ej. Cartón)" value={nuevoInsumo.presentacionNombre} onChange={(e) => setNuevoInsumo((n) => ({ ...n, presentacionNombre: e.target.value }))}
+              style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
+            <input placeholder={`Equivale a (${nuevoInsumo.unidadMedida})`} type="number" value={nuevoInsumo.presentacionCantidad} onChange={(e) => setNuevoInsumo((n) => ({ ...n, presentacionCantidad: e.target.value }))}
+              style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
+          </div>
+          <p style={{ fontSize: 11, color: "var(--h421-gray-400)", margin: "4px 0 0" }}>
+            Opcional: si lo compras por empaque, pon cómo se llama y cuánto trae (Cartón · 1000 ml).
+            Después podrás contar &quot;4 cartones&quot; o &quot;2 cartones y 300 ml&quot; sin sacar cuentas.
+          </p>
           <p style={{ fontSize: 11, color: "var(--h421-gray-400)", margin: "4px 0 0" }}>
             El mínimo/máximo aplica a todas las sucursales al crear el insumo — se puede ajustar después por sucursal desde &quot;Editar&quot;.
           </p>
@@ -622,9 +684,28 @@ export default function InventarioPage() {
             <select value={mov.tipo} onChange={(e) => setMov((m) => ({ ...m, tipo: e.target.value }))} style={{ flex: 1, padding: 10 }}>
               {TIPOS_MOVIMIENTO.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
-            <input placeholder="Cantidad" type="number" value={mov.cantidad} onChange={(e) => setMov((m) => ({ ...m, cantidad: e.target.value }))}
-              style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
+            {tienePresentacion(presentacionDe(modalMovimiento)) ? (
+              <>
+                <input placeholder={presentacionDe(modalMovimiento)!.nombre} title={`${presentacionDe(modalMovimiento)!.nombre}s completos`} type="number" value={mov.empaques}
+                  onChange={(e) => setMov((m) => ({ ...m, empaques: e.target.value }))}
+                  style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
+                <input placeholder={modalMovimiento.unidadMedida} title={`Sueltos en ${modalMovimiento.unidadMedida}`} type="number" value={mov.cantidad}
+                  onChange={(e) => setMov((m) => ({ ...m, cantidad: e.target.value }))}
+                  style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
+              </>
+            ) : (
+              <input placeholder="Cantidad" type="number" value={mov.cantidad} onChange={(e) => setMov((m) => ({ ...m, cantidad: e.target.value }))}
+                style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
+            )}
           </div>
+          {tienePresentacion(presentacionDe(modalMovimiento)) && (
+            <p style={{ fontSize: 12, color: "var(--h421-gray-400)", margin: "0 0 8px" }}>
+              1 {presentacionDe(modalMovimiento)!.nombre} = {presentacionDe(modalMovimiento)!.porPaquete} {modalMovimiento.unidadMedida}
+              {(mov.empaques || mov.cantidad) && (
+                <> · se registran <strong>{aUnidadBase({ paquetes: Number(mov.empaques), sueltos: Number(mov.cantidad) }, presentacionDe(modalMovimiento)!.porPaquete)} {modalMovimiento.unidadMedida}</strong></>
+              )}
+            </p>
+          )}
           <input placeholder="Motivo (opcional)" value={mov.motivo} onChange={(e) => setMov((m) => ({ ...m, motivo: e.target.value }))}
             style={{ width: "100%", padding: 10, marginBottom: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
           <button onClick={registrarMovimiento} style={{ width: "100%", background: "var(--h421-navy)", color: "#fff", padding: "10px 16px" }}>Registrar</button>
@@ -711,21 +792,57 @@ export default function InventarioPage() {
               </tr>
             </thead>
             <tbody>
-              {filas.map((f, indice) => (
+              {filas.map((f, indice) => {
+                const pres = presentacionDe(f.insumo);
+                const conEmpaque = tienePresentacion(pres);
+                return (
                 <tr key={f.insumo.id} style={{ borderBottom: "1px solid var(--h421-gray-200)" }}>
-                  <td style={{ padding: 8 }}>{f.insumo.nombre}</td>
-                  <td style={{ padding: 8, color: "var(--h421-gray-400)" }}>{f.existencia} {f.insumo.unidadMedida}</td>
                   <td style={{ padding: 8 }}>
-                    <input
-                      type="number" inputMode="decimal" step="0.01"
-                      placeholder={String(f.existencia)} value={conteo[f.insumo.id] ?? ""}
-                      ref={(el) => { inputsConteoRef.current[indice] = el; }}
-                      onChange={(e) => setConteo((c) => ({ ...c, [f.insumo.id]: e.target.value }))}
-                      onKeyDown={(e) => moverFocoConteo(e, indice)}
-                      style={{ width: 90, padding: 6, borderRadius: 6, border: "1px solid var(--h421-gray-200)" }} />
+                    {f.insumo.nombre}
+                    {conEmpaque && <div style={{ fontSize: 11, color: "var(--h421-gray-400)" }}>1 {pres!.nombre} = {pres!.porPaquete} {f.insumo.unidadMedida}</div>}
+                  </td>
+                  <td style={{ padding: 8, color: "var(--h421-gray-400)" }}>
+                    {f.existencia} {f.insumo.unidadMedida}
+                    {conEmpaque && <div style={{ fontSize: 11 }}>{describirEnPaquetes(f.existencia, pres, f.insumo.unidadMedida)}</div>}
+                  </td>
+                  <td style={{ padding: 8 }}>
+                    {conEmpaque ? (
+                      // Se cuenta como está en el almacén: empaques cerrados + lo abierto.
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <input
+                          type="number" inputMode="decimal" step="0.01" placeholder={pres!.nombre}
+                          title={`${pres!.nombre}s completos`}
+                          value={conteoEmpaques[f.insumo.id] ?? ""}
+                          ref={(el) => { inputsConteoRef.current[indice] = el; }}
+                          onChange={(e) => setConteoEmpaques((c) => ({ ...c, [f.insumo.id]: e.target.value }))}
+                          onKeyDown={(e) => moverFocoConteo(e, indice)}
+                          style={{ width: 70, padding: 6, borderRadius: 6, border: "1px solid var(--h421-gray-200)" }} />
+                        <span style={{ fontSize: 12, color: "var(--h421-gray-400)" }}>+</span>
+                        <input
+                          type="number" inputMode="decimal" step="0.01" placeholder={f.insumo.unidadMedida}
+                          title={`Sueltos en ${f.insumo.unidadMedida}`}
+                          value={conteo[f.insumo.id] ?? ""}
+                          onChange={(e) => setConteo((c) => ({ ...c, [f.insumo.id]: e.target.value }))}
+                          style={{ width: 70, padding: 6, borderRadius: 6, border: "1px solid var(--h421-gray-200)" }} />
+                        <span style={{ fontSize: 11, color: "var(--h421-gray-400)", minWidth: 70 }}>
+                          {(conteoEmpaques[f.insumo.id] || conteo[f.insumo.id])
+                            ? `= ${aUnidadBase({ paquetes: Number(conteoEmpaques[f.insumo.id]), sueltos: Number(conteo[f.insumo.id]) }, pres!.porPaquete)} ${f.insumo.unidadMedida}`
+                            : ""}
+                        </span>
+                      </div>
+                    ) : (
+                      <input
+                        type="number" inputMode="decimal" step="0.01"
+                        placeholder={String(f.existencia)} value={conteo[f.insumo.id] ?? ""}
+                        ref={(el) => { inputsConteoRef.current[indice] = el; }}
+                        onChange={(e) => setConteo((c) => ({ ...c, [f.insumo.id]: e.target.value }))}
+                        onKeyDown={(e) => moverFocoConteo(e, indice)}
+                        style={{ width: 90, padding: 6, borderRadius: 6, border: "1px solid var(--h421-gray-200)" }} />
+                    )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
           <button onClick={guardarConteo} disabled={guardandoConteo} style={{ width: "100%", marginTop: 12, background: "var(--h421-navy)", color: "#fff", padding: "10px 16px" }}>

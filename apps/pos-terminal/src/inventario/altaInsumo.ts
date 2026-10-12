@@ -15,10 +15,15 @@ export interface BorradorInsumo {
   proveedorId: string;
   minimo: string;
   maximo: string;
+  /** Empaque en que se compra y se cuenta ("Cartón"). Vacío = sin empaque. */
+  presentacionNombre: string;
+  /** Cuántas unidades base trae cada empaque ("1000" ml por cartón). */
+  presentacionCantidad: string;
 }
 
 export const BORRADOR_VACIO: BorradorInsumo = {
   nombre: "", unidadMedida: "pz", costoUnitario: "", proveedorId: "", minimo: "", maximo: "",
+  presentacionNombre: "", presentacionCantidad: "",
 };
 
 export interface InsumoValidado {
@@ -28,6 +33,9 @@ export interface InsumoValidado {
   proveedorId: string | null;
   minimo: number | undefined;
   maximo: number | undefined;
+  /** Los dos van juntos: o hay empaque completo (nombre + cantidad > 0) o ninguno (null). */
+  presentacionNombre: string | null;
+  presentacionCantidad: number | null;
 }
 
 export type ResultadoValidacion =
@@ -87,6 +95,22 @@ export function validarInsumo(
     return { ok: false, error: "El máximo no puede ser menor que el mínimo." };
   }
 
+  // Empaque: o los dos datos o ninguno. Un "Cartón" sin cantidad no sirve para convertir, y una
+  // cantidad sin nombre no se puede enseñar ("2 ? + 300 ml").
+  const presNombre = borrador.presentacionNombre.replace(/\s+/g, " ").trim();
+  const presTexto = borrador.presentacionCantidad.trim().replace(",", ".");
+  let presentacionNombre: string | null = null;
+  let presentacionCantidad: number | null = null;
+  if (presNombre !== "" || presTexto !== "") {
+    const n = Number(presTexto);
+    if (presNombre === "") return { ok: false, error: "Escribe cómo se llama el empaque (ej. Cartón, Bolsa, Caja)." };
+    if (presTexto === "" || !Number.isFinite(n) || n <= 0) {
+      return { ok: false, error: `Escribe cuántos ${borrador.unidadMedida} trae cada ${presNombre.toLowerCase()}.` };
+    }
+    presentacionNombre = presNombre;
+    presentacionCantidad = n;
+  }
+
   return {
     ok: true,
     datos: {
@@ -96,6 +120,8 @@ export function validarInsumo(
       proveedorId: borrador.proveedorId || null,
       minimo,
       maximo,
+      presentacionNombre,
+      presentacionCantidad,
     },
   };
 }

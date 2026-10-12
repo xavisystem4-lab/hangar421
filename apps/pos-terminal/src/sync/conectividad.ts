@@ -1,5 +1,5 @@
 import NetInfo, { type NetInfoState } from "@react-native-community/netinfo";
-import { procesarCola } from "./syncEngine";
+import { actualizarDesdeErp, procesarCola } from "./syncEngine";
 
 /**
  * Sincroniza en cuanto vuelve la red, en vez de esperar al siguiente ciclo.
@@ -29,7 +29,12 @@ export function iniciarEscuchaDeRed(): void {
     habiaRed = ahora;
     // Solo en la TRANSICIÓN a con-red: reaccionar a cada evento dispararía varias sincronizaciones
     // seguidas cuando el wifi parpadea, que es justo cuando menos conviene insistir.
-    if (recuperada) procesarCola(true).catch(() => undefined);
+    // Además de subir lo pendiente, se baja lo que cambió en el ERP mientras no había red: si
+    // no, la tablet esperaba al siguiente ciclo del catálogo para enterarse.
+    if (recuperada) {
+      procesarCola(true).catch(() => undefined);
+      actualizarDesdeErp().catch(() => undefined);
+    }
   });
 }
 

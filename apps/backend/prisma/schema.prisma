@@ -1092,6 +1092,11 @@ model Insumo {
   proveedorId   String? // opcional: de qué proveedor se compra este insumo
   nombre        String
   unidadMedida  String // "g", "ml", "pz", "kg", "l"
+  // Empaque con el que se COMPRA y se cuenta, cuando no coincide con la unidad de consumo: la
+  // leche se consume en ml y se cuenta en cartones de 1000 ml. La existencia sigue guardándose en
+  // unidadMedida; esto solo permite capturar "4 cartones" o "2 cartones y 300 ml".
+  presentacionNombre   String?
+  presentacionCantidad Decimal? @db.Decimal(12, 4)
   costoUnitario Decimal  @default(0) @db.Decimal(10, 4)
   // Precio de venta directa (opcional) — solo aplica a insumos que también se venden tal cual
   // (ej. agua embotellada, refresco de lata) sin pasar por una receta de producto. null = este

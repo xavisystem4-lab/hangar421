@@ -666,6 +666,19 @@ export const MIGRACIONES: Migracion[] = [
       `);
     },
   },
+  {
+    version: 18,
+    nombre: "presentacion_insumo",
+    up: async (db) => {
+      // Empaque con el que se compra y se cuenta un insumo (cartón de 1000 ml), separado de la
+      // unidad en la que se consume (ml): permite capturar "4 cartones" o "2 cartones y 300 ml"
+      // sin que el encargado multiplique de cabeza. La existencia sigue en unidad de consumo.
+      await db.execAsync(`
+        ALTER TABLE insumos ADD COLUMN presentacion_nombre TEXT;
+        ALTER TABLE insumos ADD COLUMN presentacion_cantidad REAL;
+      `);
+    },
+  },
 ];
 
 /** Corre, en orden, toda migración con `version` mayor a la ya aplicada — cada una dentro de su

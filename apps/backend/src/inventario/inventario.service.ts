@@ -37,6 +37,8 @@ export class InventarioService {
       ...i,
       costoUnitario: Number(i.costoUnitario),
       precioVenta: i.precioVenta != null ? Number(i.precioVenta) : null,
+      // Empaque de compra (cartón de 1000 ml): Decimal de Prisma, mismo motivo que arriba.
+      presentacionCantidad: i.presentacionCantidad != null ? Number(i.presentacionCantidad) : null,
     }));
   }
 
@@ -53,6 +55,8 @@ export class InventarioService {
     proveedorId?: string;
     minimo?: number;
     maximo?: number;
+    presentacionNombre?: string | null;
+    presentacionCantidad?: number | null;
   }) {
     const { minimo, maximo, ...insumoData } = data;
     const insumo = await this.prisma.insumo.create({ data: insumoData });
@@ -81,6 +85,8 @@ export class InventarioService {
       precioVenta: number | null;
       proveedorId: string | null;
       activo: boolean;
+      presentacionNombre: string | null;
+      presentacionCantidad: number | null;
     }>,
   ) {
     return this.prisma.insumo.update({ where: { id }, data });
@@ -115,6 +121,8 @@ export class InventarioService {
       // El costo unitario está por unidad: si la unidad se hace mil veces más chica, el costo
       // por unidad se divide entre mil.
       await tx.$executeRaw`UPDATE "insumos" SET "costoUnitario" = "costoUnitario" / ${factor} WHERE "id" = ${insumoId}`;
+      // El empaque también está expresado en la unidad vieja: un cartón de 1 (litro) son 1000 (ml).
+      await tx.$executeRaw`UPDATE "insumos" SET "presentacionCantidad" = "presentacionCantidad" * ${factor} WHERE "id" = ${insumoId} AND "presentacionCantidad" IS NOT NULL`;
     });
 
     return {

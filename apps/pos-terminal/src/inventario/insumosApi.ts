@@ -49,6 +49,8 @@ export async function crearInsumo(datos: InsumoValidado): Promise<void> {
       proveedorId: datos.proveedorId ?? undefined,
       minimo: datos.minimo,
       maximo: datos.maximo,
+      presentacionNombre: datos.presentacionNombre,
+      presentacionCantidad: datos.presentacionCantidad,
     }),
   });
   await refrescarInventario();
@@ -74,6 +76,8 @@ export async function actualizarInsumo(
       nombre: datos.nombre,
       costoUnitario: datos.costoUnitario,
       proveedorId: datos.proveedorId,
+      presentacionNombre: datos.presentacionNombre,
+      presentacionCantidad: datos.presentacionCantidad,
     }),
   });
   if (cambioUnidad) {

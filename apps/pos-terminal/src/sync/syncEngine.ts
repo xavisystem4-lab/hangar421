@@ -7,6 +7,7 @@ import { refrescarCatalogo, refrescarInventario, ejecutarPull } from "./pullEngi
 import { asegurarSesionEnSucursalActiva, refrescarMonederos, refrescarTerminalMultisucursal } from "./terminalErp";
 import { obtenerOCrearDispositivoId, obtenerSucursalErp } from "../db/dispositivoLocal";
 import { encolarUsuariosSinRegistrarEnErp, mapaUsuariosErp, marcarRegistradoEnErp } from "../db/usuariosLocalesRepo";
+import { registrarResultadoDescarga, type ResultadoDescarga } from "../db/estadoDescargaRepo";
 
 // Más espaciado que los 8s de apps/waiter-mobile: ahí el destino es una Estación en la misma
 // red LAN; aquí es el ERP en la nube (Railway) — pollear cada 8s no aporta nada y sí gasta
@@ -17,21 +18,59 @@ const INTERVALO_MS = 45_000;
 // nuevo o un cambio de precio hechos en el ERP no llegaban jamás a una terminal ya enlazada,
 // salvo reconectándola a mano. Se refresca en segundo plano, pero mucho más espaciado que el
 // drenado del outbox: el catálogo cambia unas pocas veces al mes, las ventas cada minuto.
-const INTERVALO_CATALOGO_MS = 15 * 60_000;
+//
+// Bajó de 15 a 5 minutos: con 15, un cambio hecho en el ERP (un producto dado de baja, un precio,
+// un insumo nuevo) tardaba hasta un cuarto de hora en verse, y en el cambio de turno eso se lee
+// como "no se registró". Son unas pocas peticiones GET por tablet; no pesa.
+const INTERVALO_CATALOGO_MS = 5 * 60_000;
 
 let intervalo: ReturnType<typeof setInterval> | null = null;
 let intervaloCatalogo: ReturnType<typeof setInterval> | null = null;
 
-/** Refresco del catálogo, siempre best-effort: un fallo aquí no debe tocar el indicador de sync
- *  ni, mucho menos, la pantalla de venta (ver el comentario de cabecera de erpHttp.ts). */
-async function refrescarCatalogoEnSegundoPlano(): Promise<void> {
-  // Terminal multisucursal: sucursales, personas asignadas y precios de todas (no-op si no lo es).
-  await refrescarTerminalMultisucursal().catch(() => undefined);
-  await refrescarMonederos().catch(() => undefined);
-  await refrescarCatalogo().catch(() => undefined);
-  await refrescarInventario().catch(() => undefined);
-  await ejecutarPull().catch(() => undefined);
+let descargaEnCurso: Promise<ResultadoDescarga> | null = null;
+
+/**
+ * Baja del ERP todo lo que se edita allá: catálogo, precios por sucursal, inventario, recetas,
+ * monederos. Best-effort: un fallo no toca el indicador de ventas ni, mucho menos, la pantalla de
+ * venta (ver el comentario de cabecera de erpHttp.ts).
+ *
+ * Antes cada paso se tragaba su error con `.catch(() => undefined)` y nadie se enteraba de que la
+ * tablet llevaba horas sin bajar nada: desde fuera se veía como "cambié algo en el ERP y en la
+ * tablet no salió". Ahora el resultado (cuándo bajó bien por última vez y qué falló) queda
+ * guardado y se enseña en Admin → Sincronización.
+ *
+ * Llamadas simultáneas (el temporizador, abrir Inventario, recuperar la red) comparten la misma
+ * descarga: dos a la vez se pisarían al marcar lo que el ERP ya no manda.
+ */
+export function actualizarDesdeErp(): Promise<ResultadoDescarga> {
+  if (!descargaEnCurso) {
+    descargaEnCurso = descargarTodo().finally(() => { descargaEnCurso = null; });
+  }
+  return descargaEnCurso;
 }
+
+async function descargarTodo(): Promise<ResultadoDescarga> {
+  const errores: string[] = [];
+  const paso = async (nombre: string, fn: () => Promise<void>) => {
+    try {
+      await fn();
+    } catch (e: any) {
+      errores.push(`${nombre}: ${e?.message ?? "error desconocido"}`);
+    }
+  };
+  // Terminal multisucursal: sucursales, personas asignadas y precios de todas (no-op si no lo es).
+  await paso("Sucursales y precios", refrescarTerminalMultisucursal);
+  await paso("Monederos", refrescarMonederos);
+  await paso("Catálogo", refrescarCatalogo);
+  await paso("Inventario", refrescarInventario);
+  await paso("Mesas", ejecutarPull);
+
+  const resultado: ResultadoDescarga = { ok: errores.length === 0, errores, fecha: new Date().toISOString() };
+  await registrarResultadoDescarga(await abrirBaseDeDatos(), resultado).catch(() => undefined);
+  return resultado;
+}
+
+const refrescarCatalogoEnSegundoPlano = () => { actualizarDesdeErp().catch(() => undefined); };
 
 export function iniciarSync() {
   if (intervalo) return;
