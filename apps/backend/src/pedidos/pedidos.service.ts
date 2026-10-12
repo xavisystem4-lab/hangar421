@@ -1034,6 +1034,17 @@ export class PedidosService {
         ? this.prisma.recetaOpcion.findMany({ where: { opcionModificadorId: { in: opcionIds } } })
         : Promise.resolve([] as { insumoId: string; cantidad: any; opcionModificadorId: string }[]),
     ]);
+    // Preparaciones de la casa (cold foam) que aparezcan en esas recetas: se descuentan sus
+    // ingredientes. Se cargan por niveles solo las que hacen falta.
+    const recetaPreparaciones: { preparacionId: string; insumoId: string; cantidad: any }[] = [];
+    let porRevisar = [...new Set([...recetaProducto, ...recetaOpciones].map((r) => r.insumoId))];
+    const vistos = new Set<string>();
+    for (let nivel = 0; nivel < 5 && porRevisar.length > 0; nivel++) {
+      porRevisar.forEach((id) => vistos.add(id));
+      const filas = await this.prisma.recetaPreparacion.findMany({ where: { preparacionId: { in: porRevisar } } });
+      recetaPreparaciones.push(...filas);
+      porRevisar = [...new Set(filas.map((f) => f.insumoId))].filter((id) => !vistos.has(id));
+    }
     // La regla vive en shared (consumoDeVenta): la tablet descuenta exactamente lo mismo cuando
     // cobra sin conexión, y una sola prueba cubre a los dos.
     return consumoDeVenta(
@@ -1041,6 +1052,7 @@ export class PedidosService {
       agruparRecetas(
         recetaProducto.map((r) => ({ productoId: item.productoId, insumoId: r.insumoId, cantidad: Number(r.cantidad) })),
         recetaOpciones.map((r) => ({ opcionModificadorId: r.opcionModificadorId, insumoId: r.insumoId, cantidad: Number(r.cantidad) })),
+        recetaPreparaciones.map((r) => ({ preparacionId: r.preparacionId, insumoId: r.insumoId, cantidad: Number(r.cantidad) })),
       ),
     );
   }

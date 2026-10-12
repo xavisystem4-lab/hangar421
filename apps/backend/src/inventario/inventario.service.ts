@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { TipoMovimientoInventario, WS_EVENTS, calcularPorcionesDisponibles, deltaExistenciaInventario, factorConversionUnidad } from "@hangar421/shared";
+import { TipoMovimientoInventario, WS_EVENTS, agruparRecetas, calcularPorcionesDisponibles, creaCicloDePreparacion, deltaExistenciaInventario, expandirPreparaciones, factorConversionUnidad } from "@hangar421/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { RealtimeGateway } from "../realtime/realtime.gateway";
 import { CorreoService } from "../correo/correo.service";
@@ -57,6 +57,7 @@ export class InventarioService {
     maximo?: number;
     presentacionNombre?: string | null;
     presentacionCantidad?: number | null;
+    esPreparacion?: boolean;
   }) {
     const { minimo, maximo, ...insumoData } = data;
     const insumo = await this.prisma.insumo.create({ data: insumoData });
@@ -87,6 +88,7 @@ export class InventarioService {
       activo: boolean;
       presentacionNombre: string | null;
       presentacionCantidad: number | null;
+      esPreparacion: boolean;
     }>,
   ) {
     return this.prisma.insumo.update({ where: { id }, data });
@@ -118,6 +120,11 @@ export class InventarioService {
       await tx.$executeRaw`UPDATE "inventario_sucursal" SET "existencia" = "existencia" * ${factor}, "minimo" = "minimo" * ${factor}, "maximo" = "maximo" * ${factor} WHERE "insumoId" = ${insumoId}`;
       await tx.$executeRaw`UPDATE "receta_items" SET "cantidad" = "cantidad" * ${factor} WHERE "insumoId" = ${insumoId}`;
       await tx.$executeRaw`UPDATE "receta_opciones" SET "cantidad" = "cantidad" * ${factor} WHERE "insumoId" = ${insumoId}`;
+      // Como ingrediente de una preparación, igual que en cualquier receta.
+      await tx.$executeRaw`UPDATE "receta_preparaciones" SET "cantidad" = "cantidad" * ${factor} WHERE "insumoId" = ${insumoId}`;
+      // Si ES una preparación, su receta está escrita por UNA unidad de ella: si la unidad se hace
+      // mil veces más chica, cada unidad lleva la milésima parte de cada ingrediente.
+      await tx.$executeRaw`UPDATE "receta_preparaciones" SET "cantidad" = "cantidad" / ${factor} WHERE "preparacionId" = ${insumoId}`;
       // El costo unitario está por unidad: si la unidad se hace mil veces más chica, el costo
       // por unidad se divide entre mil.
       await tx.$executeRaw`UPDATE "insumos" SET "costoUnitario" = "costoUnitario" / ${factor} WHERE "id" = ${insumoId}`;
@@ -187,7 +194,50 @@ export class InventarioService {
     return {
       porProducto: producto.map((r) => ({ productoId: r.productoId, insumoId: r.insumoId, cantidad: Number(r.cantidad) })),
       porOpcion: opcion.map((r) => ({ opcionModificadorId: r.opcionModificadorId, insumoId: r.insumoId, cantidad: Number(r.cantidad) })),
+      porPreparacion: await this.filasPreparacion(empresaId),
     };
+  }
+
+  /** Recetas de todas las preparaciones de la empresa, planas. */
+  async filasPreparacion(empresaId: string) {
+    const filas = await this.prisma.recetaPreparacion.findMany({
+      where: { preparacion: { empresaId } },
+      select: { preparacionId: true, insumoId: true, cantidad: true },
+    });
+    return filas.map((r) => ({ preparacionId: r.preparacionId, insumoId: r.insumoId, cantidad: Number(r.cantidad) }));
+  }
+
+  listarRecetaPreparacion(preparacionId: string) {
+    return this.prisma.recetaPreparacion.findMany({ where: { preparacionId }, include: { insumo: true } });
+  }
+
+  /**
+   * Receta de una preparación de la casa, por UNA unidad de ella (1 servicio de cold foam = 35 g
+   * crema batida + 15 g agave + 2 g blue matcha). Reemplaza la lista completa, como la de las
+   * opciones. Rechaza ciclos (una preparación que se lleva a sí misma, directa o indirectamente).
+   */
+  async definirRecetaPreparacion(preparacionId: string, items: { insumoId: string; cantidad: number }[]) {
+    const preparacion = await this.prisma.insumo.findUnique({ where: { id: preparacionId }, select: { empresaId: true } });
+    if (!preparacion) throw new NotFoundException("Preparación no encontrada");
+    const validos = (items ?? []).filter((i) => i.insumoId && Number(i.cantidad) > 0);
+    const { porPreparacion } = agruparRecetas([], [], await this.filasPreparacion(preparacion.empresaId));
+    if (creaCicloDePreparacion(preparacionId, validos.map((i) => i.insumoId), porPreparacion ?? {})) {
+      throw new BadRequestException("Esa receta usa la misma preparación dentro de sí (directa o indirectamente). Quita ese ingrediente.");
+    }
+    await this.prisma.$transaction([
+      this.prisma.insumo.update({ where: { id: preparacionId }, data: { esPreparacion: true } }),
+      this.prisma.recetaPreparacion.deleteMany({
+        where: { preparacionId, ...(validos.length > 0 ? { insumoId: { notIn: validos.map((i) => i.insumoId) } } : {}) },
+      }),
+      ...validos.map((i) =>
+        this.prisma.recetaPreparacion.upsert({
+          where: { preparacionId_insumoId: { preparacionId, insumoId: i.insumoId } },
+          update: { cantidad: i.cantidad },
+          create: { preparacionId, insumoId: i.insumoId, cantidad: i.cantidad },
+        }),
+      ),
+    ]);
+    return this.listarRecetaPreparacion(preparacionId);
   }
 
   listarRecetaOpcion(opcionModificadorId: string) {
@@ -222,7 +272,8 @@ export class InventarioService {
 
   async existencias(sucursalId: string) {
     return this.prisma.inventarioSucursal.findMany({
-      where: { sucursalId },
+      // Las preparaciones de la casa no tienen existencia propia: no se cuentan ni se compran.
+      where: { sucursalId, insumo: { esPreparacion: false } },
       include: { insumo: true },
       orderBy: { insumo: { nombre: "asc" } },
     });
@@ -305,6 +356,16 @@ export class InventarioService {
       }),
       this.prisma.inventarioSucursal.findMany({ where: { sucursalId }, select: { insumoId: true, existencia: true, minimo: true, maximo: true } }),
     ]);
+    // Un producto que lleva una preparación (cold foam) alcanza según los ingredientes de esa
+    // preparación: la preparación no tiene existencia propia.
+    const { porPreparacion } = agruparRecetas([], [], await this.filasPreparacion(sucursal.empresaId));
+    const idsIngredientes = new Set(Object.values(porPreparacion ?? {}).flat().map((r) => r.insumoId));
+    const nombresIngredientes = new Map(
+      (idsIngredientes.size > 0
+        ? await this.prisma.insumo.findMany({ where: { id: { in: [...idsIngredientes] } }, select: { id: true, nombre: true, unidadMedida: true } })
+        : []
+      ).map((i) => [i.id, i]),
+    );
     const porInsumo: Record<string, number> = {};
     const nivelesInsumo: Record<string, { minimo: number; maximo: number | null }> = {};
     for (const e of existencias) {
@@ -314,8 +375,18 @@ export class InventarioService {
 
     return productos.map((p) => {
       const receta = p.receta.map((r) => ({ insumoId: r.insumoId, cantidad: Number(r.cantidad) }));
-      const { porciones, limitante } = calcularPorcionesDisponibles(receta, porInsumo);
-      const itemLimitante = limitante ? p.receta.find((r) => r.insumoId === limitante.insumoId) : null;
+      // Mismo insumo por dos caminos (directo y dentro de una preparación) se suma.
+      const sumada = new Map<string, number>();
+      for (const r of expandirPreparaciones(receta, porPreparacion)) sumada.set(r.insumoId, (sumada.get(r.insumoId) ?? 0) + r.cantidad);
+      const recetaReal = [...sumada.entries()].map(([insumoId, cantidad]) => ({ insumoId, cantidad }));
+      const { porciones, limitante } = calcularPorcionesDisponibles(recetaReal, porInsumo);
+      const directo = limitante ? p.receta.find((r) => r.insumoId === limitante.insumoId) : null;
+      const deLaPreparacion = limitante && !directo ? nombresIngredientes.get(limitante.insumoId) : null;
+      const itemLimitante = directo
+        ? directo
+        : deLaPreparacion && limitante
+          ? { insumoId: limitante.insumoId, cantidad: sumada.get(limitante.insumoId) ?? 0, insumo: { nombre: deLaPreparacion.nombre, unidadMedida: deLaPreparacion.unidadMedida } }
+          : null;
       return {
         productoId: p.id,
         nombre: p.nombre,

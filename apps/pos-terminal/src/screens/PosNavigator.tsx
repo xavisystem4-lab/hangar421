@@ -33,6 +33,10 @@ import { PosAdminPlataformasScreen } from "./PosAdminPlataformasScreen";
 import { useAvisosDelivery } from "../plataformas/useAvisosDelivery";
 import { useNotificacionesDidi, type PedidoDetectado } from "../plataformas/useNotificacionesDidi";
 import { nombrePedidoDidi } from "../plataformas/notificacionesDidi";
+import type { ItemPedidoDidi } from "../plataformas/productosDidi";
+import { cancelarPedidoDidi, crearPedidoDidi, listarPedidosDidiEnPreparacion, type PedidoDidiLocal } from "../db/pedidosDidiRepo";
+import { ModalPedidoDidi } from "../components/ModalPedidoDidi";
+import { ListaPedidosDidi } from "../components/ListaPedidosDidi";
 import { ReciboEnPantallaScreen } from "./ReciboEnPantallaScreen";
 
 type Pantalla = "venta" | "cobro" | "caja" | "consultar" | "admin";
@@ -113,16 +117,69 @@ export function PosNavigator() {
   // su número y el grupo DIDI abierto (ver plataformas/useNotificacionesDidi.ts).
   const didi = useNotificacionesDidi((puede(PERMISOS_TERMINAL.VENTA_COBRAR) || puedeDelivery) && !mostrarConexion);
   const [categoriaSugerida, setCategoriaSugerida] = useState<string | null>(null);
+  /** Tocar el aviso abre la ventana con lo que llegó de DiDi para revisarlo y confirmarlo. */
+  const [pedidoDidiAbierto, setPedidoDidiAbierto] = useState<PedidoDetectado | null>(null);
   function registrarDidi(p: PedidoDetectado) {
+    didi.descartarAviso();
+    setPedidoDidiAbierto(p);
+  }
+
+  /** Como antes de la lista: Venta abierta en el grupo DIDI con el nombre del pedido. */
+  function capturarDidiEnVenta(p: PedidoDetectado) {
     if (carritoConProductos) {
       Alert.alert("Hay una venta en curso", "Cobra o vacía la venta actual y vuelve a tocar el aviso de DiDi.");
       return;
     }
     fijarNombreCliente(nombrePedidoDidi(p));
     didi.atender(p.id);
-    didi.descartarAviso();
+    setPedidoDidiAbierto(null);
     setCategoriaSugerida("DIDI");
     setPantalla("venta");
+  }
+
+  // Pedidos de DiDi confirmados que se están preparando y esperan al repartidor.
+  const [pedidosDidi, setPedidosDidi] = useState<PedidoDidiLocal[]>([]);
+  const cargarPedidoDidiEnCarrito = useCarritoStore((s) => s.cargarPedidoDidi);
+  async function recargarPedidosDidi() {
+    try {
+      setPedidosDidi(await listarPedidosDidiEnPreparacion(await abrirBaseDeDatos()));
+    } catch {
+      /* la lista es de apoyo: sin ella se sigue pudiendo capturar en Venta */
+    }
+  }
+  useEffect(() => { recargarPedidosDidi(); }, [pantalla]);
+
+  async function confirmarPedidoDidi(p: PedidoDetectado, items: ItemPedidoDidi[]) {
+    const db = await abrirBaseDeDatos();
+    await crearPedidoDidi(db, { numero: p.numeroPedido, cliente: p.cliente, totalLeido: p.total, textoOriginal: [p.titulo, p.texto].filter(Boolean).join("\n"), items });
+    didi.atender(p.id);
+    setPedidoDidiAbierto(null);
+    await recargarPedidosDidi();
+  }
+
+  /** Llegó el repartidor: la venta queda con los productos del pedido y se pasa a cobrar. */
+  function cobrarPedidoDidi(p: PedidoDidiLocal) {
+    if (carritoConProductos) {
+      Alert.alert("Hay una venta en curso", "Cobra o vacía la venta actual y vuelve a tocar Cobrar en el pedido de DiDi.");
+      return;
+    }
+    const nombre = ["DiDi", p.numero ? `#${p.numero}` : null, p.cliente].filter(Boolean).join(" ");
+    cargarPedidoDidiEnCarrito(
+      p.id,
+      nombre,
+      p.items
+        .filter((i) => i.productoId)
+        .map((i) => ({
+          productoId: i.productoId!, nombreProducto: i.nombreProducto ?? "", cantidad: i.cantidad,
+          precioUnitario: i.precioUnitario ?? 0, categoria: i.categoria ?? undefined, modificadores: [],
+        })),
+    );
+    exigir(PERMISOS_TERMINAL.VENTA_COBRAR, () => setPantalla("cobro"));
+  }
+
+  async function cancelarPedidoDidiLocal(p: PedidoDidiLocal) {
+    await cancelarPedidoDidi(await abrirBaseDeDatos(), p.id);
+    await recargarPedidosDidi();
   }
 
   // Indicador de sucursal activa: se recarga al volver de la pantalla de conexión, que es el
@@ -387,7 +444,7 @@ export function PosNavigator() {
           <TouchableOpacity onPress={() => registrarDidi(didi.aviso!)} style={{ flex: 1 }}>
             <Text style={estilos.avisoDeliveryTexto}>🛵 {didi.aviso.resumen}</Text>
             <Text style={estilos.avisoDeliverySub}>
-              Pedido por preparar y cobrar · tocar para registrarlo{didi.pendientes.length > 1 ? ` · ${didi.pendientes.length} pendientes` : ""}
+              Pedido por preparar y cobrar · tocar para ver y confirmar{didi.pendientes.length > 1 ? ` · ${didi.pendientes.length} pendientes` : ""}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={didi.descartarAviso} accessibilityLabel="Ocultar aviso"><Text style={estilos.avisoDeliveryTexto}>✕</Text></TouchableOpacity>
@@ -398,9 +455,23 @@ export function PosNavigator() {
       {!didi.aviso && didi.pendientes.length > 0 && (
         <TouchableOpacity onPress={() => registrarDidi(didi.pendientes[0])} style={estilos.avisoDidiPendiente} accessibilityRole="button">
           <Text style={estilos.avisoDidiPendienteTexto}>
-            🛵 {didi.pendientes.length === 1 ? "1 pedido de DiDi sin registrar" : `${didi.pendientes.length} pedidos de DiDi sin registrar`} · tocar para capturar el siguiente
+            🛵 {didi.pendientes.length === 1 ? "1 pedido de DiDi sin registrar" : `${didi.pendientes.length} pedidos de DiDi sin registrar`} · tocar para ver el siguiente
           </Text>
         </TouchableOpacity>
+      )}
+
+      {pantalla !== "cobro" && (
+        <ListaPedidosDidi pedidos={pedidosDidi} onCobrar={cobrarPedidoDidi} onCancelar={cancelarPedidoDidiLocal} />
+      )}
+
+      {pedidoDidiAbierto && (
+        <ModalPedidoDidi
+          pedido={pedidoDidiAbierto}
+          onConfirmar={(items) => confirmarPedidoDidi(pedidoDidiAbierto, items).catch((e) => Alert.alert("DiDi", e?.message ?? "No se pudo guardar el pedido."))}
+          onCapturarAMano={() => capturarDidiEnVenta(pedidoDidiAbierto)}
+          onDescartar={() => { didi.atender(pedidoDidiAbierto.id); setPedidoDidiAbierto(null); }}
+          onCerrar={() => setPedidoDidiAbierto(null)}
+        />
       )}
 
       {puedeDelivery && delivery.aviso && (

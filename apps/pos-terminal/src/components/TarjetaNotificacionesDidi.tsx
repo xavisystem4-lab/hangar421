@@ -97,8 +97,9 @@ export function TarjetaNotificacionesDidi({ detectados, onRegistrar, onAtender, 
         <View style={{ flex: 1 }}>
           <Text style={estilos.subtitulo}>🛵 Leer la app de DiDi en esta tablet</Text>
           <Text style={estilos.ayuda}>
-            Cuando la app de DiDi Comercios avise de un pedido nuevo, el POS suena, muestra el aviso y deja el pedido listo para
-            capturarlo con su número. Solo se lee la notificación (número, total, cliente); los productos se capturan a mano.
+            Cuando la app de DiDi Comercios avise de un pedido nuevo, el POS suena y muestra el aviso. Al tocarlo se abre el
+            pedido con lo que se leyó de la notificación (número, cliente, total y los productos si DiDi los manda); se revisa,
+            se confirma y queda en "DiDi en preparación" hasta que llegue el repartidor y se cobre.
           </Text>
         </View>
         <Switch value={activo} onValueChange={cambiarActivo} />

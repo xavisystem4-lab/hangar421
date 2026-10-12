@@ -679,6 +679,47 @@ export const MIGRACIONES: Migracion[] = [
       `);
     },
   },
+  {
+    version: 19,
+    nombre: "preparaciones",
+    up: async (db) => {
+      // Preparaciones de la casa (cold foam = crema batida + agave + blue matcha): un insumo que se
+      // hace con otros. Al vender se descuentan sus ingredientes (expandirPreparaciones en shared),
+      // y no salen en existencias ni compras porque no tienen stock propio.
+      await db.execAsync(`
+        ALTER TABLE insumos ADD COLUMN es_preparacion INTEGER NOT NULL DEFAULT 0;
+        CREATE TABLE recetas_preparacion (
+          preparacion_id TEXT NOT NULL,
+          insumo_id TEXT NOT NULL,
+          cantidad REAL NOT NULL,
+          PRIMARY KEY (preparacion_id, insumo_id)
+        );
+      `);
+    },
+  },
+  {
+    version: 20,
+    nombre: "pedidos_didi_en_preparacion",
+    up: async (db) => {
+      // Pedidos de DiDi confirmados en la tablet que se están preparando y esperan al repartidor.
+      // Es una lista de trabajo local: lo que viaja al ERP es la VENTA, cuando se cobra.
+      await db.execAsync(`
+        CREATE TABLE pedidos_didi (
+          id TEXT PRIMARY KEY,
+          numero TEXT,
+          cliente TEXT,
+          total_leido REAL,
+          texto_original TEXT,
+          items TEXT NOT NULL,
+          estado TEXT NOT NULL CHECK(estado IN ('PREPARANDO','COBRADO','CANCELADO')) DEFAULT 'PREPARANDO',
+          venta_id TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX idx_pedidos_didi_estado ON pedidos_didi(estado);
+      `);
+    },
+  },
 ];
 
 /** Corre, en orden, toda migración con `version` mayor a la ya aplicada — cada una dentro de su

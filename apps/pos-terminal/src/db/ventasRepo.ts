@@ -279,7 +279,7 @@ export async function descontarInventarioDeVenta(
       cantidad: i.cantidad,
       modificadores: (i.modificadores ?? []).map((m) => ({ opcionModificadorId: m.opcionModificadorId })),
     })),
-    agruparRecetas(recetas.porProducto, recetas.porOpcion),
+    agruparRecetas(recetas.porProducto, recetas.porOpcion, recetas.porPreparacion ?? []),
   );
   await descontarConsumoLocal(db, consumo, sucursalId);
 }

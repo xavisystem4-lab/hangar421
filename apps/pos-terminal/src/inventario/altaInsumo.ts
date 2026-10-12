@@ -1,11 +1,11 @@
-/** Alta y edición de insumos desde la terminal — validación pura, sin imports, para poder
+/** Alta y edición de insumos desde la terminal — validación pura, para poder
  *  probarla. La llamada al ERP vive en `insumosApi.ts`; aquí solo se decide si lo capturado es
  *  válido y qué se manda. */
 
-/** Mismas unidades que ofrece el ERP web (`crm-web/.../inventario`), para no crear insumos con
- *  una unidad que el resto del sistema no reconoce. */
-export const UNIDADES_INSUMO = ["pz", "g", "kg", "ml", "l"] as const;
-export type UnidadInsumo = (typeof UNIDADES_INSUMO)[number];
+/** Mismas unidades que ofrece el ERP web (vienen de shared), para no crear insumos con una
+ *  unidad que el resto del sistema no reconoce. */
+import { UNIDADES_INSUMO, type UnidadInsumo } from "@hangar421/shared";
+export { UNIDADES_INSUMO, type UnidadInsumo };
 
 /** Lo que se teclea en el formulario: todo texto, tal cual lo deja el TextInput. */
 export interface BorradorInsumo {

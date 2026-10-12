@@ -93,7 +93,7 @@ export const refrescarInventario = unaALaVez(async function refrescarInventario(
     erpFetch<any[]>(`/inventario/existencias?sucursalId=${sucursalId}`),
     // Un APK nuevo contra un ERP viejo todavía no tiene este endpoint: sin recetas la tablet
     // simplemente no descuenta en local y el ERP lo hace al recibir la venta, como antes.
-    erpFetch<{ porProducto: any[]; porOpcion: any[] }>(`/inventario/recetas?empresaId=${empresaId}`).catch(() => null),
+    erpFetch<{ porProducto: any[]; porOpcion: any[]; porPreparacion?: any[] }>(`/inventario/recetas?empresaId=${empresaId}`).catch(() => null),
   ]);
 
   await upsertInventario(
@@ -105,6 +105,7 @@ export const refrescarInventario = unaALaVez(async function refrescarInventario(
       // NULL y la tablet nunca ofrecía capturar por cartones.
       presentacionNombre: i.presentacionNombre ?? null,
       presentacionCantidad: i.presentacionCantidad != null ? Number(i.presentacionCantidad) : null,
+      esPreparacion: i.esPreparacion === true,
     })),
     existencias.map((e) => ({ insumoId: e.insumoId, existencia: e.existencia, minimo: e.minimo, maximo: e.maximo })),
   );
@@ -113,6 +114,9 @@ export const refrescarInventario = unaALaVez(async function refrescarInventario(
     await upsertRecetas(db, {
       porProducto: (recetas.porProducto ?? []).map((r) => ({ productoId: r.productoId, insumoId: r.insumoId, cantidad: Number(r.cantidad) || 0 })),
       porOpcion: (recetas.porOpcion ?? []).map((r) => ({ opcionModificadorId: r.opcionModificadorId, insumoId: r.insumoId, cantidad: Number(r.cantidad) || 0 })),
+      porPreparacion: Array.isArray(recetas.porPreparacion)
+        ? recetas.porPreparacion.map((r) => ({ preparacionId: r.preparacionId, insumoId: r.insumoId, cantidad: Number(r.cantidad) || 0 }))
+        : undefined,
     });
   }
 });

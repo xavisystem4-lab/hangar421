@@ -60,7 +60,7 @@ describe("upsertInventario — insumos dados de baja en el ERP", () => {
     await upsertInventario(db, [{ ...insumo, presentacionNombre: "Cartón", presentacionCantidad: "1000" }], []);
 
     const ins = ejecutados.find((e) => e.sql.includes("INSERT INTO insumos"))!;
-    expect(ins.params.slice(-2)).toEqual(["Cartón", 1000]);
+    expect(ins.params.slice(-3)).toEqual(["Cartón", 1000, 0]);
     const marca = ins.params[7];
     const [apagado] = apagados(ejecutados, "insumos");
     expect(apagado.sql).toContain("synced_at IS NOT NULL");

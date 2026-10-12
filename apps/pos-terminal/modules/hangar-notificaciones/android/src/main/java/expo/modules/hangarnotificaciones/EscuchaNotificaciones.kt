@@ -33,6 +33,12 @@ class EscuchaNotificaciones : NotificationListenerService() {
         val texto = extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
         val textoLargo = extras?.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString() ?: ""
         val lineas = extras?.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)?.joinToString("\n") { it.toString() } ?: ""
+        val subTexto = extras?.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString() ?: ""
+        val resumen = extras?.getCharSequence(Notification.EXTRA_SUMMARY_TEXT)?.toString() ?: ""
+        // Estilo "mensajería": cada mensaje es un Bundle con "text".
+        val mensajes = (extras?.getParcelableArray(Notification.EXTRA_MESSAGES) ?: emptyArray())
+            .mapNotNull { (it as? android.os.Bundle)?.getCharSequence("text")?.toString() }
+            .joinToString("\n")
         // Las notificaciones "resumen" de grupo no traen el pedido, solo "3 notificaciones".
         val esResumenDeGrupo = (n.notification?.flags ?: 0) and Notification.FLAG_GROUP_SUMMARY != 0
         if (esResumenDeGrupo) return
@@ -43,7 +49,15 @@ class EscuchaNotificaciones : NotificationListenerService() {
             .put("paquete", paquete)
             .put("app", etiqueta ?: paquete)
             .put("titulo", titulo)
-            .put("texto", listOf(textoLargo, texto, lineas).firstOrNull { it.isNotBlank() } ?: "")
+            // Se guarda todo el contenido, no solo el primer campo: cuando DiDi manda los productos suelen venir
+            // en las líneas de la notificación expandida (o en mensajes), y antes se perdían si
+            // también había texto largo. Se quitan repetidos para no leer dos veces lo mismo.
+            .put("texto", listOf(textoLargo, texto, lineas, subTexto, resumen, mensajes)
+                .flatMap { it.split("\n") }
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .distinct()
+                .joinToString("\n"))
             .put("hora", n.postTime)
 
         val nueva = AlmacenNotificaciones.agregar(applicationContext, datos)

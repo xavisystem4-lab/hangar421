@@ -11,12 +11,18 @@ import { PedidosService } from "./pedidos.service";
 function crearServicio(
   recetaProducto: { insumoId: string; cantidad: number }[],
   recetasOpcion: { opcionModificadorId: string; insumoId: string; cantidad: number }[],
+  recetasPreparacion: { preparacionId: string; insumoId: string; cantidad: number }[] = [],
 ) {
   const prisma = {
     recetaItem: { findMany: jest.fn(() => Promise.resolve(recetaProducto)) },
     recetaOpcion: {
       findMany: jest.fn(({ where }: any) =>
         Promise.resolve(recetasOpcion.filter((r) => where.opcionModificadorId.in.includes(r.opcionModificadorId))),
+      ),
+    },
+    recetaPreparacion: {
+      findMany: jest.fn(({ where }: any) =>
+        Promise.resolve(recetasPreparacion.filter((r) => where.preparacionId.in.includes(r.preparacionId))),
       ),
     },
   };
@@ -82,5 +88,23 @@ describe("consumo de un renglón de venta", () => {
     const { service } = crearServicio([{ insumoId: "canela", cantidad: 0.1255 }], []);
     const consumo = await (service as any).consumoDeItem({ productoId: "latte", cantidad: 1 });
     expect(consumo).toEqual([{ insumoId: "canela", cantidad: 0.1255 }]);
+  });
+
+  it("una opción que lleva una preparación de la casa (cold foam) descuenta sus ingredientes", async () => {
+    const FOAM = { opcionModificadorId: "op-foam", insumoId: "cold-foam", cantidad: 1 };
+    const { service } = crearServicio([CAFE], [FOAM], [
+      { preparacionId: "cold-foam", insumoId: "crema", cantidad: 35 },
+      { preparacionId: "cold-foam", insumoId: "agave", cantidad: 15 },
+      { preparacionId: "cold-foam", insumoId: "matcha", cantidad: 2 },
+    ]);
+    const consumo = await (service as any).consumoDeItem({
+      productoId: "cold-brew", cantidad: 2, modificadores: [{ opcionModificadorId: "op-foam" }],
+    });
+    expect(consumo).toEqual([
+      { insumoId: "agave", cantidad: 30 },
+      { insumoId: "cafe", cantidad: 40 },
+      { insumoId: "crema", cantidad: 70 },
+      { insumoId: "matcha", cantidad: 4 },
+    ]);
   });
 });

@@ -74,6 +74,19 @@ export class InventarioController {
     return this.inventario.definirRecetaOpcion(opcionId, items);
   }
 
+  /** Receta de una preparación de la casa (cold foam), por UNA unidad de la preparación. */
+  @Get("preparaciones/:id/receta")
+  listarRecetaPreparacion(@Param("id") id: string) {
+    return this.inventario.listarRecetaPreparacion(id);
+  }
+
+  @Post("preparaciones/:id/receta")
+  @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
+  @Audit("RECETA_PREPARACION", "DEFINIR")
+  definirRecetaPreparacion(@Param("id") id: string, @Body("items") items: { insumoId: string; cantidad: number }[]) {
+    return this.inventario.definirRecetaPreparacion(id, items);
+  }
+
   /** Todas las opciones de los modificadores de un producto con su receta, para el ERP. */
   @Get("productos/:id/receta-modificadores")
   recetaModificadores(@Param("id") id: string) {

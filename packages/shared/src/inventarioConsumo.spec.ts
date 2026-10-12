@@ -1,4 +1,4 @@
-import { agruparRecetas, consumoDeVenta } from "./inventarioConsumo";
+import { agruparRecetas, consumoDeVenta, creaCicloDePreparacion, expandirPreparaciones } from "./inventarioConsumo";
 
 /**
  * Caso real: la receta del Latte llevaba las cinco leches (240 c/u) y cada venta las descontaba
@@ -61,5 +61,54 @@ describe("consumoDeVenta", () => {
   it("conserva fracciones a 4 decimales", () => {
     const recetas = agruparRecetas([{ productoId: "p", insumoId: "canela", cantidad: 0.1255 }], []);
     expect(consumoDeVenta([{ productoId: "p", cantidad: 3 }], recetas)).toEqual([{ insumoId: "canela", cantidad: 0.3765 }]);
+  });
+});
+
+describe("preparaciones de la casa (cold foam)", () => {
+  // Cold foam blue matcha, por servicio: 35 g crema batida + 15 g agave + 2 g blue matcha.
+  const porPreparacion = {
+    "cold-foam": [
+      { insumoId: "crema", cantidad: 35 },
+      { insumoId: "agave", cantidad: 15 },
+      { insumoId: "matcha", cantidad: 2 },
+    ],
+  };
+
+  it("al vender una bebida con cold foam se descuentan sus ingredientes, no la preparación", () => {
+    const recetas = {
+      porProducto: { "cold-brew": [{ insumoId: "cafe", cantidad: 20 }] },
+      porOpcion: { "extra-foam": [{ insumoId: "cold-foam", cantidad: 1 }] },
+      porPreparacion,
+    };
+    const consumo = consumoDeVenta([{ productoId: "cold-brew", cantidad: 2, modificadores: [{ opcionModificadorId: "extra-foam" }] }], recetas);
+    expect(consumo).toEqual([
+      { insumoId: "agave", cantidad: 30 },
+      { insumoId: "cafe", cantidad: 40 },
+      { insumoId: "crema", cantidad: 70 },
+      { insumoId: "matcha", cantidad: 4 },
+    ]);
+  });
+
+  it("media porción de preparación descuenta la mitad de cada ingrediente; las que llevan otra se abren en cascada", () => {
+    const anidada = { ...porPreparacion, "postre": [{ insumoId: "cold-foam", cantidad: 2 }, { insumoId: "galleta", cantidad: 1 }] };
+    expect(expandirPreparaciones([{ insumoId: "cold-foam", cantidad: 0.5 }], porPreparacion)).toEqual([
+      { insumoId: "crema", cantidad: 17.5 }, { insumoId: "agave", cantidad: 7.5 }, { insumoId: "matcha", cantidad: 1 },
+    ]);
+    expect(expandirPreparaciones([{ insumoId: "postre", cantidad: 1 }], anidada)).toEqual([
+      { insumoId: "crema", cantidad: 70 }, { insumoId: "agave", cantidad: 30 }, { insumoId: "matcha", cantidad: 4 }, { insumoId: "galleta", cantidad: 1 },
+    ]);
+  });
+
+  it("un ciclo no cuelga el cálculo y se detecta antes de guardar", () => {
+    const ciclo = { a: [{ insumoId: "b", cantidad: 1 }], b: [{ insumoId: "a", cantidad: 1 }] };
+    expect(expandirPreparaciones([{ insumoId: "a", cantidad: 1 }], ciclo)).toEqual([{ insumoId: "a", cantidad: 1 }]);
+    expect(creaCicloDePreparacion("cold-foam", ["crema", "agave"], porPreparacion)).toBe(false);
+    expect(creaCicloDePreparacion("crema", ["cold-foam"], porPreparacion)).toBe(true);
+    expect(creaCicloDePreparacion("x", ["x"], {})).toBe(true);
+  });
+
+  it("agruparRecetas también agrupa las filas de preparación", () => {
+    const r = agruparRecetas([], [], [{ preparacionId: "cold-foam", insumoId: "crema", cantidad: 35 }]);
+    expect(r.porPreparacion).toEqual({ "cold-foam": [{ insumoId: "crema", cantidad: 35 }] });
   });
 });
