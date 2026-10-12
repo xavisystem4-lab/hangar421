@@ -146,10 +146,8 @@ export function PanelInsumos({ onCambio }: { onCambio: () => Promise<void> | voi
       else await crearInsumo(r.datos);
       await cargar();
       await onCambio();
-      Alert.alert(
-        "Insumo",
-        `${editandoId ? `"${r.datos.nombre}" actualizado` : `"${r.datos.nombre}" dado de alta`} en esta tablet. Se sube al ERP solo, en cuanto haya conexión.`,
-      );
+      // Sin aviso de "guardado": se ve en la lista al instante y sube al ERP solo. Solo se
+      // interrumpe si algo falla.
       cerrarFormulario();
     } catch (e: any) {
       Alert.alert("Insumo", e?.message ?? "No se pudo guardar en la tablet.");
