@@ -216,11 +216,8 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
               }
               setConteo({});
               setConteoEmpaques({});
+              // Sin aviso de "guardado": las cifras nuevas se ven al instante.
               await cargar();
-              Alert.alert(
-                "Conteo guardado",
-                `${aGuardar.length} insumo(s) actualizados en esta terminal.\nSe subirán al ERP en cuanto haya conexión.`,
-              );
             } catch (e: any) {
               // El conteo se guarda insumo a insumo; si falla a mitad, lo ya escrito queda
               // guardado. Se dice explícitamente para que nadie repita el conteo entero.
