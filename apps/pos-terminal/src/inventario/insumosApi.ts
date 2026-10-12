@@ -1,18 +1,19 @@
 import { erpFetch, obtenerTokensErp } from "../api/erpHttp";
 import { abrirBaseDeDatos } from "../db/database";
-import { obtenerSucursalErp } from "../db/dispositivoLocal";
-import { obtenerEmpresaErp, refrescarInventario } from "../sync/pullEngine";
-import { asegurarSesionEnSucursalActiva } from "../sync/terminalErp";
+import { obtenerEmpresaErp } from "../sync/pullEngine";
+import { sincronizarPronto } from "../sync/syncEngine";
+import { useAuthLocalStore } from "../store/authLocalStore";
+import {
+  actualizarInsumoLocal, cambiarActivoInsumoLocal, crearInsumoLocal, proveedoresLocales,
+} from "../db/insumosLocalesRepo";
 import type { InsumoValidado } from "./altaInsumo";
 
 /**
- * Alta y edición de insumos desde la terminal.
+ * Alta y edición de insumos desde la terminal: SIEMPRE local primero.
  *
- * A diferencia de los movimientos (entrada, merma, conteo), el insumo es CATÁLOGO: se edita
- * centralmente y baja a todas las terminales (ver CLAUDE.md, last-write-wins para catálogo). Por
- * eso no pasa por el outbox: va directo a los mismos endpoints que usa el ERP web y necesita
- * conexión. Al terminar se vuelve a bajar el inventario para que el insumo aparezca ya en
- * Existencias y Conteo.
+ * Se guarda en la base de la tablet (se ve al instante) y se encola hacia el ERP; si hay red sale
+ * en segundos, si no, cuando vuelva. Ya no depende de que el ERP responda ni del rol que tenga en
+ * el ERP la cuenta con la que se enlazó la tablet — antes eso producía "Forbidden resource".
  */
 
 export interface ProveedorErp {
@@ -20,84 +21,59 @@ export interface ProveedorErp {
   nombre: string;
 }
 
-async function contexto() {
-  const db = await abrirBaseDeDatos();
-  const [empresaId, sucursalId, tokens] = await Promise.all([obtenerEmpresaErp(db), obtenerSucursalErp(db), obtenerTokensErp()]);
-  if (!empresaId || !sucursalId || !tokens) {
-    throw new Error("Esta terminal no está conectada al ERP. Conéctala en Admin → Sincronización para dar de alta insumos.");
-  }
-  await asegurarSesionEnSucursalActiva();
-  return { empresaId, sucursalId };
+function usuarioActual(): string | null {
+  return useAuthLocalStore.getState().usuario?.id ?? null;
 }
 
+/** Del ERP si hay conexión; si no, los que la tablet ya conoce por sus insumos. */
 export async function listarProveedores(): Promise<ProveedorErp[]> {
-  const { empresaId } = await contexto();
-  const lista = await erpFetch<any[]>(`/proveedores?empresaId=${empresaId}`);
-  return lista.filter((p) => p.activo !== false).map((p) => ({ id: p.id, nombre: p.nombre }));
+  const db = await abrirBaseDeDatos();
+  const locales = await proveedoresLocales(db);
+  try {
+    const [empresaId, tokens] = await Promise.all([obtenerEmpresaErp(db), obtenerTokensErp()]);
+    if (!empresaId || !tokens) return locales;
+    const lista = await erpFetch<any[]>(`/proveedores?empresaId=${empresaId}`);
+    return lista.filter((p) => p.activo !== false).map((p) => ({ id: p.id, nombre: p.nombre }));
+  } catch {
+    return locales;
+  }
 }
 
-/** El ERP aplica mínimo y máximo a TODAS las sucursales de la empresa al crear el insumo. */
+async function nombreProveedor(proveedorId: string | null): Promise<string | null> {
+  if (!proveedorId) return null;
+  const lista = await listarProveedores().catch(() => [] as ProveedorErp[]);
+  return lista.find((p) => p.id === proveedorId)?.nombre ?? null;
+}
+
 export async function crearInsumo(datos: InsumoValidado): Promise<void> {
-  const { empresaId } = await contexto();
-  await erpFetch("/inventario/insumos", {
-    method: "POST",
-    body: JSON.stringify({
-      empresaId,
-      nombre: datos.nombre,
-      unidadMedida: datos.unidadMedida,
-      costoUnitario: datos.costoUnitario,
-      proveedorId: datos.proveedorId ?? undefined,
-      minimo: datos.minimo,
-      maximo: datos.maximo,
-      presentacionNombre: datos.presentacionNombre,
-      presentacionCantidad: datos.presentacionCantidad,
-    }),
-  });
-  await refrescarInventario();
+  const db = await abrirBaseDeDatos();
+  await crearInsumoLocal(db, datos, await nombreProveedor(datos.proveedorId), usuarioActual());
+  sincronizarPronto();
 }
 
-/** Al editar, mínimo y máximo se fijan solo para la sucursal de esta terminal — cada sucursal
- *  consume a su ritmo y así lo maneja también el ERP web. */
 /**
- * `cambioUnidad` solo cuando la unidad cambió: va por su propio endpoint porque pasar un insumo
- * de l a ml (o de kg a g) tiene que reescalar las existencias de TODAS las sucursales, los
- * mínimos, el costo y las cantidades de receta. Mandarla en el PATCH cambiaría solo la etiqueta y
- * dejaría "7" queriendo decir 7 ml donde hay 7 litros.
+ * `cambioUnidad` solo cuando la unidad cambió: con `convertir` se reescalan aquí y en el ERP las
+ * existencias, mínimos, costo, empaque y recetas (240 l pasan a 240 000 ml).
  */
 export async function actualizarInsumo(
   id: string,
   datos: InsumoValidado,
-  cambioUnidad?: { convertir: boolean },
+  cambioUnidad?: { convertir: boolean; unidadAnterior?: string },
 ): Promise<void> {
-  const { sucursalId } = await contexto();
-  await erpFetch(`/inventario/insumos/${id}`, {
-    method: "PATCH",
-    body: JSON.stringify({
-      nombre: datos.nombre,
-      costoUnitario: datos.costoUnitario,
-      proveedorId: datos.proveedorId,
-      presentacionNombre: datos.presentacionNombre,
-      presentacionCantidad: datos.presentacionCantidad,
-    }),
+  const db = await abrirBaseDeDatos();
+  const anterior = await db.getFirstAsync<{ unidad_medida: string }>("SELECT unidad_medida FROM insumos WHERE id = ?", id);
+  await actualizarInsumoLocal(db, id, datos, {
+    unidadAnterior: anterior?.unidad_medida ?? datos.unidadMedida,
+    convertir: cambioUnidad?.convertir ?? false,
+    proveedorNombre: await nombreProveedor(datos.proveedorId),
+    usuarioId: usuarioActual(),
   });
-  if (cambioUnidad) {
-    await erpFetch(`/inventario/insumos/${id}/unidad`, {
-      method: "POST",
-      body: JSON.stringify({ unidadMedida: datos.unidadMedida, convertir: cambioUnidad.convertir }),
-    });
-  }
-  if (datos.minimo !== undefined || datos.maximo !== undefined) {
-    await erpFetch("/inventario/minimos", {
-      method: "POST",
-      body: JSON.stringify({ sucursalId, insumoId: id, minimo: datos.minimo ?? 0, maximo: datos.maximo }),
-    });
-  }
-  await refrescarInventario();
+  sincronizarPronto();
 }
 
-/** Baja lógica (o reactivación): el ERP nunca borra el insumo, conserva su historial. */
+/** Baja lógica (o reactivación): nunca se borra, conserva su historial. */
 export async function cambiarActivoInsumo(id: string, activo: boolean): Promise<void> {
-  await contexto();
-  await erpFetch(`/inventario/insumos/${id}`, { method: "PATCH", body: JSON.stringify({ activo }) });
-  await refrescarInventario();
+  const db = await abrirBaseDeDatos();
+  await cambiarActivoInsumoLocal(db, id, activo, usuarioActual());
+  sincronizarPronto();
 }

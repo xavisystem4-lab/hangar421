@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 import { uuid7, SyncEntidad, SyncOperacion } from "@hangar421/shared";
 import { encolarSync } from "./outboxRepo";
+import { insumosConCambiosPendientes } from "./insumosLocalesRepo";
 import { obtenerOCrearDispositivoId, obtenerOCrearSucursalIdLocal } from "./dispositivoLocal";
 import type { ExistenciaInsumo } from "../inventario/niveles";
 
@@ -189,8 +190,12 @@ export async function upsertInventario(db: SQLiteDatabase, insumos: InsumoRemoto
   const sucursalId = await obtenerOCrearSucursalIdLocal(db);
   const ahora = new Date().toISOString();
 
+  // Un insumo editado en esta tablet y todavía sin subir no se pisa con la versión vieja del ERP:
+  // ganaría la copia anterior y el cambio se vería "deshacerse" hasta la siguiente descarga.
+  const pendientes = await insumosConCambiosPendientes(db);
   await db.withTransactionAsync(async () => {
     for (const i of insumos) {
+      if (pendientes.has(i.id)) continue;
       await db.runAsync(
         `INSERT INTO insumos (id, nombre, unidad_medida, costo_unitario, proveedor_id, proveedor_nombre, activo, synced_at, presentacion_nombre, presentacion_cantidad, es_preparacion)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -218,6 +223,7 @@ export async function upsertInventario(db: SQLiteDatabase, insumos: InsumoRemoto
     }
 
     for (const e of existencias) {
+      if (pendientes.has(e.insumoId)) continue;
       await db.runAsync(
         `INSERT INTO inventario_local (sucursal_id, insumo_id, existencia, minimo, maximo, updated_at) VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(sucursal_id, insumo_id) DO UPDATE SET existencia = excluded.existencia,

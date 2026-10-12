@@ -14,8 +14,8 @@ import {
 
 /**
  * Pestaña "Insumos" del inventario: alta, edición y baja del catálogo de insumos desde la
- * terminal. Antes solo se podía hacer en el ERP web y la tablet decía "se dan de alta en el
- * ERP"; ahora se hace aquí mismo, contra el ERP, y baja al momento a Existencias y Conteo.
+ * terminal. Se guarda primero en la tablet (sin depender del ERP) y sale al ERP por la cola en
+ * cuanto hay conexión; aparece al momento en Existencias y Conteo.
  *
  * Mientras se escribe el nombre se busca en la lista de inventario, para que se vea si el
  * insumo ya existe antes de duplicarlo.
@@ -146,10 +146,13 @@ export function PanelInsumos({ onCambio }: { onCambio: () => Promise<void> | voi
       else await crearInsumo(r.datos);
       await cargar();
       await onCambio();
-      Alert.alert("Insumo", editandoId ? `"${r.datos.nombre}" actualizado.` : `"${r.datos.nombre}" dado de alta en el inventario.`);
+      Alert.alert(
+        "Insumo",
+        `${editandoId ? `"${r.datos.nombre}" actualizado` : `"${r.datos.nombre}" dado de alta`} en esta tablet. Se sube al ERP solo, en cuanto haya conexión.`,
+      );
       cerrarFormulario();
     } catch (e: any) {
-      Alert.alert("Insumo", `${e?.message ?? "No se pudo guardar"}.\nRevisa la conexión con el ERP e inténtalo de nuevo.`);
+      Alert.alert("Insumo", e?.message ?? "No se pudo guardar en la tablet.");
     } finally {
       setGuardando(false);
     }
@@ -264,7 +267,7 @@ export function PanelInsumos({ onCambio }: { onCambio: () => Promise<void> | voi
 
           {!editandoId && (
             <Text style={[estilos.ayuda, { marginTop: 6 }]}>
-              Se crea en el ERP para todas las sucursales, con existencia 0. Después registra la primera entrada o haz el conteo físico.
+              Se guarda en esta tablet al instante y se sube al ERP (para todas las sucursales, con existencia 0) en cuanto haya conexión. Después registra la primera entrada o haz el conteo físico.
             </Text>
           )}
 
