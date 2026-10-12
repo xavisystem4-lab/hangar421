@@ -697,6 +697,29 @@ export const MIGRACIONES: Migracion[] = [
       `);
     },
   },
+  {
+    version: 20,
+    nombre: "pedidos_didi_en_preparacion",
+    up: async (db) => {
+      // Pedidos de DiDi confirmados en la tablet que se están preparando y esperan al repartidor.
+      // Es una lista de trabajo local: lo que viaja al ERP es la VENTA, cuando se cobra.
+      await db.execAsync(`
+        CREATE TABLE pedidos_didi (
+          id TEXT PRIMARY KEY,
+          numero TEXT,
+          cliente TEXT,
+          total_leido REAL,
+          texto_original TEXT,
+          items TEXT NOT NULL,
+          estado TEXT NOT NULL CHECK(estado IN ('PREPARANDO','COBRADO','CANCELADO')) DEFAULT 'PREPARANDO',
+          venta_id TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX idx_pedidos_didi_estado ON pedidos_didi(estado);
+      `);
+    },
+  },
 ];
 
 /** Corre, en orden, toda migración con `version` mayor a la ya aplicada — cada una dentro de su

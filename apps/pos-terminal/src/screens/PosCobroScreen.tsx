@@ -7,6 +7,7 @@ import { useAuthLocalStore } from "../store/authLocalStore";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
 import { confirmarVenta } from "../db/ventasRepo";
+import { marcarPedidoDidiCobrado } from "../db/pedidosDidiRepo";
 import { sincronizarPronto } from "../sync/syncEngine";
 import { turnoAbierto } from "../db/turnosRepo";
 import { listarMetodosPago, etiquetaMetodoPago } from "../db/metodosPagoRepo";
@@ -50,7 +51,7 @@ const TECLAS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "borrar"]
  *  sola. La impresión (Fase 2e) queda deliberadamente FUERA de esta pantalla — nunca bloquea ni
  *  puede hacer fallar una venta ya confirmada. */
 export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; onCobrado: (ventaId: string, folio: number, total: number) => void }) {
-  const { items, totales, limpiar, nombreCliente } = useCarritoStore();
+  const { items, totales, limpiar, nombreCliente, pedidoDidiId } = useCarritoStore();
   const { usuario } = useAuthLocalStore();
   const colores = usarColores();
   const estilos = crearEstilos(colores);
@@ -270,6 +271,8 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
           ...(esDidi ? { canalOrigen: CanalOrigen.PLATAFORMA_DELIVERY, tipo: TipoPedido.DOMICILIO, plataforma: "DIDI" as const, notas: "DiDi (cobrado en el POS)" } : {}),
         },
       );
+      // Pedido de la lista "DiDi en preparación": ya se cobró, sale de la lista.
+      if (pedidoDidiId) await marcarPedidoDidiCobrado(db, pedidoDidiId, venta.id).catch(() => undefined);
       limpiar();
       // Empuje inmediato al ERP. Antes la venta solo se encolaba y esperaba hasta 45 s al
       // siguiente tick del temporizador: era la causa principal de que una venta recién cobrada

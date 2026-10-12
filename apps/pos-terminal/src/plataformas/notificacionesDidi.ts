@@ -52,11 +52,13 @@ export function interpretarNotificacion(n: { titulo: string; texto: string }): N
     null;
 
   // "$180.00", "$ 1,250", "MXN 180", "180.00 MXN"
+  // "Total" primero: si la notificación trae los productos con su precio, el primer "$" sería el
+  // de un producto y no el del pedido.
   const importe =
+    todo.match(/\btotal\s*:?\s*\$?\s*([\d.,]+)/i)?.[1] ??
     todo.match(/\$\s*([\d.,]+)/)?.[1] ??
     todo.match(/\bMXN\s*([\d.,]+)/i)?.[1] ??
     todo.match(/([\d.,]+)\s*MXN\b/i)?.[1] ??
-    todo.match(/\btotal\s*:?\s*([\d.,]+)/i)?.[1] ??
     null;
   const total = importe ? aNumero(importe) : null;
 

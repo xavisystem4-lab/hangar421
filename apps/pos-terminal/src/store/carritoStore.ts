@@ -37,6 +37,11 @@ interface CarritoState {
   nombrePreguntado: boolean;
   fijarNombreCliente: (nombre: string | null) => void;
   marcarNombrePreguntado: () => void;
+  /** Pedido de DiDi (lista "en preparación") que se está cobrando con este carrito: al confirmar
+   *  la venta se marca como cobrado. null = venta normal. */
+  pedidoDidiId: string | null;
+  /** Carga de golpe un pedido de DiDi ya confirmado: sus productos, su nombre y su id. */
+  cargarPedidoDidi: (pedidoDidiId: string, nombre: string, items: Omit<ItemCarrito, "id">[]) => void;
   agregarItem: (item: Omit<ItemCarrito, "id">) => void;
   quitarItem: (itemId: string) => void;
   cambiarCantidad: (itemId: string, delta: number) => void;
@@ -50,7 +55,15 @@ export const useCarritoStore = create<CarritoState>((set, get) => ({
   items: [],
   nombreCliente: null,
   nombrePreguntado: false,
+  pedidoDidiId: null,
 
+  cargarPedidoDidi: (pedidoDidiId, nombre, items) =>
+    set({
+      pedidoDidiId,
+      nombreCliente: normalizarNombreCliente(nombre),
+      nombrePreguntado: true,
+      items: items.map((i) => ({ ...i, modificadores: i.modificadores ?? [], id: uuid7() })),
+    }),
   fijarNombreCliente: (nombre) => set({ nombreCliente: normalizarNombreCliente(nombre), nombrePreguntado: true }),
   marcarNombrePreguntado: () => set({ nombrePreguntado: true }),
   agregarItem: (item) => set((s) => ({ items: [...s.items, { ...item, modificadores: item.modificadores ?? [], id: uuid7() }] })),
@@ -59,7 +72,7 @@ export const useCarritoStore = create<CarritoState>((set, get) => ({
     set((s) => ({
       items: s.items.map((i) => (i.id === itemId ? { ...i, cantidad: Math.max(1, i.cantidad + delta) } : i)).filter((i) => i.cantidad > 0),
     })),
-  limpiar: () => set({ items: [], nombreCliente: null, nombrePreguntado: false }),
+  limpiar: () => set({ items: [], nombreCliente: null, nombrePreguntado: false, pedidoDidiId: null }),
 
   totales: () => {
     const { items } = get();
