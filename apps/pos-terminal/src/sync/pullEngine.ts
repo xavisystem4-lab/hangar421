@@ -89,7 +89,9 @@ export const refrescarInventario = unaALaVez(async function refrescarInventario(
   await asegurarSesionEnSucursalActiva();
 
   const [insumos, existencias, recetas] = await Promise.all([
-    erpFetch<any[]>(`/inventario/insumos?empresaId=${empresaId}`),
+    // Solo los insumos que maneja esta sucursal: los de otras sucursales dejan de verse aquí
+    // (la descarga apaga lo que ya no viene, ver upsertInventario).
+    erpFetch<any[]>(`/inventario/insumos?empresaId=${empresaId}&sucursalId=${sucursalId}`),
     erpFetch<any[]>(`/inventario/existencias?sucursalId=${sucursalId}`),
     // Un APK nuevo contra un ERP viejo todavía no tiene este endpoint: sin recetas la tablet
     // simplemente no descuenta en local y el ERP lo hace al recibir la venta, como antes.

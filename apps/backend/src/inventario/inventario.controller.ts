@@ -13,16 +13,34 @@ import { InventarioService, type ReporteInventarioPorCorreo } from "./inventario
 export class InventarioController {
   constructor(private inventario: InventarioService) {}
 
+  /** Con `sucursalId`, solo los insumos que maneja esa sucursal. */
   @Get("insumos")
-  listarInsumos(@Query("empresaId") empresaId: string) {
-    return this.inventario.listarInsumos(empresaId);
+  listarInsumos(@Query("empresaId") empresaId: string, @Query("sucursalId") sucursalId?: string) {
+    return this.inventario.listarInsumos(empresaId, sucursalId || undefined);
   }
 
+  /** Se crea en la sucursal del cuerpo (la elegida en el ERP) o, si no viene, en la de la sesión. */
   @Post("insumos")
   @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
   @Audit("INSUMO", "CREAR")
-  crearInsumo(@Body() body: any) {
-    return this.inventario.crearInsumo(body);
+  crearInsumo(@Body() body: any, @Req() req: any) {
+    return this.inventario.crearInsumo({ ...body, sucursalId: body?.sucursalId ?? req.user?.sucursalId ?? undefined });
+  }
+
+  /** La sucursal empieza a manejar un insumo que ya existe en la empresa. */
+  @Post("insumos/:id/sucursales/:sucursalId")
+  @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
+  @Audit("INSUMO", "AGREGAR_A_SUCURSAL")
+  agregarASucursal(@Param("id") id: string, @Param("sucursalId") sucursalId: string) {
+    return this.inventario.agregarASucursal(sucursalId, id);
+  }
+
+  /** Deja de verse en esa sucursal (solo con existencia 0). */
+  @Delete("insumos/:id/sucursales/:sucursalId")
+  @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
+  @Audit("INSUMO", "QUITAR_DE_SUCURSAL")
+  quitarDeSucursal(@Param("id") id: string, @Param("sucursalId") sucursalId: string) {
+    return this.inventario.quitarDeSucursal(sucursalId, id);
   }
 
   // También usado para "eliminar" (baja lógica, { activo: false }) — nunca se borra el
