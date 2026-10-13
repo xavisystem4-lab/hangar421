@@ -166,8 +166,11 @@ export default function InventarioPage() {
 
   async function cargar(suc: string) {
     if (!contexto || !suc) return;
-    const [ex, ins, prods] = await Promise.all([
+    // Cada sucursal ve solo los insumos que maneja; el catálogo completo de la empresa se usa para
+    // "Agregar uno que ya existe" y para las recetas de las preparaciones.
+    const [ex, ins, catalogo, prods] = await Promise.all([
       apiFetch<Existencia[]>(`/inventario/existencias?sucursalId=${suc}`),
+      apiFetch<Insumo[]>(`/inventario/insumos?empresaId=${contexto.usuario.empresaId}&sucursalId=${suc}`),
       apiFetch<Insumo[]>(`/inventario/insumos?empresaId=${contexto.usuario.empresaId}`),
       apiFetch<ExistenciaProducto[]>(`/inventario/productos-existencias?sucursalId=${suc}`).catch(() => [] as ExistenciaProducto[]),
     ]);
@@ -175,7 +178,7 @@ export default function InventarioPage() {
     // Las preparaciones no se cuentan ni se compran: fuera de existencias, semáforo, conteo y
     // lista de compras. Se administran en su propio panel.
     setInsumos(ins.filter((i) => !i.esPreparacion));
-    setTodosInsumos(ins);
+    setTodosInsumos(catalogo);
     setExistenciasProducto(prods);
     setActualizadoEn(new Date());
     cargarTraspasosPendientes(suc);
@@ -257,10 +260,12 @@ export default function InventarioPage() {
 
   async function crearInsumo() {
     if (!contexto || !nuevoInsumo.nombre.trim()) return;
-    await apiFetch("/inventario/insumos", {
+    const creado = await apiFetch<{ id: string }>("/inventario/insumos", {
       method: "POST",
       body: JSON.stringify({
         empresaId: contexto.usuario.empresaId,
+        // Solo en la sucursal elegida arriba; las demás no lo ven hasta que lo agreguen.
+        sucursalId,
         nombre: nuevoInsumo.nombre,
         unidadMedida: nuevoInsumo.unidadMedida,
         costoUnitario: nuevoInsumo.costoUnitario ? Number(nuevoInsumo.costoUnitario) : undefined,
@@ -273,8 +278,31 @@ export default function InventarioPage() {
       }),
     });
     setNuevoInsumo({ nombre: "", unidadMedida: "pz", costoUnitario: "", precioVenta: "", proveedorId: "", minimo: "", maximo: "", presentacionNombre: "", presentacionCantidad: "" });
-    setMensaje("Insumo creado.");
+    const yaExistia = todosInsumos.some((i) => i.id === creado?.id);
+    setMensaje(yaExistia
+      ? `"${nuevoInsumo.nombre}" ya existía en otra sucursal: se agregó a esta, sin duplicarlo.`
+      : "Insumo creado en esta sucursal.");
     cargar(sucursalId);
+  }
+
+  /** La sucursal elegida empieza a manejar un insumo que ya existe en otra. */
+  async function agregarExistente(insumoId: string) {
+    if (!insumoId || !sucursalId) return;
+    await apiFetch(`/inventario/insumos/${insumoId}/sucursales/${sucursalId}`, { method: "POST" });
+    setMensaje(`"${todosInsumos.find((i) => i.id === insumoId)?.nombre ?? "Insumo"}" agregado a esta sucursal.`);
+    cargar(sucursalId);
+  }
+
+  /** Deja de verse en esta sucursal (las demás lo conservan). Solo con existencia 0. */
+  async function quitarDeSucursal(i: Insumo) {
+    if (!confirm(`¿Quitar "${i.nombre}" de esta sucursal? Las demás sucursales lo conservan.`)) return;
+    try {
+      await apiFetch(`/inventario/insumos/${i.id}/sucursales/${sucursalId}`, { method: "DELETE" });
+      setMensaje(`"${i.nombre}" ya no aparece en esta sucursal.`);
+      cargar(sucursalId);
+    } catch (e: any) {
+      setMensaje(e?.message ?? "No se pudo quitar.");
+    }
   }
 
   function empezarEdicionInsumo(f: (typeof filas)[number]) {
@@ -338,7 +366,7 @@ export default function InventarioPage() {
   }
 
   async function eliminarInsumo(i: Insumo) {
-    if (!confirm(`¿Eliminar "${i.nombre}"? Deja de aparecer en inventario y en recetas nuevas (el historial ya registrado no se pierde).`)) return;
+    if (!confirm(`¿Eliminar "${i.nombre}" en TODAS las sucursales? Deja de aparecer en inventario y en recetas nuevas (el historial ya registrado no se pierde).\n\nSi solo no lo usan en esta sucursal, mejor usa "Quitar de aquí".`)) return;
     await apiFetch(`/inventario/insumos/${i.id}`, { method: "PATCH", body: JSON.stringify({ activo: false }) });
     setMensaje("Insumo eliminado.");
     cargar(sucursalId);
@@ -613,7 +641,8 @@ export default function InventarioPage() {
                     <button onClick={() => empezarEdicionInsumo(f)} style={{ background: "var(--h421-gray-50)", padding: "4px 10px", fontSize: 12 }}>✏️ Editar</button>
                     <button onClick={() => { setModalMovimiento(i); setMov({ tipo: "ENTRADA", cantidad: "", motivo: "", empaques: "" }); }} style={{ background: "transparent", color: "var(--h421-blue)", border: "1px solid var(--h421-blue)", padding: "4px 10px", fontSize: 12 }}>Menú</button>
                     <button onClick={() => { setModalTraspaso(i); setTraspaso({ sucursalDestinoId: "", cantidad: "" }); }} style={{ background: "transparent", color: "#8b5cf6", border: "1px solid #8b5cf6", padding: "4px 10px", fontSize: 12 }}>Traspasar</button>
-                    <button onClick={() => eliminarInsumo(i)} style={{ background: "var(--h421-red-bg)", color: "var(--h421-red-texto)", padding: "4px 10px", fontSize: 12 }}>Eliminar</button>
+                    <button onClick={() => quitarDeSucursal(i)} title="Deja de verse en esta sucursal; las demás lo conservan" style={{ background: "transparent", color: "var(--h421-gray-500)", border: "1px solid var(--h421-gray-200)", padding: "4px 10px", fontSize: 12 }}>Quitar de aquí</button>
+                    <button onClick={() => eliminarInsumo(i)} title="Lo da de baja en TODAS las sucursales" style={{ background: "var(--h421-red-bg)", color: "var(--h421-red-texto)", padding: "4px 10px", fontSize: 12 }}>Eliminar</button>
                   </td>
                 </tr>
               );
@@ -628,6 +657,16 @@ export default function InventarioPage() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16, marginTop: 16 }}>
         <div className="card">
           <h3 style={{ marginTop: 0 }}>Nuevo insumo</h3>
+          {(() => {
+            const deOtras = todosInsumos.filter((t) => !t.esPreparacion && !insumos.some((i) => i.id === t.id));
+            return deOtras.length > 0 ? (
+              <select value="" onChange={(e) => agregarExistente(e.target.value)}
+                style={{ width: "100%", padding: 10, marginBottom: 8, borderRadius: 8, border: "1px dashed var(--h421-gray-300)" }}>
+                <option value="">+ Agregar uno que ya existe en otra sucursal…</option>
+                {deOtras.map((t) => <option key={t.id} value={t.id}>{t.nombre} ({t.unidadMedida})</option>)}
+              </select>
+            ) : null;
+          })()}
           <input placeholder="Nombre (ej. Leche entera)" value={nuevoInsumo.nombre} onChange={(e) => setNuevoInsumo((n) => ({ ...n, nombre: e.target.value }))}
             style={{ width: "100%", padding: 10, marginBottom: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
           <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
@@ -662,9 +701,9 @@ export default function InventarioPage() {
             Después podrás contar &quot;4 cartones&quot; o &quot;2 cartones y 300 ml&quot; sin sacar cuentas.
           </p>
           <p style={{ fontSize: 11, color: "var(--h421-gray-400)", margin: "4px 0 0" }}>
-            El mínimo/máximo aplica a todas las sucursales al crear el insumo — se puede ajustar después por sucursal desde &quot;Editar&quot;.
+            Se crea solo en esta sucursal. Si otra sucursal lo necesita, ahí se agrega con &quot;Agregar uno que ya existe&quot; (o le llega solo con un traspaso).
           </p>
-          <button onClick={crearInsumo} style={{ width: "100%", marginTop: 8, background: "var(--h421-green)", color: "#fff", padding: "10px 16px" }}>Crear insumo</button>
+          <button onClick={crearInsumo} style={{ width: "100%", marginTop: 8, background: "var(--h421-green)", color: "#fff", padding: "10px 16px" }}>Crear insumo en esta sucursal</button>
         </div>
 
         {contexto && (

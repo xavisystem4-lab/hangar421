@@ -20,13 +20,30 @@ export interface ReporteInventarioPorCorreo {
 /** Tamaño máximo del PDF adjunto que acepta el endpoint (base64 ≈ 4/3 del binario). */
 const MAX_PDF_BASE64 = 8 * 1024 * 1024;
 
+/** "Leche  de Soya" y "leche de soya" son el mismo insumo. */
+function normalizarNombreInsumo(nombre: string): string {
+  return String(nombre ?? "").normalize("NFD").replace(/\p{Mn}+/gu, "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
 @Injectable()
 export class InventarioService {
   constructor(private prisma: PrismaService, private realtime: RealtimeGateway, private correo: CorreoService) {}
 
-  async listarInsumos(empresaId: string) {
+  /**
+   * Insumos de la empresa. Con `sucursalId`, solo los que MANEJA esa sucursal: los que tienen su
+   * registro de inventario ahí (se crea al darlo de alta allí, al recibir un traspaso o con
+   * "Agregar a esta sucursal"). Las preparaciones de la casa y los insumos viejos que todavía no
+   * tienen registro en ninguna sucursal se ven en todas.
+   */
+  async listarInsumos(empresaId: string, sucursalId?: string) {
     const insumos = await this.prisma.insumo.findMany({
-      where: { empresaId, activo: true },
+      where: {
+        empresaId,
+        activo: true,
+        ...(sucursalId
+          ? { OR: [{ inventario: { some: { sucursalId } } }, { inventario: { none: {} } }, { esPreparacion: true }] }
+          : {}),
+      },
       include: { proveedor: true },
       orderBy: { nombre: "asc" },
     });
@@ -42,10 +59,15 @@ export class InventarioService {
     }));
   }
 
-  /** Crea el insumo y, si se dan mínimo/máximo, siembra el registro de inventario (existencia 0)
-   *  en TODAS las sucursales de la empresa con ese mismo mínimo/máximo — así, al dar de alta un
-   *  insumo, el admin ya no tiene que ir sucursal por sucursal a fijarlo a mano (ver
-   *  fijarMinimo, que sigue disponible aparte para ajustarlo por sucursal después). */
+  /**
+   * Crea el insumo SOLO en la sucursal donde se da de alta (`sucursalId`): ahí se crea su
+   * registro de inventario (existencia 0, con su mínimo/máximo). Las demás sucursales no lo ven
+   * hasta que lo agreguen ("Agregar a esta sucursal") o reciban un traspaso.
+   *
+   * Si en la empresa ya existe un insumo con el mismo nombre (otra sucursal lo maneja), no se
+   * duplica: se agrega ese mismo a esta sucursal y se devuelve. Sin `sucursalId` (versiones
+   * anteriores del ERP o del APK) se conserva el comportamiento de antes: todas las sucursales.
+   */
   async crearInsumo(data: {
     /** Lo manda una tablet que lo creó sin conexión (uuid7); el ERP web lo deja vacío. */
     id?: string;
@@ -60,11 +82,29 @@ export class InventarioService {
     presentacionNombre?: string | null;
     presentacionCantidad?: number | null;
     esPreparacion?: boolean;
+    sucursalId?: string;
+    /** false = no buscar duplicado por nombre (la tablet ya fijó el id y lo referencia). */
+    reutilizarPorNombre?: boolean;
   }) {
-    const { minimo, maximo, ...insumoData } = data;
-    const insumo = await this.prisma.insumo.create({ data: insumoData });
+    const { minimo, maximo, sucursalId, reutilizarPorNombre = true, ...insumoData } = data;
 
-    if (minimo !== undefined || maximo !== undefined) {
+    if (sucursalId && reutilizarPorNombre && !insumoData.esPreparacion) {
+      const clave = normalizarNombreInsumo(insumoData.nombre);
+      const mismos = await this.prisma.insumo.findMany({ where: { empresaId: data.empresaId, esPreparacion: false }, orderBy: { activo: "desc" } });
+      const existente = mismos.find((i) => normalizarNombreInsumo(i.nombre) === clave);
+      if (existente) {
+        if (!existente.activo) await this.prisma.insumo.update({ where: { id: existente.id }, data: { activo: true } });
+        await this.agregarASucursal(sucursalId, existente.id, minimo, maximo);
+        return existente;
+      }
+    }
+
+    const insumo = await this.prisma.insumo.create({ data: insumoData });
+    if (insumoData.esPreparacion) return insumo;
+
+    if (sucursalId) {
+      await this.agregarASucursal(sucursalId, insumo.id, minimo, maximo);
+    } else if (minimo !== undefined || maximo !== undefined) {
       const sucursales = await this.prisma.sucursal.findMany({ where: { empresaId: data.empresaId }, select: { id: true } });
       await this.prisma.$transaction(
         sucursales.map((s) =>
@@ -133,6 +173,9 @@ export class InventarioService {
         maximo: d.maximo ?? undefined,
         presentacionNombre: d.presentacionNombre ?? null,
         presentacionCantidad: d.presentacionCantidad ?? null,
+        // Solo en la sucursal de la tablet; con el id que la tablet ya usa (sin fusionar por nombre).
+        sucursalId: sobre.sucursalId || undefined,
+        reutilizarPorNombre: false,
       });
       return;
     }
@@ -373,6 +416,30 @@ export class InventarioService {
       this.realtime.emitirASucursal(data.sucursalId, WS_EVENTS.INVENTARIO_ALERTA, inventario);
     }
     return movimiento;
+  }
+
+  /** "Agregar a esta sucursal": la sucursal empieza a manejar un insumo que ya existe en la
+   *  empresa (existencia 0). Si ya lo manejaba, solo actualiza mínimo/máximo cuando se dan. */
+  async agregarASucursal(sucursalId: string, insumoId: string, minimo?: number, maximo?: number | null) {
+    return this.prisma.inventarioSucursal.upsert({
+      where: { sucursalId_insumoId: { sucursalId, insumoId } },
+      update: {
+        ...(minimo !== undefined ? { minimo } : {}),
+        ...(maximo !== undefined ? { maximo } : {}),
+      },
+      create: { sucursalId, insumoId, existencia: 0, minimo: minimo ?? 0, maximo: maximo ?? null },
+    });
+  }
+
+  /** "Quitar de esta sucursal": deja de verse ahí. Solo con existencia 0, para no perder stock. */
+  async quitarDeSucursal(sucursalId: string, insumoId: string) {
+    const fila = await this.prisma.inventarioSucursal.findUnique({ where: { sucursalId_insumoId: { sucursalId, insumoId } } });
+    if (!fila) return { quitado: false };
+    if (Number(fila.existencia) !== 0) {
+      throw new BadRequestException(`Todavía hay ${Number(fila.existencia)} en esta sucursal. Haz un conteo en 0 o un traspaso antes de quitarlo.`);
+    }
+    await this.prisma.inventarioSucursal.delete({ where: { sucursalId_insumoId: { sucursalId, insumoId } } });
+    return { quitado: true };
   }
 
   async fijarMinimo(sucursalId: string, insumoId: string, minimo: number, maximo?: number) {
