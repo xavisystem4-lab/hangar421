@@ -12,6 +12,9 @@ import {
 import { etiquetaMetodoPago } from "../db/metodosPagoRepo";
 import { formatearFecha, formatearFechaHora, formatearDinero, type DatosReporte } from "../reportes/armarReporte";
 import { exportarExcel, exportarPdf } from "../reportes/exportar";
+import { useAuthLocalStore } from "../store/authLocalStore";
+import { esRolAdmin } from "../auth/permisosTerminal";
+import { ModalCreditoEmpleadosReporte } from "../components/ModalCreditoEmpleadosReporte";
 
 /** Inicio y fin del día en hora LOCAL, no UTC. Con `toISOString().slice(0,10)` un corte hecho a
  *  las 22:00 en México caía en el día siguiente y el reporte de "hoy" salía vacío. */
@@ -68,6 +71,10 @@ export function PosAdminReportesScreen({ onCerrar }: { onCerrar: () => void }) {
   const [exportando, setExportando] = useState<"pdf" | "excel" | null>(null);
   // null = todavía no se ha generado nada. Distinto de "generado y sin resultados".
   const [generado, setGenerado] = useState(false);
+  // Crédito de empleados: solo lo ven los administradores.
+  const usuario = useAuthLocalStore((st) => st.usuario);
+  const esAdmin = esRolAdmin(usuario?.rol);
+  const [verCredito, setVerCredito] = useState(false);
 
   const filtro: FiltroReporte = {
     desde: inicioDelDia(fechaDesde),
@@ -173,6 +180,15 @@ export function PosAdminReportesScreen({ onCerrar }: { onCerrar: () => void }) {
         <TouchableOpacity onPress={onCerrar}><Text style={estilos.cerrar}>✕</Text></TouchableOpacity>
       </View>
 
+      {verCredito && (
+        <ModalCreditoEmpleadosReporte
+          desdeIso={inicioDelDia(fechaDesde)}
+          hastaIso={finDelDia(fechaHasta)}
+          etiquetaPeriodo={`${formatearFecha(inicioDelDia(fechaDesde))} al ${formatearFecha(finDelDia(fechaHasta))}`}
+          onCerrar={() => setVerCredito(false)}
+        />
+      )}
+
       <View style={estilos.tarjeta}>
         <Text style={estilos.subtitulo}>Periodo</Text>
 
@@ -246,6 +262,12 @@ export function PosAdminReportesScreen({ onCerrar }: { onCerrar: () => void }) {
       <TouchableOpacity onPress={generar} disabled={generando} style={[estilos.botonGenerar, generando && { opacity: 0.6 }]}>
         {generando ? <ActivityIndicator color="#fff" /> : <Text style={estilos.botonGenerarTexto}>Generar reporte</Text>}
       </TouchableOpacity>
+
+      {esAdmin && (
+        <TouchableOpacity onPress={() => setVerCredito(true)} style={[estilos.botonGenerar, { backgroundColor: colores.amber, marginTop: 8 }]}>
+          <Text style={estilos.botonGenerarTexto}>👛 Crédito de empleados del periodo</Text>
+        </TouchableOpacity>
+      )}
 
       {!generado && !generando && (
         <Text style={[estilos.ayuda, { textAlign: "center", marginTop: 10 }]}>

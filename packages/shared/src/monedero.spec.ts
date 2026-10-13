@@ -1,4 +1,4 @@
-import { calcularUsoMonedero, inicioPeriodoMonedero, saldoMonedero } from "./monedero";
+import { agruparConsumosPorEmpleada, calcularUsoMonedero, csvConsumosCredito, describirProductoConsumido, inicioPeriodoMonedero, saldoMonedero } from "./monedero";
 
 // Fechas con el constructor LOCAL (año, mes, día, hora): las pruebas no dependen de la zona del equipo.
 const viernes9pm = { diaSemana: 5, hora: 21 };
@@ -54,5 +54,28 @@ describe("calcularUsoMonedero", () => {
 
   it("sin saldo no cubre nada", () => {
     expect(calcularUsoMonedero(50, 0)).toEqual({ montoMonedero: 0, restante: 50 });
+  });
+});
+
+describe("reporte de consumo de crédito", () => {
+  const latte = { nombre: "Latte", cantidad: 1, precioUnitario: 70, modificadores: [{ nombre: "Avena", precioExtra: 25 }] };
+  const consumos = [
+    { empleadoId: "ana", empleado: "Ana", ventaId: "v1", folio: "12", fecha: "2026-10-12T15:00:00.000Z", sucursal: "Benito Juárez", montoCredito: 95, totalVenta: 95, productos: [latte] },
+    { empleadoId: "luz", empleado: "Luz", ventaId: "v2", folio: "13", fecha: "2026-10-12T16:00:00.000Z", sucursal: "Benito Juárez", montoCredito: 50, totalVenta: 50, productos: [{ ...latte, nombre: "Americano", precioUnitario: 50, modificadores: [] }] },
+    { empleadoId: "ana", empleado: "Ana", ventaId: "v3", folio: "20", fecha: "2026-10-13T09:00:00.000Z", sucursal: "Benito Juárez", montoCredito: 40, totalVenta: 140, productos: [{ ...latte, cantidad: 2 }] },
+  ];
+
+  it("agrupa por empleada, suma lo cargado al crédito y ordena consumos del más reciente", () => {
+    const g = agruparConsumosPorEmpleada(consumos);
+    expect(g.map((x) => [x.empleado, x.totalCredito, x.numConsumos, x.numProductos])).toEqual([["Ana", 135, 2, 3], ["Luz", 50, 1, 1]]);
+    expect(g[0].consumos.map((c) => c.ventaId)).toEqual(["v3", "v1"]);
+  });
+
+  it("describe el producto con sus modificadores y arma el CSV por producto", () => {
+    expect(describirProductoConsumido(latte)).toBe("Latte · Avena (+$25.00)");
+    const csv = csvConsumosCredito(agruparConsumosPorEmpleada(consumos), (iso) => iso.slice(0, 16));
+    const filas = csv.replace("﻿", "").split("\n");
+    expect(filas).toHaveLength(4);
+    expect(filas[1]).toBe("Ana,2026-10-13T09:00,20,Benito Juárez,Latte · Avena (+$25.00),2,190.00,40.00");
   });
 });

@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { MONEDERO_LIMITE_DEFAULT } from "@hangar421/shared";
+import { MONEDERO_LIMITE_DEFAULT, agruparConsumosPorEmpleada, type ConsumoCredito } from "@hangar421/shared";
 import { PrismaService } from "../prisma/prisma.service";
 
 export interface ConfigurarMonederoDto {
@@ -138,5 +138,64 @@ export class MonederoService {
       create: { usuarioId, empresaId, ...datos },
       update: datos,
     });
+  }
+
+  /**
+   * Reporte de consumo de crédito: cada venta cargada al crédito de una empleada en el rango, con
+   * fecha y hora, folio, sucursal y los productos (con sus modificadores). Agrupado por empleada
+   * con la misma regla que usa la tablet (agruparConsumosPorEmpleada en shared).
+   */
+  async reporteConsumos(empresaId: string, filtros: { desde?: string; hasta?: string; sucursalId?: string }) {
+    const desde = filtros.desde ? new Date(filtros.desde) : new Date(Date.now() - 7 * 86_400_000);
+    const hasta = filtros.hasta ? new Date(filtros.hasta) : new Date();
+    if (Number.isNaN(desde.getTime()) || Number.isNaN(hasta.getTime())) throw new BadRequestException("Fechas inválidas.");
+
+    const movimientos = await this.prisma.movimientoMonedero.findMany({
+      where: {
+        createdAt: { gte: desde, lte: hasta },
+        monedero: { empresaId },
+        ...(filtros.sucursalId ? { sucursalId: filtros.sucursalId } : {}),
+      },
+      include: { monedero: { select: { usuario: { select: { nombre: true } } } } },
+      orderBy: { createdAt: "desc" },
+    });
+    if (movimientos.length === 0) return [];
+
+    const pedidos = await this.prisma.pedido.findMany({
+      where: { id: { in: movimientos.map((m) => m.pedidoId) }, empresaId },
+      select: {
+        id: true, folio: true, total: true,
+        sucursal: { select: { nombre: true } },
+        items: {
+          select: {
+            cantidad: true, precioUnitario: true,
+            producto: { select: { nombre: true } },
+            modificadores: { select: { precioExtra: true, opcionModificador: { select: { nombre: true } } } },
+          },
+        },
+      },
+    });
+    const porId = new Map(pedidos.map((p) => [p.id, p]));
+
+    const consumos: ConsumoCredito[] = movimientos.map((m) => {
+      const p = porId.get(m.pedidoId);
+      return {
+        empleadoId: m.usuarioId,
+        empleado: m.monedero.usuario.nombre,
+        ventaId: m.pedidoId,
+        folio: p?.folio ?? null,
+        fecha: m.createdAt.toISOString(),
+        sucursal: p?.sucursal.nombre ?? null,
+        montoCredito: Number(m.monto),
+        totalVenta: p ? Number(p.total) : Number(m.monto),
+        productos: (p?.items ?? []).map((it) => ({
+          nombre: it.producto.nombre,
+          cantidad: it.cantidad,
+          precioUnitario: Number(it.precioUnitario),
+          modificadores: it.modificadores.map((md) => ({ nombre: md.opcionModificador.nombre, precioExtra: Number(md.precioExtra) })),
+        })),
+      };
+    });
+    return agruparConsumosPorEmpleada(consumos);
   }
 }

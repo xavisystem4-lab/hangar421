@@ -8,6 +8,7 @@ import { useSucursalActiva } from "@/store/sucursalActiva";
 import { useAuthCrm } from "@/lib/authClient";
 import { StatTile } from "@/components/StatTile";
 import { BarChart } from "@/components/BarChart";
+import { ReporteCreditoEmpleados } from "@/components/ReporteCreditoEmpleados";
 
 interface VentaPorProducto {
   productoId: string;
@@ -43,6 +44,8 @@ export default function ReportesPage() {
   const [porProducto, setPorProducto] = useState<VentaPorProducto[]>([]);
   const [porMetodo, setPorMetodo] = useState<VentaPorMetodo[]>([]);
   const [cargando, setCargando] = useState(false);
+  /** "ventas" = el reporte de siempre; "credito" = consumo del crédito de cada empleada. */
+  const [vista, setVista] = useState<"ventas" | "credito">("ventas");
 
   // La sucursal la fija el contexto global (cabecera). Antes esta página elegía siempre la
   // primera del listado, así que un reporte podía ser de otra sucursal sin avisar.
@@ -97,6 +100,20 @@ export default function ReportesPage() {
         </div>
       </div>
 
+      <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+        {([["ventas", "Ventas"], ["credito", "👛 Crédito de empleados"]] as const).map(([id, etiqueta]) => (
+          <button key={id} onClick={() => setVista(id)}
+            style={{ padding: "8px 14px", fontSize: 13, fontWeight: 700, borderRadius: 999,
+              background: vista === id ? "var(--h421-navy)" : "transparent", color: vista === id ? "#fff" : "var(--h421-navy-texto)",
+              border: `1px solid ${vista === id ? "var(--h421-navy)" : "var(--h421-gray-200)"}` }}>
+            {etiqueta}
+          </button>
+        ))}
+      </div>
+
+      {vista === "credito" ? (
+        <ReporteCreditoEmpleados sucursalId={sucursalId} desde={desde} hasta={hasta} />
+      ) : (<>
       {cargando && <p style={{ color: "var(--h421-gray-400)" }}>Cargando…</p>}
 
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 12 }}>
@@ -145,6 +162,7 @@ export default function ReportesPage() {
           ) : <p style={{ color: "var(--h421-gray-400)", fontSize: 13 }}>Sin pagos en este rango.</p>}
         </div>
       </div>
+      </>)}
     </div>
   );
 }
