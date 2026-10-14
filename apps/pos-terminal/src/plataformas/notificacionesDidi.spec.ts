@@ -55,4 +55,17 @@ describe("aNumero", () => {
     expect(aNumero("180.5")).toBe(180.5);
     expect(aNumero("abc")).toBeNull();
   });
+
+  it("'El sistema canceló el pedido número 4' es una cancelación, no un pedido por preparar", () => {
+    const n = interpretarNotificacion({ titulo: "[DiDi Food]", texto: "El sistema canceló el pedido número 4" });
+    expect(n.esCancelacion).toBe(true);
+    expect(n.esPedidoNuevo).toBe(false);
+    expect(n.esRuido).toBe(true);
+    expect(n.numeroPedido).toBe("4");
+    expect(ameritaAviso(n)).toBe(false);
+  });
+
+  it("un pedido nuevo no se marca como cancelación", () => {
+    expect(interpretarNotificacion({ titulo: "Nuevo pedido #1234", texto: "Total: $180" }).esCancelacion).toBe(false);
+  });
 });

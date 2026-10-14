@@ -130,11 +130,16 @@ export async function cambiarActivoInsumoLocal(db: SQLiteDatabase, id: string, a
   });
 }
 
+/** Después de tantos intentos fallidos un cambio deja de "tapar" la versión del ERP: si no,
+ *  un error permanente congelaba ese insumo en la tablet para siempre. */
+export const INTENTOS_PARA_DEJAR_DE_PROTEGER = 5;
+
 /** Insumos con cambios hechos aquí que el ERP todavía no confirma: la descarga no debe pisarlos. */
 export async function insumosConCambiosPendientes(db: SQLiteDatabase): Promise<Set<string>> {
   const filas = await db.getAllAsync<{ entidad_id: string }>(
-    "SELECT DISTINCT entidad_id FROM sync_outbox WHERE entidad = ? AND estado IN ('PENDING','SYNCING','ERROR')",
-    SyncEntidad.INSUMO,
+    `SELECT DISTINCT entidad_id FROM sync_outbox WHERE entidad = ?
+       AND (estado IN ('PENDING','SYNCING') OR (estado = 'ERROR' AND intentos < ?))`,
+    SyncEntidad.INSUMO, INTENTOS_PARA_DEJAR_DE_PROTEGER,
   );
   return new Set(filas.map((f) => f.entidad_id));
 }

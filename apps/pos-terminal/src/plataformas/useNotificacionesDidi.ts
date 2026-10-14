@@ -6,6 +6,7 @@ import { MELODIA_DIDI_RECORDATORIO, sonarAvisoDidi, sonarMelodia } from "../../m
 import { notificacionesApp, type NotificacionCaptada } from "../../modules/hangar-notificaciones";
 import { CLAVE_SONIDO_DELIVERY } from "./useAvisosDelivery";
 import { ameritaAviso, interpretarNotificacion, type NotificacionInterpretada } from "./notificacionesDidi";
+import { cancelarPedidoDidiPorNumero } from "../db/pedidosDidiRepo";
 
 /** "1" (por defecto) = cada 30 s vuelve a sonar un recordatorio corto mientras haya pedidos de
  *  DiDi detectados sin registrar; "0" = solo suena al llegar. Se cambia en Admin → Delivery. */
@@ -70,12 +71,15 @@ async function recordatorioActivo(): Promise<boolean> {
  * del sistema) y vibra; mientras siga sin registrarse, cada 30 s suena un recordatorio corto
  * (configurable) — así nadie se entera tarde de que hay un pedido por preparar y cobrar.
  */
-export function useNotificacionesDidi(activo: boolean): EstadoNotificacionesDidi {
+export function useNotificacionesDidi(activo: boolean, alCancelarPedido?: (numero: string) => void): EstadoNotificacionesDidi {
   const [detectados, setDetectados] = useState<PedidoDetectado[]>([]);
   const [aviso, setAviso] = useState<PedidoDetectado | null>(null);
   const [permiso, setPermiso] = useState(false);
   const vistos = useRef(new Set<string>());
   const recordatorios = useRef(new Map<string, number>());
+  // En una ref: una función nueva en cada render no debe volver a suscribir la escucha.
+  const alCancelarRef = useRef(alCancelarPedido);
+  alCancelarRef.current = alCancelarPedido;
 
   const avisar = useCallback(async (nuevos: PedidoDetectado[]) => {
     const conAviso = nuevos.filter(ameritaAviso);
@@ -91,7 +95,17 @@ export function useNotificacionesDidi(activo: boolean): EstadoNotificacionesDidi
     setPermiso(tienePermiso);
     if (!tienePermiso || !notificacionesApp.activo()) { setDetectados([]); return; }
     const lista = notificacionesApp.listarPendientes().map(interpretar);
-    // Lo que es ruido seguro (entregado, promoción…) se descarta solo: no estorba en la bandeja.
+    // DiDi canceló un pedido: si estaba en preparación, sale de la lista. Nunca se anuncia como
+    // "pedido por preparar y cobrar" (así llegaba "El sistema canceló el pedido número 4").
+    for (const n of lista) {
+      if (!n.esCancelacion || !n.numeroPedido || vistos.current.has(n.id)) continue;
+      const numero = n.numeroPedido;
+      abrirBaseDeDatos()
+        .then((db) => cancelarPedidoDidiPorNumero(db, numero))
+        .then((cuantos) => { if (cuantos > 0) alCancelarRef.current?.(numero); })
+        .catch(() => undefined);
+    }
+    // Lo que es ruido seguro (entregado, cancelado, promoción…) se descarta solo: no estorba en la bandeja.
     const ruido = lista.filter((n) => n.esRuido).map((n) => n.id);
     notificacionesApp.marcarProcesadas(ruido);
     const utiles = lista.filter((n) => !n.esRuido);

@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from "expo-sqlite";
+import { conLimite, LIMITE_DESCARGA_MS } from "./conLimite";
 import type { SyncPullResponse } from "@hangar421/shared";
 import { abrirBaseDeDatos } from "../db/database";
 import { erpFetch, obtenerTokensErp } from "../api/erpHttp";
@@ -17,10 +18,12 @@ const CLAVE_EMPRESA_ERP = "empresa_id_erp";
  * descargas intercaladas se pisarían al apagar "lo que el ERP ya no manda" (cada una vería las
  * filas de la otra como no recibidas).
  */
-function unaALaVez(fn: () => Promise<void>): () => Promise<void> {
+export { conLimite, LIMITE_DESCARGA_MS };
+
+export function unaALaVez(fn: () => Promise<void>, que = "Descarga"): () => Promise<void> {
   let enCurso: Promise<void> | null = null;
   return () => {
-    if (!enCurso) enCurso = fn().finally(() => { enCurso = null; });
+    if (!enCurso) enCurso = conLimite(fn(), LIMITE_DESCARGA_MS, que).finally(() => { enCurso = null; });
     return enCurso;
   };
 }

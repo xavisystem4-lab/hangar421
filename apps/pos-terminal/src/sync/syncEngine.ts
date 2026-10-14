@@ -3,7 +3,7 @@ import { abrirBaseDeDatos } from "../db/database";
 import { pendientesParaDrenar, marcarSincronizado, marcarError, contarPendientes } from "../db/outboxRepo";
 import { erpFetch, obtenerTokensErp } from "../api/erpHttp";
 import { useSyncStatusStore } from "../store/syncStatusStore";
-import { refrescarCatalogo, refrescarInventario, ejecutarPull } from "./pullEngine";
+import { refrescarCatalogo, refrescarInventario, ejecutarPull, conLimite, LIMITE_DESCARGA_MS } from "./pullEngine";
 import { asegurarSesionEnSucursalActiva, refrescarMonederos, refrescarTerminalMultisucursal } from "./terminalErp";
 import { obtenerOCrearDispositivoId, obtenerSucursalErp } from "../db/dispositivoLocal";
 import { encolarUsuariosSinRegistrarEnErp, mapaUsuariosErp, marcarRegistradoEnErp } from "../db/usuariosLocalesRepo";
@@ -44,7 +44,14 @@ let descargaEnCurso: Promise<ResultadoDescarga> | null = null;
  */
 export function actualizarDesdeErp(): Promise<ResultadoDescarga> {
   if (!descargaEnCurso) {
-    descargaEnCurso = descargarTodo().finally(() => { descargaEnCurso = null; });
+    // Con tope total: si algo se cuelga, el siguiente ciclo puede volver a intentarlo.
+    descargaEnCurso = conLimite(descargarTodo(), LIMITE_DESCARGA_MS * 3, "Descarga del ERP")
+      .catch(async (e: any) => {
+        const resultado: ResultadoDescarga = { ok: false, errores: [e?.message ?? "Descarga interrumpida"], fecha: new Date().toISOString() };
+        await registrarResultadoDescarga(await abrirBaseDeDatos(), resultado).catch(() => undefined);
+        return resultado;
+      })
+      .finally(() => { descargaEnCurso = null; });
   }
   return descargaEnCurso;
 }

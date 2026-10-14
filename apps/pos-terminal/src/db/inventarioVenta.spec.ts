@@ -56,7 +56,21 @@ describe("descontarConsumoLocal", () => {
     await descontarConsumoLocal(db, [{ insumoId: "leche-avena", cantidad: 240 }], "suc-1");
     expect(ejecutados).toHaveLength(1);
     expect(ejecutados[0].sql).toContain("existencia = existencia - ?");
-    expect(ejecutados[0].params).toEqual(["suc-1", "leche-avena", -240, 240]);
+    expect(ejecutados[0].params).toEqual(["suc-1", "leche-avena", -240, "leche-avena", 240]);
+  });
+
+  it("solo toca insumos que existen en la tablet (sin romper la llave foránea)", async () => {
+    const { db, ejecutados } = baseFalsa();
+    await descontarConsumoLocal(db, [{ insumoId: "jugo-limon", cantidad: 30 }], "suc-1");
+    expect(ejecutados[0].sql).toContain("WHERE EXISTS (SELECT 1 FROM insumos WHERE id = ?)");
+  });
+
+  it("con la venta, recuerda el consumo hasta que el ERP la reciba", async () => {
+    const { db, ejecutados } = baseFalsa();
+    await descontarConsumoLocal(db, [{ insumoId: "cafe", cantidad: 20 }], "suc-1", "venta-1");
+    expect(ejecutados).toHaveLength(2);
+    expect(ejecutados[1].sql).toContain("INSERT INTO consumo_local_pendiente");
+    expect(ejecutados[1].params.slice(0, 4)).toEqual(["venta-1", "suc-1", "cafe", 20]);
   });
 
   it("ignora cantidades en cero o negativas", async () => {
