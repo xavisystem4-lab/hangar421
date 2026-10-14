@@ -996,13 +996,26 @@ export class PedidosService {
     await this.prisma.pedido.update({ where: { id: pedidoId }, data: totales });
   }
 
+  /**
+   * Folio "AAAAMMDD-0001" con el día de la SUCURSAL, no el del servidor: Railway corre en UTC, así
+   * que a partir de las 6 pm de México los folios salían con la fecha de mañana y el contador se
+   * reiniciaba a media tarde.
+   */
   private async generarFolio(sucursalId: string): Promise<string> {
-    const hoy = new Date();
-    const prefijo = `${hoy.getFullYear()}${String(hoy.getMonth() + 1).padStart(2, "0")}${String(hoy.getDate()).padStart(2, "0")}`;
+    const sucursal = await this.prisma.sucursal.findUnique({ where: { id: sucursalId }, select: { timezone: true } });
+    const zona = sucursal?.timezone ?? "America/Mexico_City";
+    const dia = hoyEnZona(zona);
     const conteo = await this.prisma.pedido.count({
-      where: { sucursalId, createdAt: { gte: new Date(hoy.setHours(0, 0, 0, 0)) } },
+      where: { sucursalId, createdAt: { gte: limiteDelDia(dia, zona, "inicio") } },
     });
-    return `${prefijo}-${String(conteo + 1).padStart(4, "0")}`;
+    // El folio es único por sucursal: si el número ya existe (p. ej. folios de esta fecha que el
+    // cálculo anterior en UTC dio la tarde de ayer), se toma el siguiente libre.
+    const prefijo = dia.replace(/-/g, "");
+    for (let n = conteo + 1; ; n++) {
+      const folio = `${prefijo}-${String(n).padStart(4, "0")}`;
+      const usado = await this.prisma.pedido.findFirst({ where: { sucursalId, folio }, select: { id: true } });
+      if (!usado) return folio;
+    }
   }
 
   /**
