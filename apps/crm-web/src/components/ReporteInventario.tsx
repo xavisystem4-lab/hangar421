@@ -65,7 +65,7 @@ function horaCorta(): string {
  *  API — Chrome/Edge de escritorio); en navegadores sin soporte (Firefox, Safari, o si el usuario
  *  cancela con Escape en vez de aceptar) cae a la descarga normal del navegador, que va a la
  *  carpeta de Descargas salvo que el propio navegador esté configurado para preguntar siempre. */
-async function guardarConDialogoWeb(blob: Blob, nombreSugerido: string, tipos: { description: string; accept: Record<string, string[]> }[]) {
+export async function guardarConDialogoWeb(blob: Blob, nombreSugerido: string, tipos: { description: string; accept: Record<string, string[]> }[]) {
   const w = window as unknown as { showSaveFilePicker?: (opciones: unknown) => Promise<FileSystemFileHandleLike> };
   if (w.showSaveFilePicker) {
     try {

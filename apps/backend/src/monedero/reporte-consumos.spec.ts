@@ -37,3 +37,28 @@ describe("reporteConsumos (crédito de empleados)", () => {
     expect(prisma.pedido.findMany).not.toHaveBeenCalled();
   });
 });
+
+describe("enviarReporteConsumos", () => {
+  it("arma el correo con los datos de la base y adjunta PDF y Excel", async () => {
+    const prisma = {
+      movimientoMonedero: { findMany: jest.fn(async () => [{ usuarioId: "ana", pedidoId: "p1", monto: "95", createdAt: new Date("2026-10-12T15:00:00Z"), monedero: { usuario: { nombre: "Ana" } } }]) },
+      pedido: { findMany: jest.fn(async () => [{ id: "p1", folio: "12", total: "95", sucursal: { nombre: "Benito Juárez" }, items: [] }]) },
+      sucursal: { findUnique: jest.fn(async () => ({ nombre: "Benito Juárez" })) },
+    };
+    const correo = { enviar: jest.fn(async () => ({ enviadoA: ["a@b.com"] })) };
+    await new MonederoService(prisma as any, correo as any).enviarReporteConsumos("e1", {
+      sucursalId: "bj", destinatarios: "a@b.com, malo", periodo: "12/10/2026", pdfBase64: "UERG", excelBase64: "WExT",
+    }, "Admin");
+    const [msg] = (correo.enviar.mock.calls as any[])[0];
+    expect(msg.destinatarios).toEqual(["a@b.com"]);
+    expect(msg.asunto).toBe("Crédito de empleados · Benito Juárez · 12/10/2026");
+    expect(msg.html).toContain("Ana · $95.00");
+    expect(msg.adjuntos.map((a: any) => a.nombre)).toEqual(["credito-empleados-12-10-2026.pdf", "credito-empleados-12-10-2026.xlsx"]);
+  });
+
+  it("sin correos válidos no envía", async () => {
+    const correo = { enviar: jest.fn() };
+    await expect(new MonederoService({} as any, correo as any).enviarReporteConsumos("e1", { destinatarios: "nada" })).rejects.toThrow("correo válido");
+    expect(correo.enviar).not.toHaveBeenCalled();
+  });
+});

@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { agruparConsumosPorEmpleada, describirProductoConsumido, type ConsumoPorEmpleada } from "@hangar421/shared";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
 import { consumosCreditoLocales } from "../db/creditoEmpleadosRepo";
 import { formatearFecha } from "../reportes/armarReporte";
+import { exportarCreditoExcel, exportarCreditoPdf } from "../reportes/exportarCredito";
+import { obtenerNombreSucursal } from "../db/dispositivoLocal";
 
 const DIAS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 const hora = (iso: string) => {
@@ -28,6 +30,24 @@ export function ModalCreditoEmpleadosReporte({ desdeIso, hastaIso, etiquetaPerio
   const e = crearEstilos(colores);
   const [grupos, setGrupos] = useState<ConsumoPorEmpleada[] | null>(null);
   const [abierta, setAbierta] = useState<string | null>(null);
+  const [exportando, setExportando] = useState<"pdf" | "excel" | null>(null);
+
+  async function exportar(tipo: "pdf" | "excel") {
+    if (!grupos || grupos.length === 0) return;
+    setExportando(tipo);
+    try {
+      if (tipo === "pdf") {
+        const sucursal = (await abrirBaseDeDatos().then(obtenerNombreSucursal).catch(() => null)) ?? "HANGAR 421";
+        await exportarCreditoPdf(grupos, sucursal, etiquetaPeriodo);
+      } else {
+        await exportarCreditoExcel(grupos, etiquetaPeriodo);
+      }
+    } catch (e: any) {
+      Alert.alert("Exportar", e?.message ?? "No se pudo generar el archivo.");
+    } finally {
+      setExportando(null);
+    }
+  }
 
   useEffect(() => {
     abrirBaseDeDatos()
@@ -63,6 +83,15 @@ export function ModalCreditoEmpleadosReporte({ desdeIso, hastaIso, etiquetaPerio
               <View style={e.totalCaja}>
                 <Text style={e.ayuda}>Total consumido a crédito</Text>
                 <Text style={e.totalTexto}>${total.toFixed(2)}</Text>
+              </View>
+              {/* Compartir abre el selector del sistema: ahí se elige Gmail/Outlook para mandarlo por correo. */}
+              <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+                <TouchableOpacity onPress={() => exportar("pdf")} disabled={!!exportando} style={[e.botonExportar, { backgroundColor: colores.navy }]}>
+                  {exportando === "pdf" ? <ActivityIndicator color="#fff" /> : <Text style={e.botonExportarTexto}>📄 PDF / correo</Text>}
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => exportar("excel")} disabled={!!exportando} style={[e.botonExportar, { backgroundColor: colores.green }]}>
+                  {exportando === "excel" ? <ActivityIndicator color="#fff" /> : <Text style={e.botonExportarTexto}>📊 Excel / correo</Text>}
+                </TouchableOpacity>
               </View>
               <ScrollView style={{ flex: 1 }}>
                 {grupos.map((g) => (
@@ -114,5 +143,7 @@ function crearEstilos(c: ReturnType<typeof usarColores>) {
     consumo: { borderTopWidth: 1, borderTopColor: c.borde, paddingTop: 8, marginTop: 8 },
     fecha: { fontSize: 13, fontWeight: "700", color: c.texto },
     producto: { fontSize: 13, color: c.texto, marginTop: 2 },
+    botonExportar: { flex: 1, borderRadius: 10, minHeight: 46, alignItems: "center", justifyContent: "center" },
+    botonExportarTexto: { color: "#fff", fontWeight: "800", fontSize: 14 },
   });
 }
