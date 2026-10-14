@@ -133,9 +133,17 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
 
   // En una venta de DiDi se ofrece además "Pagado en línea" (el cliente ya pagó en la app): no es
   // un método configurable del dispositivo, solo tiene sentido para el grupo DIDI.
+  // Va PRIMERO y viene preseleccionado: un pedido entregado por DiDi Food ya está pagado en la app.
+  // Cobrarlo como "Tarjeta" inflaba la tarjeta del corte y no cuadraba con la terminal (Clip).
   const metodosDelCobro = esDidi
-    ? [...metodos, { valor: MetodoPago.EN_LINEA, etiqueta: etiquetaMetodoPago[MetodoPago.EN_LINEA], icono: ICONO[MetodoPago.EN_LINEA] }]
+    ? [{ valor: MetodoPago.EN_LINEA, etiqueta: etiquetaMetodoPago[MetodoPago.EN_LINEA], icono: ICONO[MetodoPago.EN_LINEA] }, ...metodos]
     : metodos;
+  useEffect(() => {
+    if (!esDidi) return;
+    setMetodoElegido(true);
+    setMetodoActivo(MetodoPago.EN_LINEA);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [esDidi]);
 
   // Pesos por dólar del turno abierto (se pregunta al abrir caja). Sin él no se cobra en dólares.
   const [tipoCambio, setTipoCambio] = useState<number | null>(null);
@@ -199,6 +207,23 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
   }
 
   function elegirMetodo(metodo: MetodoPago) {
+    // En un pedido de DiDi, cobrar con otro método se confirma: casi siempre es un error y
+    // descuadra el corte contra la terminal de tarjeta.
+    if (esDidi && metodo !== MetodoPago.EN_LINEA) {
+      Alert.alert(
+        "Pedido de DiDi",
+        `Los pedidos de DiDi Food ya vienen pagados en la app ("Pagado en línea"). ¿De verdad el cliente pagó aquí con ${etiquetaMetodoPago[metodo]}?`,
+        [
+          { text: "No, fue en línea", style: "cancel", onPress: () => aplicarMetodo(MetodoPago.EN_LINEA) },
+          { text: "Sí, pagó aquí", onPress: () => aplicarMetodo(metodo) },
+        ],
+      );
+      return;
+    }
+    aplicarMetodo(metodo);
+  }
+
+  function aplicarMetodo(metodo: MetodoPago) {
     setMetodoElegido(true);
     setMetodoActivo(metodo);
     // En efectivo el cajero teclea con cuánto le pagan; en los demás métodos el importe es
