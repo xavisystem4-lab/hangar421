@@ -1,5 +1,6 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { MONEDERO_LIMITE_DEFAULT, agruparConsumosPorEmpleada, type ConsumoCredito } from "@hangar421/shared";
+import { BadRequestException, Injectable, NotFoundException, Optional, ServiceUnavailableException } from "@nestjs/common";
+import { MONEDERO_LIMITE_DEFAULT, agruparConsumosPorEmpleada, htmlReporteCredito, type ConsumoCredito } from "@hangar421/shared";
+import { CorreoService } from "../correo/correo.service";
 import { PrismaService } from "../prisma/prisma.service";
 
 export interface ConfigurarMonederoDto {
@@ -51,7 +52,7 @@ const DIAS_DE_MOVIMIENTOS = 8;
  */
 @Injectable()
 export class MonederoService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, @Optional() private correo?: CorreoService) {}
 
   /** Monederos de la empresa con sus consumos recientes: lo que la terminal guarda para calcular saldos sin red. */
   async paraTerminal(empresaId: string) {
@@ -197,5 +198,45 @@ export class MonederoService {
       };
     });
     return agruparConsumosPorEmpleada(consumos);
+  }
+
+  /**
+   * Manda el reporte de crédito por correo. El cuerpo lo arma el servidor con los datos de la base
+   * (no con lo que mande el navegador); el PDF y el Excel los genera el ERP y llegan en base64.
+   */
+  async enviarReporteConsumos(
+    empresaId: string,
+    datos: { desde?: string; hasta?: string; sucursalId?: string; destinatarios: string | string[]; mensaje?: string; periodo?: string; pdfBase64?: string; excelBase64?: string },
+    enviadoPor?: string,
+  ) {
+    if (!this.correo) throw new ServiceUnavailableException("El correo no está disponible en este servidor.");
+    const destinatarios = CorreoService.normalizarDestinatarios(datos.destinatarios);
+    if (destinatarios.length === 0) throw new BadRequestException("Captura al menos un correo válido.");
+    const MAX = 8 * 1024 * 1024;
+    if ((datos.pdfBase64?.length ?? 0) > MAX || (datos.excelBase64?.length ?? 0) > MAX) throw new BadRequestException("Los archivos son demasiado grandes para enviarse por correo.");
+
+    const grupos = await this.reporteConsumos(empresaId, datos);
+    const sucursal = datos.sucursalId ? await this.prisma.sucursal.findUnique({ where: { id: datos.sucursalId }, select: { nombre: true } }) : null;
+    const zona = { timeZone: "America/Mexico_City" } as const;
+    const fecha = (iso: string) => new Date(iso).toLocaleDateString("es-MX", { ...zona, weekday: "short", day: "2-digit", month: "short", year: "numeric" });
+    const hora = (iso: string) => new Date(iso).toLocaleTimeString("es-MX", { ...zona, hour: "2-digit", minute: "2-digit" });
+    const periodo = datos.periodo ?? "";
+    const nombreSucursal = sucursal?.nombre ?? "Todas las sucursales";
+    const html = htmlReporteCredito(grupos, {
+      sucursal: nombreSucursal, periodo, fecha, hora,
+      mensaje: [datos.mensaje, enviadoPor ? `Enviado por ${enviadoPor}.` : ""].filter(Boolean).join("\n") || undefined,
+    });
+    const total = grupos.reduce((s, g) => s + g.totalCredito, 0);
+    const texto = [
+      `Crédito de empleados · ${nombreSucursal} · ${periodo}`,
+      `Total: $${total.toFixed(2)}`,
+      ...grupos.map((g) => `- ${g.empleado}: $${g.totalCredito.toFixed(2)} (${g.numConsumos} consumo(s))`),
+    ].join("\n");
+    const base = `credito-empleados-${periodo.replace(/[^\w]+/g, "-")}`.replace(/-+$/, "");
+    const adjuntos = [
+      ...(datos.pdfBase64 ? [{ nombre: `${base}.pdf`, contenidoBase64: datos.pdfBase64, tipo: "application/pdf" }] : []),
+      ...(datos.excelBase64 ? [{ nombre: `${base}.xlsx`, contenidoBase64: datos.excelBase64, tipo: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }] : []),
+    ];
+    return this.correo.enviar({ destinatarios, asunto: `Crédito de empleados · ${nombreSucursal} · ${periodo}`, html, texto, adjuntos }, empresaId);
   }
 }

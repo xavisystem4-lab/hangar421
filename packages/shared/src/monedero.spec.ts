@@ -1,4 +1,4 @@
-import { agruparConsumosPorEmpleada, calcularUsoMonedero, csvConsumosCredito, describirProductoConsumido, inicioPeriodoMonedero, saldoMonedero } from "./monedero";
+import { agruparConsumosPorEmpleada, calcularUsoMonedero, csvConsumosCredito, describirProductoConsumido, filasResumenCredito, htmlReporteCredito, inicioPeriodoMonedero, saldoMonedero } from "./monedero";
 
 // Fechas con el constructor LOCAL (año, mes, día, hora): las pruebas no dependen de la zona del equipo.
 const viernes9pm = { diaSemana: 5, hora: 21 };
@@ -77,5 +77,14 @@ describe("reporte de consumo de crédito", () => {
     const filas = csv.replace("﻿", "").split("\n");
     expect(filas).toHaveLength(4);
     expect(filas[1]).toBe("Ana,2026-10-13T09:00,20,Benito Juárez,Latte · Avena (+$25.00),2,190.00,40.00");
+  });
+
+  it("resumen con fila de total y HTML con cada empleada y sus consumos", () => {
+    const g = agruparConsumosPorEmpleada(consumos);
+    expect(filasResumenCredito(g)).toEqual([["Empleada", "Consumos", "Productos", "Total a crédito"], ["Ana", 2, 3, 135], ["Luz", 1, 1, 50], ["TOTAL", 3, 4, 185]]);
+    const html = htmlReporteCredito(g, { sucursal: "Benito Juárez", periodo: "12/10/2026", fecha: (i) => i.slice(0, 10), hora: (i) => i.slice(11, 16) });
+    expect(html).toContain("Total consumido a crédito: <b>$185.00</b>");
+    expect(html).toContain("Ana · $135.00");
+    expect(html).toContain("1 × Latte · Avena (+$25.00)");
   });
 });

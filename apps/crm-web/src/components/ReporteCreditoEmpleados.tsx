@@ -1,9 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { csvConsumosCredito, describirProductoConsumido, type ConsumoPorEmpleada } from "@hangar421/shared";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import * as XLSX from "xlsx";
+import { describirProductoConsumido, filasDetalleCredito, filasResumenCredito, type ConsumoPorEmpleada } from "@hangar421/shared";
 import { apiFetch } from "@/lib/api";
 import { StatTile } from "@/components/StatTile";
+import { guardarConDialogoWeb } from "@/components/ReporteInventario";
 
 const ZONA = "America/Mexico_City";
 const fmtFecha = (iso: string) => new Date(iso).toLocaleDateString("es-MX", { timeZone: ZONA, weekday: "short", day: "2-digit", month: "short", year: "numeric" });
@@ -15,7 +19,55 @@ const fmtFechaHora = (iso: string) => `${fmtFecha(iso)} ${fmtHora(iso)}`;
  * folio y los productos (con sus modificadores). Mismo agrupado que la tablet
  * (agruparConsumosPorEmpleada en shared).
  */
-export function ReporteCreditoEmpleados({ sucursalId, desde, hasta }: { sucursalId: string; desde: string; hasta: string }) {
+const CLAVE_DESTINATARIOS = "hangar421_credito_destinatarios";
+
+/** Periodo legible: "12/10/2026" o "06/10/2026 al 12/10/2026". */
+function periodoTexto(desde: string, hasta: string): string {
+  const f = (d: string) => d.split("-").reverse().join("/");
+  return desde === hasta ? f(desde) : `${f(desde)} al ${f(hasta)}`;
+}
+
+function construirPdf(grupos: ConsumoPorEmpleada[], periodo: string, sucursal: string): jsPDF {
+  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  const total = grupos.reduce((s, g) => s + g.totalCredito, 0);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.setTextColor(11, 30, 51);
+  doc.text("HANGAR 421 · Crédito de empleados", 40, 50);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(107, 114, 128);
+  doc.text(`${sucursal} · ${periodo}`, 40, 68);
+  doc.setFontSize(12); doc.setTextColor(17, 19, 24);
+  doc.text(`Total consumido a crédito: $${total.toFixed(2)} · ${grupos.length} empleada(s)`, 40, 92);
+  autoTable(doc, {
+    startY: 104,
+    head: [["Empleada", "Consumos", "Productos", "Total"]],
+    body: grupos.map((g) => [g.empleado, String(g.numConsumos), String(g.numProductos), `$${g.totalCredito.toFixed(2)}`]),
+    headStyles: { fillColor: [11, 30, 51] }, styles: { fontSize: 10 }, margin: { left: 40, right: 40 },
+  });
+  for (const g of grupos) {
+    const y = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 120) + 24;
+    doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.setTextColor(11, 30, 51);
+    doc.text(`${g.empleado} · $${g.totalCredito.toFixed(2)}`, 40, y);
+    autoTable(doc, {
+      startY: y + 8,
+      head: [["Día y fecha", "Hora", "Folio", "Productos", "A crédito"]],
+      body: g.consumos.map((c) => [fmtFecha(c.fecha), fmtHora(c.fecha), c.folio ? `#${c.folio}` : "—", c.productos.map((p) => `${p.cantidad} × ${describirProductoConsumido(p)}`).join("\n") || "(sin detalle)", `$${c.montoCredito.toFixed(2)}`]),
+      headStyles: { fillColor: [180, 83, 9] }, styles: { fontSize: 9, cellPadding: 4 }, columnStyles: { 4: { halign: "right", fontStyle: "bold" } },
+      margin: { left: 40, right: 40 },
+    });
+  }
+  return doc;
+}
+
+function construirExcelBase64(grupos: ConsumoPorEmpleada[]): string {
+  const libro = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(libro, XLSX.utils.aoa_to_sheet(filasResumenCredito(grupos)), "Resumen");
+  XLSX.utils.book_append_sheet(libro, XLSX.utils.aoa_to_sheet(filasDetalleCredito(grupos, fmtFechaHora)), "Detalle");
+  return XLSX.write(libro, { bookType: "xlsx", type: "base64" }) as string;
+}
+
+const base64ABlob = (b64: string, tipo: string) => new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], { type: tipo });
+const TIPO_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+export function ReporteCreditoEmpleados({ sucursalId, sucursalNombre, desde, hasta }: { sucursalId: string; sucursalNombre?: string; desde: string; hasta: string }) {
   const [grupos, setGrupos] = useState<ConsumoPorEmpleada[]>([]);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,14 +96,44 @@ export function ReporteCreditoEmpleados({ sucursalId, desde, hasta }: { sucursal
     });
   }
 
-  function exportar() {
-    const csv = csvConsumosCredito(grupos, fmtFechaHora);
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `credito-empleados_${desde}_a_${hasta}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const periodo = periodoTexto(desde, hasta);
+  const archivoBase = `credito-empleados_${desde}_a_${hasta}`;
+  const [modalCorreo, setModalCorreo] = useState(false);
+  const [destinatarios, setDestinatarios] = useState(() => { try { return localStorage.getItem(CLAVE_DESTINATARIOS) ?? ""; } catch { return ""; } });
+  const [mensajeCorreo, setMensajeCorreo] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [resultadoCorreo, setResultadoCorreo] = useState<{ ok: boolean; texto: string } | null>(null);
+
+  async function exportarPdf() {
+    const doc = construirPdf(grupos, periodo, sucursalNombre ?? "");
+    await guardarConDialogoWeb(doc.output("blob"), `${archivoBase}.pdf`, [{ description: "Documento PDF", accept: { "application/pdf": [".pdf"] } }]);
+  }
+
+  async function exportarExcel() {
+    await guardarConDialogoWeb(base64ABlob(construirExcelBase64(grupos), TIPO_XLSX), `${archivoBase}.xlsx`, [{ description: "Libro de Excel", accept: { [TIPO_XLSX]: [".xlsx"] } }]);
+  }
+
+  async function enviarPorCorreo() {
+    if (!destinatarios.trim()) { setResultadoCorreo({ ok: false, texto: "Captura al menos un correo." }); return; }
+    setEnviando(true);
+    setResultadoCorreo(null);
+    try {
+      const pdfBase64 = construirPdf(grupos, periodo, sucursalNombre ?? "").output("datauristring").split(",")[1];
+      const r = await apiFetch<{ enviadoA: string[] }>("/monedero/consumos/enviar", {
+        method: "POST",
+        body: JSON.stringify({
+          sucursalId, periodo, destinatarios, mensaje: mensajeCorreo.trim() || undefined,
+          desde: new Date(`${desde}T00:00:00`).toISOString(), hasta: new Date(`${hasta}T23:59:59`).toISOString(),
+          pdfBase64, excelBase64: construirExcelBase64(grupos),
+        }),
+      });
+      try { localStorage.setItem(CLAVE_DESTINATARIOS, destinatarios.trim()); } catch { /* sin almacenamiento */ }
+      setResultadoCorreo({ ok: true, texto: `Enviado a ${r.enviadoA.join(", ")}.` });
+    } catch (e) {
+      setResultadoCorreo({ ok: false, texto: (e as Error)?.message || "No se pudo enviar el correo." });
+    } finally {
+      setEnviando(false);
+    }
   }
 
   return (
@@ -61,10 +143,32 @@ export function ReporteCreditoEmpleados({ sucursalId, desde, hasta }: { sucursal
         <StatTile etiqueta="Consumos" valor={String(consumos)} acento="var(--h421-blue)" />
         <StatTile etiqueta="Empleadas" valor={String(grupos.length)} acento="var(--h421-green)" />
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: "auto" }}>
-          <button onClick={exportar} disabled={grupos.length === 0} style={{ background: "var(--h421-green-bg)", color: "var(--h421-green)", border: "1px solid var(--h421-green)", padding: "10px 14px", fontSize: 13 }}>⬇ Excel (CSV)</button>
+          <button onClick={exportarPdf} disabled={grupos.length === 0} style={{ background: "transparent", border: "1px solid var(--h421-gray-400)", padding: "10px 14px", fontSize: 13 }}>📄 PDF</button>
+          <button onClick={exportarExcel} disabled={grupos.length === 0} style={{ background: "var(--h421-green-bg)", color: "var(--h421-green)", border: "1px solid var(--h421-green)", padding: "10px 14px", fontSize: 13 }}>📊 Excel</button>
+          <button onClick={() => { setResultadoCorreo(null); setModalCorreo(true); }} disabled={grupos.length === 0} style={{ background: "var(--h421-blue)", color: "#fff", padding: "10px 14px", fontSize: 13 }}>✉ Correo</button>
           <button onClick={() => window.print()} disabled={grupos.length === 0} style={{ background: "transparent", border: "1px solid var(--h421-gray-200)", padding: "10px 14px", fontSize: 13 }}>🖨 Imprimir</button>
         </div>
       </div>
+
+      {modalCorreo && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }}>
+          <div className="card" style={{ width: 460, maxWidth: "100%" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h3 style={{ margin: 0 }}>Enviar por correo</h3>
+              <button onClick={() => setModalCorreo(false)} style={{ background: "none", fontSize: 20 }}>✕</button>
+            </div>
+            <p style={{ fontSize: 13, color: "var(--h421-gray-500)" }}>Crédito de empleados · {periodo}. Van adjuntos el PDF y el Excel.</p>
+            <input value={destinatarios} onChange={(e) => setDestinatarios(e.target.value)} placeholder="correo@ejemplo.com, otro@ejemplo.com"
+              style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)", marginBottom: 8 }} />
+            <textarea value={mensajeCorreo} onChange={(e) => setMensajeCorreo(e.target.value)} placeholder="Mensaje (opcional)" rows={3}
+              style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
+            {resultadoCorreo && <p style={{ color: resultadoCorreo.ok ? "var(--h421-green)" : "var(--h421-red)", fontSize: 13 }}>{resultadoCorreo.texto}</p>}
+            <button onClick={enviarPorCorreo} disabled={enviando} style={{ width: "100%", marginTop: 8, background: "var(--h421-blue)", color: "#fff", padding: "10px 16px" }}>
+              {enviando ? "Enviando…" : "Enviar"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {cargando && <p style={{ color: "var(--h421-gray-400)" }}>Cargando…</p>}
       {error && <p style={{ color: "var(--h421-red)" }}>{error}</p>}

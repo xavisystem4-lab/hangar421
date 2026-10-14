@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Put, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { RolUsuario } from "@hangar421/shared";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
@@ -30,6 +30,14 @@ export class MonederoController {
   @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
   consumos(@Req() req: any, @Query("desde") desde?: string, @Query("hasta") hasta?: string, @Query("sucursalId") sucursalId?: string) {
     return this.monedero.reporteConsumos(req.user.empresaId, { desde, hasta, sucursalId: sucursalId || undefined });
+  }
+
+  /** Manda el reporte de crédito por correo (PDF y Excel adjuntos). */
+  @Post("consumos/enviar")
+  @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
+  @Audit("MONEDERO", "ENVIAR_REPORTE")
+  enviarConsumos(@Req() req: any, @Body() body: any) {
+    return this.monedero.enviarReporteConsumos(req.user.empresaId, body ?? {}, req.user?.nombre);
   }
 
   @Get()

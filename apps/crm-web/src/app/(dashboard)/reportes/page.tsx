@@ -112,7 +112,7 @@ export default function ReportesPage() {
       </div>
 
       {vista === "credito" ? (
-        <ReporteCreditoEmpleados sucursalId={sucursalId} desde={desde} hasta={hasta} />
+        <ReporteCreditoEmpleados sucursalId={sucursalId} sucursalNombre={seleccion?.nombre ?? undefined} desde={desde} hasta={hasta} />
       ) : (<>
       {cargando && <p style={{ color: "var(--h421-gray-400)" }}>Cargando…</p>}
 

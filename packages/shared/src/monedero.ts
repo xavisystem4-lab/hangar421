@@ -103,20 +103,69 @@ export function describirProductoConsumido(p: ProductoConsumido): string {
   return [p.nombre, ...mods].join(" · ");
 }
 
-/** CSV (separado por comas, con BOM para Excel) de todos los consumos: una fila por producto. */
-export function csvConsumosCredito(grupos: ConsumoPorEmpleada[], formatearFecha: (iso: string) => string): string {
-  const esc = (v: string | number) => {
-    const t = String(v);
-    return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
-  };
-  const filas = [["Empleada", "Fecha y hora", "Folio", "Sucursal", "Producto", "Cantidad", "Importe", "Cargado al crédito (venta)"]];
+/** Hoja "Resumen": una fila por empleada y el total. */
+export function filasResumenCredito(grupos: ConsumoPorEmpleada[]): (string | number)[][] {
+  const filas: (string | number)[][] = [["Empleada", "Consumos", "Productos", "Total a crédito"]];
+  for (const g of grupos) filas.push([g.empleado, g.numConsumos, g.numProductos, g.totalCredito]);
+  filas.push(["TOTAL", grupos.reduce((s, g) => s + g.numConsumos, 0), grupos.reduce((s, g) => s + g.numProductos, 0), round2(grupos.reduce((s, g) => s + g.totalCredito, 0))]);
+  return filas;
+}
+
+/** Hoja "Detalle": una fila por producto consumido, con día, hora y folio. */
+export function filasDetalleCredito(grupos: ConsumoPorEmpleada[], formatearFecha: (iso: string) => string): (string | number)[][] {
+  const filas: (string | number)[][] = [["Empleada", "Fecha y hora", "Folio", "Sucursal", "Producto", "Cantidad", "Importe", "Cargado al crédito (venta)"]];
   for (const g of grupos) {
     for (const c of g.consumos) {
       for (const p of c.productos) {
         const importe = round2((p.precioUnitario + p.modificadores.reduce((s, m) => s + m.precioExtra, 0)) * p.cantidad);
-        filas.push([g.empleado, formatearFecha(c.fecha), c.folio ?? "", c.sucursal ?? "", describirProductoConsumido(p), String(p.cantidad), importe.toFixed(2), c.montoCredito.toFixed(2)]);
+        filas.push([g.empleado, formatearFecha(c.fecha), c.folio ?? "", c.sucursal ?? "", describirProductoConsumido(p), p.cantidad, importe, c.montoCredito]);
       }
     }
   }
-  return "﻿" + filas.map((f) => f.map(esc).join(",")).join("\n");
+  return filas;
+}
+
+/** CSV (separado por comas, con BOM para Excel) de todos los consumos: una fila por producto. */
+export function csvConsumosCredito(grupos: ConsumoPorEmpleada[], formatearFecha: (iso: string) => string): string {
+  const esc = (v: string | number) => {
+    const t = typeof v === "number" ? v.toFixed(2).replace(/\.00$/, "") : String(v);
+    return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+  };
+  const filas = filasDetalleCredito(grupos, formatearFecha).map((f, i) =>
+    i === 0 ? f : f.map((v, col) => (col === 6 || col === 7 ? Number(v).toFixed(2) : v)),
+  );
+  return "\uFEFF" + filas.map((f) => f.map(esc).join(",")).join("\n");
+}
+
+/**
+ * HTML del reporte (hoja carta): encabezado, total, una tabla por empleada con día, hora, folio,
+ * productos e importe. Lo usan la tablet (PDF con el motor del sistema) y el correo del ERP.
+ */
+export function htmlReporteCredito(
+  grupos: ConsumoPorEmpleada[],
+  opciones: { sucursal: string; periodo: string; fecha: (iso: string) => string; hora: (iso: string) => string; mensaje?: string },
+): string {
+  const esc = (t: unknown) => String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
+  const total = round2(grupos.reduce((s, g) => s + g.totalCredito, 0));
+  const secciones = grupos.map((g) => `
+    <h3 style="margin:18px 0 6px;font-size:15px;color:#0b1e33">${esc(g.empleado)} · $${g.totalCredito.toFixed(2)} <span style="font-weight:400;color:#6b7280;font-size:12px">(${g.numConsumos} consumo(s), ${g.numProductos} producto(s))</span></h3>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="background:#f3f4f6;text-align:left"><th style="padding:5px 6px">Día y fecha</th><th style="padding:5px 6px">Hora</th><th style="padding:5px 6px">Folio</th><th style="padding:5px 6px">Productos</th><th style="padding:5px 6px;text-align:right">A crédito</th></tr></thead>
+      <tbody>${g.consumos.map((c) => `<tr>
+        <td style="padding:5px 6px;border-bottom:1px solid #e5e7eb;white-space:nowrap">${esc(opciones.fecha(c.fecha))}</td>
+        <td style="padding:5px 6px;border-bottom:1px solid #e5e7eb">${esc(opciones.hora(c.fecha))}</td>
+        <td style="padding:5px 6px;border-bottom:1px solid #e5e7eb">${c.folio ? "#" + esc(c.folio) : "—"}</td>
+        <td style="padding:5px 6px;border-bottom:1px solid #e5e7eb">${c.productos.map((p) => `${p.cantidad} × ${esc(describirProductoConsumido(p))}`).join("<br>") || "(sin detalle)"}</td>
+        <td style="padding:5px 6px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700">$${c.montoCredito.toFixed(2)}</td>
+      </tr>`).join("")}</tbody>
+    </table>`).join("");
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"></head><body style="font-family:Arial,Helvetica,sans-serif;color:#111318;margin:24px">
+    <div style="border-bottom:2px solid #0b1e33;padding-bottom:10px">
+      <div style="font-size:20px;font-weight:800;color:#0b1e33">HANGAR 421 · Crédito de empleados</div>
+      <div style="font-size:13px;color:#6b7280">${esc(opciones.sucursal)} · ${esc(opciones.periodo)}</div>
+    </div>
+    ${opciones.mensaje ? `<p style="white-space:pre-wrap;background:#f9fafb;border-left:3px solid #0b1e33;padding:8px 10px">${esc(opciones.mensaje)}</p>` : ""}
+    <p style="font-size:15px;margin:14px 0 4px">Total consumido a crédito: <b>$${total.toFixed(2)}</b> · ${grupos.length} empleada(s)</p>
+    ${grupos.length === 0 ? `<p style="color:#6b7280">Nadie usó crédito de empleado en este periodo.</p>` : secciones}
+  </body></html>`;
 }
