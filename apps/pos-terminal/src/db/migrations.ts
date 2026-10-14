@@ -720,6 +720,27 @@ export const MIGRACIONES: Migracion[] = [
       `);
     },
   },
+  {
+    version: 21,
+    nombre: "consumo_local_pendiente",
+    up: async (db) => {
+      // Lo que cada venta de esta tablet descontó del almacén local, mientras la venta no llega
+      // al ERP. Al bajar la existencia oficial se vuelve a restar encima (ver
+      // inventario/existenciaLocal.ts); cuando la venta se sincroniza, la fila sobra y se borra.
+      // Sin llave foránea a insumos a propósito: una receta puede usar un insumo que esta
+      // sucursal no maneja, y eso no debe tumbar la venta ni la descarga.
+      await db.execAsync(`
+        CREATE TABLE consumo_local_pendiente (
+          venta_id TEXT NOT NULL,
+          sucursal_id TEXT NOT NULL,
+          insumo_id TEXT NOT NULL,
+          cantidad REAL NOT NULL,
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX idx_consumo_pendiente_venta ON consumo_local_pendiente(venta_id);
+      `);
+    },
+  },
 ];
 
 /** Corre, en orden, toda migración con `version` mayor a la ya aplicada — cada una dentro de su

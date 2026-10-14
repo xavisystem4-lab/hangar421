@@ -31,6 +31,7 @@ import { PosAdminSincronizacionScreen } from "./PosAdminSincronizacionScreen";
 import { PosAdminImpresoraScreen } from "./PosAdminImpresoraScreen";
 import { PosAdminPlataformasScreen } from "./PosAdminPlataformasScreen";
 import { useAvisosDelivery } from "../plataformas/useAvisosDelivery";
+import { useFrescuraErp } from "../sync/useFrescuraErp";
 import { useNotificacionesDidi, type PedidoDetectado } from "../plataformas/useNotificacionesDidi";
 import { nombrePedidoDidi } from "../plataformas/notificacionesDidi";
 import type { ItemPedidoDidi } from "../plataformas/productosDidi";
@@ -115,7 +116,13 @@ export function PosNavigator() {
   // Pedidos que anuncia la app de DiDi instalada en ESTA tablet (notificaciones): avisan igual
   // que los de la bandeja del ERP y, al tocar, dejan la Venta lista para capturar el pedido con
   // su número y el grupo DIDI abierto (ver plataformas/useNotificacionesDidi.ts).
-  const didi = useNotificacionesDidi((puede(PERMISOS_TERMINAL.VENTA_COBRAR) || puedeDelivery) && !mostrarConexion);
+  // Datos del ERP viejos (descarga fallando o sin red mucho tiempo): banda ámbar con Reintentar.
+  const frescura = useFrescuraErp(sync.conectadoAlErp && !mostrarConexion);
+
+  const didi = useNotificacionesDidi((puede(PERMISOS_TERMINAL.VENTA_COBRAR) || puedeDelivery) && !mostrarConexion, (numero) => {
+    recargarPedidosDidi();
+    Alert.alert("DiDi canceló un pedido", `El pedido #${numero} se canceló en DiDi y se quitó de la lista de preparación.`);
+  });
   const [categoriaSugerida, setCategoriaSugerida] = useState<string | null>(null);
   /** Tocar el aviso abre la ventana con lo que llegó de DiDi para revisarlo y confirmarlo. */
   const [pedidoDidiAbierto, setPedidoDidiAbierto] = useState<PedidoDetectado | null>(null);
@@ -439,6 +446,22 @@ export function PosNavigator() {
         </View>
       )}
 
+      {frescura.atrasada && pantalla !== "cobro" && (
+        <View style={estilos.avisoErp} accessibilityRole="alert">
+          <View style={{ flex: 1 }}>
+            <Text style={estilos.avisoErpTexto}>
+              ⚠ Datos del ERP sin actualizar {frescura.desde ? `desde ${frescura.desde}` : "(nunca se han bajado)"}
+            </Text>
+            <Text style={estilos.avisoErpSub}>
+              {frescura.motivo ?? "Inventario, precios y catálogo pueden no estar al día."} Puedes seguir vendiendo.
+            </Text>
+          </View>
+          <TouchableOpacity onPress={frescura.reintentar} disabled={frescura.descargando} style={estilos.avisoErpBoton}>
+            {frescura.descargando ? <ActivityIndicator color="#5A3A00" /> : <Text style={{ color: "#5A3A00", fontWeight: "800" }}>Reintentar</Text>}
+          </TouchableOpacity>
+        </View>
+      )}
+
       {didi.aviso && (
         <View style={estilos.avisoDelivery} accessibilityRole="alert">
           <TouchableOpacity onPress={() => registrarDidi(didi.aviso!)} style={{ flex: 1 }}>
@@ -585,6 +608,10 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     botonHeader: { width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
     botonHeaderTexto: { fontSize: 15 },
     avisoFolio: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: colores.green, padding: 10, paddingHorizontal: 16 },
+    avisoErp: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#FFC24D", padding: 10, paddingHorizontal: 16 },
+    avisoErpTexto: { color: "#3D2700", fontWeight: "800", fontSize: 14 },
+    avisoErpSub: { color: "#5A3A00", fontSize: 12, marginTop: 2 },
+    avisoErpBoton: { backgroundColor: "#FFE3A3", borderRadius: 8, paddingVertical: 8, paddingHorizontal: 14 },
     avisoDelivery: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#FF6A13", padding: 12, paddingHorizontal: 16 },
     avisoDeliveryTexto: { color: "#fff", fontWeight: "800", fontSize: 15 },
     avisoDeliverySub: { color: "#fff", fontSize: 12, marginTop: 2 },

@@ -255,7 +255,7 @@ export async function confirmarVenta(
   // por su cuenta al recibir el pedido y el siguiente pull trae la cifra oficial — esto solo hace
   // que la tablet enseñe la existencia correcta en el momento, también sin conexión.
   try {
-    await descontarInventarioDeVenta(db, datos.items, sucursalId);
+    await descontarInventarioDeVenta(db, datos.items, sucursalId, ventaId);
   } catch {
     /* el inventario local se corrige en el siguiente pull */
   }
@@ -268,6 +268,7 @@ export async function descontarInventarioDeVenta(
   db: SQLiteDatabase,
   items: ItemCarrito[],
   sucursalId: string,
+  ventaId?: string,
 ): Promise<void> {
   const productoIds = [...new Set(items.map((i) => i.productoId))];
   const opcionIds = [...new Set(items.flatMap((i) => (i.modificadores ?? []).map((m) => m.opcionModificadorId)))];
@@ -281,7 +282,7 @@ export async function descontarInventarioDeVenta(
     })),
     agruparRecetas(recetas.porProducto, recetas.porOpcion, recetas.porPreparacion ?? []),
   );
-  await descontarConsumoLocal(db, consumo, sucursalId);
+  await descontarConsumoLocal(db, consumo, sucursalId, ventaId);
 }
 
 export interface DatosCancelacion {

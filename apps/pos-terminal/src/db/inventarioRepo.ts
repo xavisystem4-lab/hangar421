@@ -4,6 +4,7 @@ import { encolarSync } from "./outboxRepo";
 import { insumosConCambiosPendientes } from "./insumosLocalesRepo";
 import { obtenerOCrearDispositivoId, obtenerOCrearSucursalIdLocal } from "./dispositivoLocal";
 import type { ExistenciaInsumo } from "../inventario/niveles";
+import { aplicarPendientes, tipoDeMovimiento, type AjustePendiente } from "../inventario/existenciaLocal";
 
 export type TipoMovimientoInv = "ENTRADA" | "SALIDA" | "AJUSTE" | "MERMA" | "CONTEO";
 
@@ -222,17 +223,69 @@ export async function upsertInventario(db: SQLiteDatabase, insumos: InsumoRemoto
       );
     }
 
+    // Solo existencias de insumos que esta tablet conoce. El ERP también manda las de insumos
+    // dados de baja (que ya no vienen en la lista de insumos): con la llave foránea de
+    // inventario_local eso hacía fallar TODA la descarga ("FOREIGN KEY constraint failed") y la
+    // tablet se quedaba para siempre con el inventario viejo.
     for (const e of existencias) {
-      if (pendientes.has(e.insumoId)) continue;
       await db.runAsync(
-        `INSERT INTO inventario_local (sucursal_id, insumo_id, existencia, minimo, maximo, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO inventario_local (sucursal_id, insumo_id, existencia, minimo, maximo, updated_at)
+         SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM insumos WHERE id = ?)
          ON CONFLICT(sucursal_id, insumo_id) DO UPDATE SET existencia = excluded.existencia,
            minimo = excluded.minimo, maximo = excluded.maximo, updated_at = excluded.updated_at`,
         sucursalId, e.insumoId, Number(e.existencia) || 0, Number(e.minimo) || 0,
-        e.maximo != null ? Number(e.maximo) : null, ahora,
+        e.maximo != null ? Number(e.maximo) : null, ahora, e.insumoId,
       );
     }
+
+    // Encima de la cifra oficial, lo que esta tablet hizo y aún no sube (ventas, conteos,
+    // entradas, mermas). Sin esto la existencia "brincaba" hacia arriba hasta que la venta
+    // llegaba al ERP.
+    await aplicarPendientesLocales(db, sucursalId, existencias);
   });
+}
+
+/**
+ * Vuelve a aplicar sobre la existencia oficial recién bajada lo que sigue en la cola de esta
+ * tablet: movimientos de inventario sin sincronizar y el consumo de ventas sin sincronizar. El
+ * consumo de ventas que el ERP ya recibió se borra (la cifra oficial ya lo trae).
+ */
+export async function aplicarPendientesLocales(
+  db: SQLiteDatabase,
+  sucursalId: string,
+  existencias: { insumoId: string; existencia: number | string }[],
+): Promise<void> {
+  await db.runAsync(
+    `DELETE FROM consumo_local_pendiente WHERE venta_id NOT IN (
+       SELECT entidad_id FROM sync_outbox WHERE entidad = ? AND operacion = 'CREATE' AND estado <> 'SYNCED')`,
+    SyncEntidad.PEDIDO,
+  );
+  const consumos = await db.getAllAsync<{ insumo_id: string; cantidad: number; created_at: string }>(
+    "SELECT insumo_id, cantidad, created_at FROM consumo_local_pendiente WHERE sucursal_id = ?",
+    sucursalId,
+  );
+  const movimientos = await db.getAllAsync<{ payload: string; created_at: string }>(
+    "SELECT payload, created_at FROM sync_outbox WHERE entidad = ? AND estado <> 'SYNCED' AND sucursal_id = ?",
+    SyncEntidad.MOVIMIENTO_INVENTARIO, sucursalId,
+  );
+  const ajustes: AjustePendiente[] = consumos.map((c) => ({ insumoId: c.insumo_id, tipo: "RESTAR" as const, cantidad: c.cantidad, fecha: c.created_at }));
+  for (const m of movimientos) {
+    try {
+      const p = JSON.parse(m.payload);
+      if (p?.insumoId) ajustes.push({ insumoId: p.insumoId, tipo: tipoDeMovimiento(String(p.tipo)), cantidad: Number(p.cantidad), fecha: m.created_at });
+    } catch {
+      /* un payload ilegible no debe tumbar la descarga */
+    }
+  }
+  if (ajustes.length === 0) return;
+  const oficial = new Map(existencias.map((e) => [e.insumoId, Number(e.existencia) || 0]));
+  const finales = aplicarPendientes(oficial, ajustes);
+  for (const [insumoId, existencia] of finales) {
+    await db.runAsync(
+      "UPDATE inventario_local SET existencia = ? WHERE sucursal_id = ? AND insumo_id = ?",
+      existencia, sucursalId, insumoId,
+    );
+  }
 }
 
 /** Movimientos de inventario de ESTA terminal que todavía no han llegado al ERP. Sale del
@@ -330,14 +383,26 @@ export async function descontarConsumoLocal(
   db: SQLiteDatabase,
   consumo: { insumoId: string; cantidad: number }[],
   sucursalId: string,
+  ventaId?: string,
 ): Promise<void> {
+  const ahora = new Date().toISOString();
   for (const c of consumo) {
     if (!(c.cantidad > 0)) continue;
+    // Solo si el insumo existe en esta tablet: una receta puede usar uno que esta sucursal no
+    // maneja, y con la llave foránea la resta tronaba a medias (las demás ya no se aplicaban).
     await db.runAsync(
       `INSERT INTO inventario_local (sucursal_id, insumo_id, existencia, minimo)
-       VALUES (?, ?, ?, 0)
+       SELECT ?, ?, ?, 0 WHERE EXISTS (SELECT 1 FROM insumos WHERE id = ?)
        ON CONFLICT(sucursal_id, insumo_id) DO UPDATE SET existencia = existencia - ?`,
-      sucursalId, c.insumoId, -c.cantidad, c.cantidad,
+      sucursalId, c.insumoId, -c.cantidad, c.insumoId, c.cantidad,
     );
+    // Se recuerda hasta que la venta llegue al ERP, para volver a restarlo encima de la cifra
+    // oficial que baje mientras tanto (ver aplicarPendientesLocales).
+    if (ventaId) {
+      await db.runAsync(
+        "INSERT INTO consumo_local_pendiente (venta_id, sucursal_id, insumo_id, cantidad, created_at) VALUES (?, ?, ?, ?, ?)",
+        ventaId, sucursalId, c.insumoId, c.cantidad, ahora,
+      );
+    }
   }
 }

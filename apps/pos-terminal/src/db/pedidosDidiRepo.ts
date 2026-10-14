@@ -74,3 +74,15 @@ export async function marcarPedidoDidiCobrado(db: SQLiteDatabase, id: string, ve
 export async function cancelarPedidoDidi(db: SQLiteDatabase, id: string): Promise<void> {
   await db.runAsync("UPDATE pedidos_didi SET estado = 'CANCELADO', updated_at = ? WHERE id = ? AND estado = 'PREPARANDO'", new Date().toISOString(), id);
 }
+
+/** DiDi canceló el pedido: sale de la lista de preparación. Devuelve cuántos se cancelaron
+ *  (0 si ese número no estaba en preparación). El número se compara sin "#" ni mayúsculas. */
+export async function cancelarPedidoDidiPorNumero(db: SQLiteDatabase, numero: string): Promise<number> {
+  const limpio = numero.replace(/^#/, "").trim().toUpperCase();
+  if (!limpio) return 0;
+  const r: any = await db.runAsync(
+    "UPDATE pedidos_didi SET estado = 'CANCELADO', updated_at = ? WHERE estado = 'PREPARANDO' AND UPPER(REPLACE(COALESCE(numero, ''), '#', '')) = ?",
+    new Date().toISOString(), limpio,
+  );
+  return Number(r?.changes ?? 0);
+}

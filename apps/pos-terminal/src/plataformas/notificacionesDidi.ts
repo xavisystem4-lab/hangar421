@@ -12,6 +12,9 @@ export interface NotificacionInterpretada {
   esPedidoNuevo: boolean;
   /** Es ruido seguro (resumen, promoción, actualización de la app): no vale la pena avisar. */
   esRuido: boolean;
+  /** DiDi avisa que un pedido se canceló ("El sistema canceló el pedido número 4"). Nunca es un
+   *  pedido por preparar: se quita de la lista de preparación si estaba ahí. */
+  esCancelacion: boolean;
   /** Número corto del pedido tal como lo muestra DiDi, sin "#". */
   numeroPedido: string | null;
   /** Importe en pesos, si viene en el texto. */
@@ -26,6 +29,7 @@ const PALABRAS_PEDIDO_NUEVO = [
   /nuevo pedido/i, /pedido nuevo/i, /nueva orden/i, /orden nueva/i, /new order/i, /tienes un pedido/i,
   /pedido entrante/i, /pedido recibido/i, /acepta(r)? (el )?pedido/i, /has recibido un pedido/i, /pedido pendiente/i,
 ];
+const PALABRAS_CANCELACION = [/cancel[oó]/i, /cancelad[oa]/i, /cancelaci[oó]n/i, /se cancel/i, /canceled|cancelled/i];
 const PALABRAS_RUIDO = [
   /entregad[oa]/i, /cancelad[oa]/i, /repartidor (va|está|lleg)/i, /en camino/i, /califica/i, /promoci[oó]n/i,
   /actualiza(r)? la app/i, /nueva versi[oó]n/i, /encuesta/i, /recordatorio/i, /notificaciones? nuevas?/i,
@@ -41,14 +45,18 @@ export function interpretarNotificacion(n: { titulo: string; texto: string }): N
   const texto = limpiar(n.texto);
   const todo = `${titulo} ${texto}`;
 
-  const esPedidoNuevo = PALABRAS_PEDIDO_NUEVO.some((re) => re.test(todo));
-  const esRuido = !esPedidoNuevo && PALABRAS_RUIDO.some((re) => re.test(todo));
+  const esCancelacion = PALABRAS_CANCELACION.some((re) => re.test(todo));
+  const esPedidoNuevo = !esCancelacion && PALABRAS_PEDIDO_NUEVO.some((re) => re.test(todo));
+  const esRuido = esCancelacion || (!esPedidoNuevo && PALABRAS_RUIDO.some((re) => re.test(todo)));
 
   // "#1234", "No. 1234", "pedido 1234", "orden A1B2C3" (DiDi usa números de 3 a 12 cifras o
   // códigos cortos alfanuméricos; se toma el primero que aparezca junto a "pedido/orden/#").
   const numero =
     todo.match(/#\s*([A-Z0-9-]{3,14})/i)?.[1] ??
     todo.match(/\b(?:pedido|orden|order|no\.?|num\.?|folio)\s*:?\s*#?\s*((?=[A-Z-]*\d)[A-Z0-9-]{3,14})\b/i)?.[1] ??
+    // "pedido número 4": DiDi numera los pedidos del día desde 1, así que aquí se acepta un número
+    // corto (solo con "número" delante, para no confundir cantidades).
+    todo.match(/\b(?:pedido|orden)\s+n[uú]mero\s*:?\s*#?\s*(\d{1,14})\b/i)?.[1] ??
     null;
 
   // "$180.00", "$ 1,250", "MXN 180", "180.00 MXN"
@@ -75,7 +83,7 @@ export function interpretarNotificacion(n: { titulo: string; texto: string }): N
     ? `Nuevo pedido DiDi${partes.length ? " " + partes.join(" · ") : ""}`
     : [titulo, texto].filter(Boolean).join(" — ").slice(0, 120) || "Notificación de DiDi";
 
-  return { esPedidoNuevo, esRuido, numeroPedido: numero ? numero.toUpperCase() : null, total, cliente, resumen };
+  return { esPedidoNuevo, esRuido, esCancelacion, numeroPedido: numero ? numero.toUpperCase() : null, total, cliente, resumen };
 }
 
 /** "1,250.50" → 1250.5 ; "180" → 180 ; "1.250,50" (coma decimal) → 1250.5 */

@@ -86,11 +86,22 @@ export async function erpFetch<T>(path: string, options: RequestInit = {}, reint
   }
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
+    const body = await leerCuerpo(res).then((t) => JSON.parse(t)).catch(() => ({}));
     throw new ErrorErp(body.message ?? `Error ${res.status}`, res.status, body);
   }
   if (res.status === 204) return undefined as T;
-  return res.json();
+  const texto = await leerCuerpo(res);
+  return (texto ? JSON.parse(texto) : undefined) as T;
+}
+
+/** Lee el cuerpo con su propio tiempo límite: el de `fetch` solo cubre hasta las cabeceras, y
+ *  un cuerpo que se queda a medias (red que se cae a mitad de la descarga) colgaba la espera. */
+function leerCuerpo(res: Response): Promise<string> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const limite = new Promise<never>((_, rechazar) => {
+    timer = setTimeout(() => rechazar(new Error("network timeout: la respuesta del ERP no terminó de llegar")), TIMEOUT_MS);
+  });
+  return Promise.race([res.text(), limite]).finally(() => clearTimeout(timer));
 }
 
 async function intentarRefrescar(refreshToken: string, baseUrl: string): Promise<boolean> {
