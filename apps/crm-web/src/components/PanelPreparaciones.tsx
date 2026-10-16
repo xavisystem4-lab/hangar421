@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { NOMBRE_UNIDAD, UNIDADES_INSUMO, type UnidadInsumo } from "@hangar421/shared";
+import { NOMBRE_UNIDAD, UNIDADES_INSUMO, agruparPorSeccion, type UnidadInsumo } from "@hangar421/shared";
 import { apiFetch } from "@/lib/api";
 
 /** Insumo tal como lo devuelve GET /inventario/insumos (solo lo que este panel usa). */
@@ -18,6 +18,20 @@ interface LineaReceta {
 }
 
 /** "lb · libras" para el selector; servicio y unidad ya van completas. */
+/** Opciones de un <select> de insumos agrupadas por sección (Leches, Jarabes, Limpieza…), para
+ *  encontrar rápido el insumo en listas largas. */
+export function OpcionesInsumo({ insumos }: { insumos: { id: string; nombre: string; unidadMedida: string; esPreparacion?: boolean | null }[] }) {
+  return (
+    <>
+      {agruparPorSeccion(insumos).map((g) => (
+        <optgroup key={g.seccion} label={g.seccion}>
+          {g.items.map((i) => <option key={i.id} value={i.id}>{i.nombre} ({i.unidadMedida}){i.esPreparacion ? " · preparación" : ""}</option>)}
+        </optgroup>
+      ))}
+    </>
+  );
+}
+
 export function etiquetaUnidad(u: string): string {
   const nombre = NOMBRE_UNIDAD[u as UnidadInsumo];
   return nombre && nombre !== u ? `${u} · ${nombre}` : u;
@@ -154,9 +168,7 @@ export function PanelPreparaciones({
               <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                 <select value={agregar.insumoId} onChange={(e) => setAgregar((a) => ({ ...a, insumoId: e.target.value }))} style={{ ...estiloInput, flex: 1 }}>
                   <option value="">Ingrediente…</option>
-                  {insumos
-                    .filter((i) => i.id !== p.id && !receta.some((l) => l.insumoId === i.id))
-                    .map((i) => <option key={i.id} value={i.id}>{i.nombre} ({i.unidadMedida}){i.esPreparacion ? " · preparación" : ""}</option>)}
+                  <OpcionesInsumo insumos={insumos.filter((i) => i.id !== p.id && !receta.some((l) => l.insumoId === i.id))} />
                 </select>
                 <input type="number" min={0} step="any" placeholder={nombreDe(agregar.insumoId)?.unidadMedida ?? "cantidad"} value={agregar.cantidad}
                   onChange={(e) => setAgregar((a) => ({ ...a, cantidad: e.target.value }))}
