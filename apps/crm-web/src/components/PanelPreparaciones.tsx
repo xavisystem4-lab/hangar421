@@ -116,74 +116,86 @@ export function PanelPreparaciones({
     }
   }
 
-  const estiloInput = { padding: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" } as const;
 
   return (
     <div className="card">
-      <h3 style={{ marginTop: 0, marginBottom: 4 }}>Preparaciones de la casa</h3>
-      <p style={{ marginTop: 0, fontSize: 12, color: "var(--h421-gray-500)" }}>
-        Cold foam, cremas, jarabes propios… Escribe sus ingredientes por <b>1 unidad</b> y úsala en la receta de una bebida
-        o de un modificador (Catálogo → Receta). Al vender se descuentan sus ingredientes.
-      </p>
-
-      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-        <input placeholder="Nombre (ej. Cold foam blue matcha)" value={nueva.nombre}
-          onChange={(e) => setNueva((n) => ({ ...n, nombre: e.target.value }))} style={{ ...estiloInput, flex: 1 }} />
-        <select value={nueva.unidadMedida} onChange={(e) => setNueva((n) => ({ ...n, unidadMedida: e.target.value }))} style={estiloInput} title="Se mide en">
-          {UNIDADES_INSUMO.map((u) => <option key={u} value={u}>{etiquetaUnidad(u)}</option>)}
-        </select>
-        <button onClick={crear} disabled={!nueva.nombre.trim()} style={{ background: "var(--h421-green)", color: "#fff", padding: "8px 14px" }}>Crear</button>
+      <div>
+        <h3>Preparaciones de la casa</h3>
+        <p className="h421-ayuda">
+          Cold foam, cremas, jarabes propios… Escribe sus ingredientes por <b>1 unidad</b> y úsala en la receta de una
+          bebida o de un modificador (Catálogo → Receta). Al vender se descuentan sus ingredientes.
+        </p>
       </div>
 
-      {aviso && <div style={{ fontSize: 12, marginBottom: 8, color: "var(--h421-blue)" }}>{aviso}</div>}
+      <div className="h421-campos">
+        <label className="h421-campo ancho">
+          <span>Nombre</span>
+          <input placeholder="Ej. Cold foam blue matcha" value={nueva.nombre}
+            onChange={(e) => setNueva((n) => ({ ...n, nombre: e.target.value }))}
+            onKeyDown={(e) => { if (e.key === "Enter") crear(); }} className="h421-control" />
+        </label>
+        <label className="h421-campo">
+          <span>Se mide en</span>
+          <select value={nueva.unidadMedida} onChange={(e) => setNueva((n) => ({ ...n, unidadMedida: e.target.value }))} className="h421-control">
+            {UNIDADES_INSUMO.map((u) => <option key={u} value={u}>{etiquetaUnidad(u)}</option>)}
+          </select>
+        </label>
+        <div className="h421-campo" style={{ justifyContent: "flex-end" }}>
+          <button onClick={crear} disabled={!nueva.nombre.trim()} className="h421-boton-primario">Crear preparación</button>
+        </div>
+      </div>
 
+      {aviso && <div style={{ fontSize: 12, color: "var(--h421-blue)" }}>{aviso}</div>}
+
+      <div className="h421-lista">
       {preparaciones.length === 0 && (
-        <div style={{ fontSize: 13, color: "var(--h421-gray-500)" }}>Todavía no hay preparaciones.</div>
+        <p className="h421-ayuda" style={{ padding: "8px 0" }}>Todavía no hay preparaciones.</p>
       )}
 
       {preparaciones.map((p) => (
-        <div key={p.id} style={{ borderTop: "1px solid var(--h421-gray-200)", padding: "8px 0" }}>
+        <div key={p.id} style={{ borderBottom: "1px solid var(--h421-gray-200)", padding: "10px 2px" }}>
           <button onClick={() => abrir(p.id)}
-            style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontWeight: 700, fontSize: 14, textAlign: "left", width: "100%" }}>
-            {abierta === p.id ? "▾" : "▸"} {p.nombre} <span style={{ fontWeight: 400, color: "var(--h421-gray-500)" }}>· por 1 {p.unidadMedida}</span>
+            style={{ background: "none", border: "none", padding: 0, minHeight: 0, cursor: "pointer", fontWeight: 700, fontSize: 14, textAlign: "left", width: "100%" }}>
+            {abierta === p.id ? "▾" : "▸"} {p.nombre} <span style={{ fontWeight: 400, color: "var(--h421-gray-400)" }}>· por 1 {p.unidadMedida}</span>
           </button>
 
           {abierta === p.id && (
             <div style={{ marginTop: 8 }}>
-              {receta.length === 0 && <div style={{ fontSize: 12, color: "var(--h421-gray-500)", marginBottom: 6 }}>Sin ingredientes todavía.</div>}
+              {receta.length === 0 && <div style={{ fontSize: 12, color: "var(--h421-gray-400)", marginBottom: 6 }}>Sin ingredientes todavía.</div>}
               {receta.map((l) => {
                 const ins = nombreDe(l.insumoId);
                 return (
                   <div key={l.insumoId} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
                     <input type="number" min={0} step="any" value={l.cantidad}
                       onChange={(e) => setReceta((r) => r.map((x) => (x.insumoId === l.insumoId ? { ...x, cantidad: e.target.value } : x)))}
-                      style={{ ...estiloInput, width: 90 }} />
+                      className="h421-control" style={{ width: 90, flexShrink: 0 }} />
                     <span style={{ fontSize: 13, minWidth: 30 }}>{ins?.unidadMedida ?? ""}</span>
-                    <span style={{ flex: 1, fontSize: 13 }}>{ins?.nombre ?? "(insumo dado de baja)"}</span>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 13 }}>{ins?.nombre ?? "(insumo dado de baja)"}</span>
                     <button onClick={() => setReceta((r) => r.filter((x) => x.insumoId !== l.insumoId))} title="Quitar" style={{ background: "none", color: "var(--h421-red)", padding: "4px 8px" }}>✕</button>
                   </div>
                 );
               })}
 
-              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                <select value={agregar.insumoId} onChange={(e) => setAgregar((a) => ({ ...a, insumoId: e.target.value }))} style={{ ...estiloInput, flex: 1 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 90px auto", gap: 8, marginTop: 8 }}>
+                <select value={agregar.insumoId} onChange={(e) => setAgregar((a) => ({ ...a, insumoId: e.target.value }))} className="h421-control">
                   <option value="">Ingrediente…</option>
                   <OpcionesInsumo insumos={insumos.filter((i) => i.id !== p.id && !receta.some((l) => l.insumoId === i.id))} />
                 </select>
                 <input type="number" min={0} step="any" placeholder={nombreDe(agregar.insumoId)?.unidadMedida ?? "cantidad"} value={agregar.cantidad}
                   onChange={(e) => setAgregar((a) => ({ ...a, cantidad: e.target.value }))}
                   onKeyDown={(e) => { if (e.key === "Enter") agregarLinea(); }}
-                  style={{ ...estiloInput, width: 100 }} />
-                <button onClick={agregarLinea} style={{ background: "var(--h421-blue)", color: "#fff", padding: "8px 14px" }}>Agregar</button>
+                  className="h421-control" />
+                <button onClick={agregarLinea} style={{ background: "var(--h421-blue)", color: "#fff", padding: "0 14px" }}>Agregar</button>
               </div>
 
-              <button style={{ marginTop: 10, background: "var(--h421-navy)", color: "#fff", padding: "8px 14px" }} onClick={() => guardar(p.id)} disabled={guardando}>
+              <button style={{ marginTop: 10, width: "100%", background: "var(--h421-navy)", color: "#fff", padding: "0 14px" }} onClick={() => guardar(p.id)} disabled={guardando}>
                 {guardando ? "Guardando…" : "Guardar receta"}
               </button>
             </div>
           )}
         </div>
       ))}
+      </div>
     </div>
   );
 }

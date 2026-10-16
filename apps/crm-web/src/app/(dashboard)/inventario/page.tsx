@@ -512,64 +512,81 @@ export default function InventarioPage() {
 
       {mensaje && <p style={{ color: "var(--h421-navy-texto)" }}>{mensaje}</p>}
 
-      {/* Alta de insumos, preparaciones de la casa y proveedores: lo primero de la pantalla. */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 0 8px" }}>
-        <strong style={{ fontSize: 15 }}>Altas: insumos, preparaciones y proveedores</strong>
-        <button onClick={() => setVerAltas((v) => !v)} style={{ background: "transparent", color: "var(--h421-blue)", border: "1px solid var(--h421-blue)", padding: "4px 12px", fontSize: 12, minHeight: 0 }}>
-          {verAltas ? "Ocultar" : "Mostrar"}
+      {/* Alta de insumos, preparaciones de la casa y proveedores: lo primero de la pantalla.
+          Estilos en globals.css (.h421-altas): campos con etiqueta, misma altura y nada se sale
+          de su tarjeta. */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 0 12px" }}>
+        <h2 style={{ margin: 0, fontSize: 18 }}>Altas</h2>
+        <button onClick={() => setVerAltas((v) => !v)} className="h421-boton-secundario">
+          {verAltas ? "Ocultar" : "Mostrar insumos, preparaciones y proveedores"}
         </button>
       </div>
       {verAltas && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16, marginBottom: 16 }}>
+        <div className="h421-altas">
           <div className="card">
-            <h3 style={{ marginTop: 0 }}>Nuevo insumo</h3>
+            <div>
+              <h3>Nuevo insumo</h3>
+              <p className="h421-ayuda">Se crea solo en esta sucursal.</p>
+            </div>
             {(() => {
               const deOtras = todosInsumos.filter((t) => !t.esPreparacion && !insumos.some((i) => i.id === t.id));
               return deOtras.length > 0 ? (
-                <select value="" onChange={(e) => agregarExistente(e.target.value)}
-                  style={{ width: "100%", padding: 10, marginBottom: 8, borderRadius: 8, border: "1px dashed var(--h421-gray-300)" }}>
-                  <option value="">+ Agregar uno que ya existe en otra sucursal…</option>
-                  <OpcionesInsumo insumos={deOtras} />
-                </select>
+                <label className="h421-campo">
+                  <span>¿Ya existe en otra sucursal?</span>
+                  <select value="" onChange={(e) => agregarExistente(e.target.value)} className="h421-control">
+                    <option value="">Elegir para agregarlo aquí…</option>
+                    <OpcionesInsumo insumos={deOtras} />
+                  </select>
+                </label>
               ) : null;
             })()}
-            <input placeholder="Nombre (ej. Leche entera)" value={nuevoInsumo.nombre} onChange={(e) => setNuevoInsumo((n) => ({ ...n, nombre: e.target.value }))}
-              style={{ width: "100%", padding: 10, marginBottom: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-              <select value={nuevoInsumo.unidadMedida} onChange={(e) => setNuevoInsumo((n) => ({ ...n, unidadMedida: e.target.value }))} style={{ flex: 1, padding: 10 }}>
-                {UNIDADES_INSUMO.map((u) => <option key={u} value={u}>{etiquetaUnidad(u)}</option>)}
-              </select>
-              <select value={nuevoInsumo.proveedorId} onChange={(e) => setNuevoInsumo((n) => ({ ...n, proveedorId: e.target.value }))} style={{ flex: 1, padding: 10 }}>
-                <option value="">Proveedor…</option>
-                {proveedores.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-              </select>
+            <div className="h421-campos">
+              <label className="h421-campo ancho">
+                <span>Nombre</span>
+                <input placeholder="Ej. Leche entera" value={nuevoInsumo.nombre} onChange={(e) => setNuevoInsumo((n) => ({ ...n, nombre: e.target.value }))} className="h421-control" />
+              </label>
+              <label className="h421-campo">
+                <span>Unidad</span>
+                <select value={nuevoInsumo.unidadMedida} onChange={(e) => setNuevoInsumo((n) => ({ ...n, unidadMedida: e.target.value }))} className="h421-control">
+                  {UNIDADES_INSUMO.map((u) => <option key={u} value={u}>{etiquetaUnidad(u)}</option>)}
+                </select>
+              </label>
+              <label className="h421-campo">
+                <span>Proveedor</span>
+                <select value={nuevoInsumo.proveedorId} onChange={(e) => setNuevoInsumo((n) => ({ ...n, proveedorId: e.target.value }))} className="h421-control">
+                  <option value="">Sin proveedor</option>
+                  {proveedores.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                </select>
+              </label>
+              <label className="h421-campo">
+                <span>Precio costo</span>
+                <input type="number" placeholder="$0.00" value={nuevoInsumo.costoUnitario} onChange={(e) => setNuevoInsumo((n) => ({ ...n, costoUnitario: e.target.value }))} className="h421-control" />
+              </label>
+              <label className="h421-campo">
+                <span>Precio venta <small>(opcional)</small></span>
+                <input type="number" placeholder="$0.00" value={nuevoInsumo.precioVenta} onChange={(e) => setNuevoInsumo((n) => ({ ...n, precioVenta: e.target.value }))} className="h421-control" />
+              </label>
+              <label className="h421-campo">
+                <span>Stock mínimo</span>
+                <input type="number" placeholder="0" value={nuevoInsumo.minimo} onChange={(e) => setNuevoInsumo((n) => ({ ...n, minimo: e.target.value }))} className="h421-control" />
+              </label>
+              <label className="h421-campo">
+                <span>Stock máximo</span>
+                <input type="number" placeholder="0" value={nuevoInsumo.maximo} onChange={(e) => setNuevoInsumo((n) => ({ ...n, maximo: e.target.value }))} className="h421-control" />
+              </label>
+              <label className="h421-campo">
+                <span>Se compra en <small>(opcional)</small></span>
+                <input placeholder="Ej. Cartón" value={nuevoInsumo.presentacionNombre} onChange={(e) => setNuevoInsumo((n) => ({ ...n, presentacionNombre: e.target.value }))} className="h421-control" />
+              </label>
+              <label className="h421-campo">
+                <span>Cada uno trae ({nuevoInsumo.unidadMedida})</span>
+                <input type="number" placeholder="Ej. 1000" value={nuevoInsumo.presentacionCantidad} onChange={(e) => setNuevoInsumo((n) => ({ ...n, presentacionCantidad: e.target.value }))} className="h421-control" />
+              </label>
             </div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-              <input placeholder="Precio costo" type="number" value={nuevoInsumo.costoUnitario} onChange={(e) => setNuevoInsumo((n) => ({ ...n, costoUnitario: e.target.value }))}
-                style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-              <input placeholder="Precio venta (si se vende directo)" type="number" value={nuevoInsumo.precioVenta} onChange={(e) => setNuevoInsumo((n) => ({ ...n, precioVenta: e.target.value }))}
-                style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <input placeholder="Stock mínimo" type="number" value={nuevoInsumo.minimo} onChange={(e) => setNuevoInsumo((n) => ({ ...n, minimo: e.target.value }))}
-                style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-              <input placeholder="Stock máximo" type="number" value={nuevoInsumo.maximo} onChange={(e) => setNuevoInsumo((n) => ({ ...n, maximo: e.target.value }))}
-                style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-            </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              <input placeholder="Se compra en (ej. Cartón)" value={nuevoInsumo.presentacionNombre} onChange={(e) => setNuevoInsumo((n) => ({ ...n, presentacionNombre: e.target.value }))}
-                style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-              <input placeholder={`Equivale a (${nuevoInsumo.unidadMedida})`} type="number" value={nuevoInsumo.presentacionCantidad} onChange={(e) => setNuevoInsumo((n) => ({ ...n, presentacionCantidad: e.target.value }))}
-                style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-            </div>
-            <p style={{ fontSize: 11, color: "var(--h421-gray-400)", margin: "4px 0 0" }}>
-              Opcional: si lo compras por empaque, pon cómo se llama y cuánto trae (Cartón · 1000 ml).
-              Después podrás contar &quot;4 cartones&quot; o &quot;2 cartones y 300 ml&quot; sin sacar cuentas.
+            <p className="h421-ayuda">
+              Con el empaque podrás contar &quot;4 cartones&quot; o &quot;2 cartones y 300 ml&quot; sin sacar cuentas.
             </p>
-            <p style={{ fontSize: 11, color: "var(--h421-gray-400)", margin: "4px 0 0" }}>
-              Se crea solo en esta sucursal. Si otra sucursal lo necesita, ahí se agrega con &quot;Agregar uno que ya existe&quot; (o le llega solo con un traspaso).
-            </p>
-            <button onClick={crearInsumo} style={{ width: "100%", marginTop: 8, background: "var(--h421-green)", color: "#fff", padding: "10px 16px" }}>Crear insumo en esta sucursal</button>
+            <button onClick={crearInsumo} className="h421-boton-primario">Crear insumo en esta sucursal</button>
           </div>
 
           {contexto && (
@@ -577,25 +594,35 @@ export default function InventarioPage() {
           )}
 
           <div className="card">
-            <h3 style={{ marginTop: 0 }}>Proveedores</h3>
-            {proveedores.length === 0 && <p style={{ fontSize: 13, color: "var(--h421-gray-400)" }}>Sin proveedores dados de alta todavía.</p>}
-            {proveedores.map((p) => (
-              <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--h421-gray-200)", fontSize: 14 }}>
-                <span>{p.nombre}{p.telefono ? ` · ${p.telefono}` : ""}</span>
-                <button onClick={() => eliminarProveedor(p)} style={{ background: "var(--h421-red-bg)", color: "var(--h421-red-texto)", padding: "4px 8px", fontSize: 12 }}>Eliminar</button>
-              </div>
-            ))}
-            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-              <input placeholder="Nombre del proveedor" value={nuevoProveedor.nombre} onChange={(e) => setNuevoProveedor((p) => ({ ...p, nombre: e.target.value }))}
-                style={{ flex: 2, padding: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-              <input placeholder="Teléfono (opcional)" value={nuevoProveedor.telefono} onChange={(e) => setNuevoProveedor((p) => ({ ...p, telefono: e.target.value }))}
-                style={{ flex: 1, padding: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-              <button onClick={crearProveedor} style={{ background: "var(--h421-navy)", color: "#fff", padding: "0 14px" }}>+</button>
+            <div>
+              <h3>Proveedores</h3>
+              <p className="h421-ayuda">Se usan en el alta de insumos y en la lista de compras.</p>
+            </div>
+            <div className="h421-campos">
+              <label className="h421-campo ancho">
+                <span>Nombre</span>
+                <input placeholder="Ej. Lácteos del Norte" value={nuevoProveedor.nombre} onChange={(e) => setNuevoProveedor((p) => ({ ...p, nombre: e.target.value }))} className="h421-control" />
+              </label>
+              <label className="h421-campo ancho">
+                <span>Teléfono <small>(opcional)</small></span>
+                <input placeholder="Ej. 656 123 4567" value={nuevoProveedor.telefono} onChange={(e) => setNuevoProveedor((p) => ({ ...p, telefono: e.target.value }))} className="h421-control" />
+              </label>
+            </div>
+            <button onClick={crearProveedor} disabled={!nuevoProveedor.nombre.trim()} className="h421-boton-primario">Agregar proveedor</button>
+            <div className="h421-lista">
+              {proveedores.length === 0 && <p className="h421-ayuda" style={{ padding: "8px 0" }}>Sin proveedores dados de alta todavía.</p>}
+              {proveedores.map((p) => (
+                <div key={p.id} className="h421-lista-fila">
+                  <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+                    <strong>{p.nombre}</strong>{p.telefono ? <span className="h421-ayuda"> · {p.telefono}</span> : null}
+                  </span>
+                  <button onClick={() => eliminarProveedor(p)} className="h421-boton-peligro">Eliminar</button>
+                </div>
+              ))}
             </div>
           </div>
         </div>
       )}
-
 
       {traspasosPendientes.length > 0 && (
         <div className="card" style={{ borderLeft: "4px solid var(--h421-blue)", marginBottom: 16 }}>
