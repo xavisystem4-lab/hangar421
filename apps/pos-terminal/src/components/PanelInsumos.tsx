@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, type ComponentProps } from "react";
-import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { factorConversionUnidad, normalizarUnidad } from "@hangar421/shared";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
 import { listarInsumosLocales, type InsumoLocal } from "../db/inventarioRepo";
 import { coincideBusqueda } from "../db/busqueda";
+import { agruparPorSeccion, seccionDeInsumo } from "@hangar421/shared";
 import {
   BORRADOR_VACIO, UNIDADES_INSUMO, normalizarNombre, validarInsumo, type BorradorInsumo,
 } from "../inventario/altaInsumo";
@@ -20,7 +21,7 @@ import {
  * Mientras se escribe el nombre se busca en la lista de inventario, para que se vea si el
  * insumo ya existe antes de duplicarlo.
  */
-export function PanelInsumos({ onCambio }: { onCambio: () => Promise<void> | void }) {
+export function PanelInsumos({ onCambio, abrirAltaAlEntrar = false }: { onCambio: () => Promise<void> | void; abrirAltaAlEntrar?: boolean }) {
   const colores = usarColores();
   const estilos = crearEstilos(colores);
 
@@ -28,6 +29,8 @@ export function PanelInsumos({ onCambio }: { onCambio: () => Promise<void> | voi
   const [proveedores, setProveedores] = useState<ProveedorErp[] | null>(null);
   const [busqueda, setBusqueda] = useState("");
   const [verInactivos, setVerInactivos] = useState(false);
+  /** Sección elegida (Leches, Limpieza…) o "TODAS"; sale del nombre, ver categoriasInsumo.ts. */
+  const [seccion, setSeccion] = useState<string>("TODAS");
   const [formularioAbierto, setFormularioAbierto] = useState(false);
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [borrador, setBorrador] = useState<BorradorInsumo>(BORRADOR_VACIO);
@@ -50,11 +53,16 @@ export function PanelInsumos({ onCambio }: { onCambio: () => Promise<void> | voi
   }, [formularioAbierto, proveedores]);
 
   const activos = insumos.filter((i) => i.activo).length;
-  const visibles = useMemo(
+  const filtrados = useMemo(
     () => insumos
       .filter((i) => verInactivos || i.activo)
       .filter((i) => coincideBusqueda(`${i.nombre} ${i.proveedorNombre ?? ""}`, busqueda)),
     [insumos, busqueda, verInactivos],
+  );
+  const grupos = useMemo(() => agruparPorSeccion(filtrados), [filtrados]);
+  const visibles = useMemo(
+    () => grupos.filter((g) => seccion === "TODAS" || g.seccion === seccion).flatMap((g) => g.items),
+    [grupos, seccion],
   );
 
   // Búsqueda en vivo contra la lista de inventario mientras se teclea el nombre.
@@ -63,6 +71,12 @@ export function PanelInsumos({ onCambio }: { onCambio: () => Promise<void> | voi
     if (clave.length < 3) return [];
     return insumos.filter((i) => i.id !== editandoId && normalizarNombre(i.nombre).includes(clave)).slice(0, 5);
   }, [borrador.nombre, insumos, editandoId]);
+
+  // "+ Agregar insumo" desde Existencias llega aquí con el formulario ya abierto.
+  useEffect(() => {
+    if (abrirAltaAlEntrar) abrirNuevo();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abrirAltaAlEntrar]);
 
   function abrirNuevo() {
     setEditandoId(null);
@@ -282,7 +296,7 @@ export function PanelInsumos({ onCambio }: { onCambio: () => Promise<void> | voi
         formulario
       ) : (
         <TouchableOpacity onPress={abrirNuevo} style={estilos.botonPrincipal}>
-          <Text style={estilos.botonPrincipalTexto}>+ Dar de alta insumo</Text>
+          <Text style={estilos.botonPrincipalTexto}>＋ Agregar insumo</Text>
         </TouchableOpacity>
       )}
 
@@ -294,6 +308,15 @@ export function PanelInsumos({ onCambio }: { onCambio: () => Promise<void> | voi
         autoCapitalize="none"
         style={[estilos.input, { marginBottom: 8 }]}
       />
+      {grupos.length > 1 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }} contentContainerStyle={{ gap: 6 }}>
+          {[{ seccion: "TODAS", n: filtrados.length }, ...grupos.map((g) => ({ seccion: g.seccion as string, n: g.items.length }))].map((g) => (
+            <TouchableOpacity key={g.seccion} onPress={() => setSeccion(g.seccion)} style={[estilos.chip, seccion === g.seccion && estilos.chipActivo]}>
+              <Text style={[estilos.chipTexto, seccion === g.seccion && estilos.chipTextoActivo]}>{g.seccion === "TODAS" ? "Todas" : g.seccion} ({g.n})</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <Text style={estilos.ayuda}>{activos} insumo(s) activos</Text>
         {insumos.length > activos && (
@@ -310,8 +333,11 @@ export function PanelInsumos({ onCambio }: { onCambio: () => Promise<void> | voi
           </Text>
         </View>
       ) : (
-        visibles.map((i) => (
+        visibles.map((i, idx) => (
           <View key={i.id}>
+          {seccion === "TODAS" && (idx === 0 || seccionDeInsumo(visibles[idx - 1]) !== seccionDeInsumo(i)) && (
+            <Text style={estilos.cabeceraSeccion}>{seccionDeInsumo(i)}</Text>
+          )}
           <View style={[estilos.fila, !i.activo && { opacity: 0.55 }, editandoId === i.id && { borderColor: colores.navy, borderWidth: 2 }]}>
             <View style={{ flex: 1 }}>
               <Text style={estilos.nombre}>{i.nombre}{i.activo ? "" : " (baja)"}</Text>
@@ -348,6 +374,7 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     avisoParecidos: { backgroundColor: colores.gray50, borderRadius: 8, padding: 8, marginTop: 6, borderLeftWidth: 4, borderLeftColor: colores.amber },
     parecido: { fontSize: 13, fontWeight: "700", color: colores.navyTexto, paddingVertical: 4 },
     chips: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+    cabeceraSeccion: { fontSize: 12, fontWeight: "800", letterSpacing: 0.5, textTransform: "uppercase", color: colores.textoSecundario, marginTop: 10, marginBottom: 6 },
     chip: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 18, backgroundColor: colores.gray50, minHeight: 38, justifyContent: "center" },
     chipActivo: { backgroundColor: colores.navy },
     chipTexto: { fontSize: 13, fontWeight: "700", color: colores.texto },

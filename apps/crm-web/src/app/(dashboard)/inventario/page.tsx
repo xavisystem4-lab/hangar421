@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { NivelInventario, Sucursal } from "@hangar421/shared";
-import { UNIDADES_INSUMO, aUnidadBase, calcularNivelInventario, describirEnPaquetes, factorConversionUnidad, resumenSemaforoInventario, tienePresentacion } from "@hangar421/shared";
+import { SECCIONES_INSUMO, UNIDADES_INSUMO, aUnidadBase, seccionDeInsumo, calcularNivelInventario, describirEnPaquetes, factorConversionUnidad, resumenSemaforoInventario, tienePresentacion } from "@hangar421/shared";
 import { apiFetch } from "@/lib/api";
 import { useAuthCrm } from "@/lib/authClient";
 import { useSucursalActiva } from "@/store/sucursalActiva";
 import { ReporteInventario, SEMAFORO } from "@/components/ReporteInventario";
 import { PanelExistencias, type ExistenciaProducto } from "@/components/PanelExistencias";
-import { PanelPreparaciones, etiquetaUnidad } from "@/components/PanelPreparaciones";
+import { OpcionesInsumo, PanelPreparaciones, etiquetaUnidad } from "@/components/PanelPreparaciones";
 
 interface Existencia {
   insumoId: string;
@@ -106,6 +106,10 @@ export default function InventarioPage() {
   const [mensaje, setMensaje] = useState<string | null>(null);
 
   const [busqueda, setBusqueda] = useState("");
+  /** Sección elegida en los botones de arriba de la tabla ("TODAS" = sin filtro). */
+  const [seccion, setSeccion] = useState<string>("TODAS");
+  /** Alta de insumos, preparaciones y proveedores: va hasta arriba y se puede plegar. */
+  const [verAltas, setVerAltas] = useState(true);
   const [filtroNivel, setFiltroNivel] = useState<"TODOS" | NivelInventario>("TODOS");
 
   const [nuevoInsumo, setNuevoInsumo] = useState({
@@ -227,7 +231,7 @@ export default function InventarioPage() {
 
   // Filas combinadas (insumo + su existencia en la sucursal elegida) con búsqueda y filtro de
   // nivel aplicados — es la única tabla ahora, antes existían dos por separado.
-  const filas = useMemo(() => {
+  const filasSinSeccion = useMemo(() => {
     const texto = busqueda.trim().toLowerCase();
     return insumos
       .map((i) => {
@@ -236,11 +240,26 @@ export default function InventarioPage() {
         const minimo = ex ? Number(ex.minimo) : 0;
         const maximo = ex?.maximo != null ? Number(ex.maximo) : null;
         const { porcentaje, nivel } = calcularNivelInventario(existencia, minimo, maximo);
-        return { insumo: i, existencia, minimo, maximo, porcentaje, nivel, tieneExistencia: !!ex };
+        return { insumo: i, existencia, minimo, maximo, porcentaje, nivel, tieneExistencia: !!ex, seccion: seccionDeInsumo(i) };
       })
       .filter((f) => (texto ? f.insumo.nombre.toLowerCase().includes(texto) : true))
       .filter((f) => (filtroNivel === "TODOS" ? true : f.nivel === filtroNivel));
   }, [insumos, existencias, busqueda, filtroNivel]);
+
+  // Cuántos hay por sección (con búsqueda y nivel aplicados) para los botones de sección.
+  const conteoSecciones = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const f of filasSinSeccion) m.set(f.seccion, (m.get(f.seccion) ?? 0) + 1);
+    return m;
+  }, [filasSinSeccion]);
+
+  // La tabla: la sección elegida o todas, agrupadas en el orden de SECCIONES_INSUMO.
+  const filas = useMemo(() => {
+    const orden = (s: string) => (SECCIONES_INSUMO as readonly string[]).indexOf(s);
+    return filasSinSeccion
+      .filter((f) => seccion === "TODAS" || f.seccion === seccion)
+      .sort((a, b) => orden(a.seccion) - orden(b.seccion) || a.insumo.nombre.localeCompare(b.insumo.nombre, "es"));
+  }, [filasSinSeccion, seccion]);
 
   /** Empaque del insumo, cuando lo tiene ("Cartón" de 1000 ml). */
   function presentacionDe(i: Insumo) {
@@ -493,6 +512,91 @@ export default function InventarioPage() {
 
       {mensaje && <p style={{ color: "var(--h421-navy-texto)" }}>{mensaje}</p>}
 
+      {/* Alta de insumos, preparaciones de la casa y proveedores: lo primero de la pantalla. */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 0 8px" }}>
+        <strong style={{ fontSize: 15 }}>Altas: insumos, preparaciones y proveedores</strong>
+        <button onClick={() => setVerAltas((v) => !v)} style={{ background: "transparent", color: "var(--h421-blue)", border: "1px solid var(--h421-blue)", padding: "4px 12px", fontSize: 12, minHeight: 0 }}>
+          {verAltas ? "Ocultar" : "Mostrar"}
+        </button>
+      </div>
+      {verAltas && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16, marginBottom: 16 }}>
+          <div className="card">
+            <h3 style={{ marginTop: 0 }}>Nuevo insumo</h3>
+            {(() => {
+              const deOtras = todosInsumos.filter((t) => !t.esPreparacion && !insumos.some((i) => i.id === t.id));
+              return deOtras.length > 0 ? (
+                <select value="" onChange={(e) => agregarExistente(e.target.value)}
+                  style={{ width: "100%", padding: 10, marginBottom: 8, borderRadius: 8, border: "1px dashed var(--h421-gray-300)" }}>
+                  <option value="">+ Agregar uno que ya existe en otra sucursal…</option>
+                  <OpcionesInsumo insumos={deOtras} />
+                </select>
+              ) : null;
+            })()}
+            <input placeholder="Nombre (ej. Leche entera)" value={nuevoInsumo.nombre} onChange={(e) => setNuevoInsumo((n) => ({ ...n, nombre: e.target.value }))}
+              style={{ width: "100%", padding: 10, marginBottom: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
+            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+              <select value={nuevoInsumo.unidadMedida} onChange={(e) => setNuevoInsumo((n) => ({ ...n, unidadMedida: e.target.value }))} style={{ flex: 1, padding: 10 }}>
+                {UNIDADES_INSUMO.map((u) => <option key={u} value={u}>{etiquetaUnidad(u)}</option>)}
+              </select>
+              <select value={nuevoInsumo.proveedorId} onChange={(e) => setNuevoInsumo((n) => ({ ...n, proveedorId: e.target.value }))} style={{ flex: 1, padding: 10 }}>
+                <option value="">Proveedor…</option>
+                {proveedores.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+              </select>
+            </div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+              <input placeholder="Precio costo" type="number" value={nuevoInsumo.costoUnitario} onChange={(e) => setNuevoInsumo((n) => ({ ...n, costoUnitario: e.target.value }))}
+                style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
+              <input placeholder="Precio venta (si se vende directo)" type="number" value={nuevoInsumo.precioVenta} onChange={(e) => setNuevoInsumo((n) => ({ ...n, precioVenta: e.target.value }))}
+                style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input placeholder="Stock mínimo" type="number" value={nuevoInsumo.minimo} onChange={(e) => setNuevoInsumo((n) => ({ ...n, minimo: e.target.value }))}
+                style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
+              <input placeholder="Stock máximo" type="number" value={nuevoInsumo.maximo} onChange={(e) => setNuevoInsumo((n) => ({ ...n, maximo: e.target.value }))}
+                style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <input placeholder="Se compra en (ej. Cartón)" value={nuevoInsumo.presentacionNombre} onChange={(e) => setNuevoInsumo((n) => ({ ...n, presentacionNombre: e.target.value }))}
+                style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
+              <input placeholder={`Equivale a (${nuevoInsumo.unidadMedida})`} type="number" value={nuevoInsumo.presentacionCantidad} onChange={(e) => setNuevoInsumo((n) => ({ ...n, presentacionCantidad: e.target.value }))}
+                style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
+            </div>
+            <p style={{ fontSize: 11, color: "var(--h421-gray-400)", margin: "4px 0 0" }}>
+              Opcional: si lo compras por empaque, pon cómo se llama y cuánto trae (Cartón · 1000 ml).
+              Después podrás contar &quot;4 cartones&quot; o &quot;2 cartones y 300 ml&quot; sin sacar cuentas.
+            </p>
+            <p style={{ fontSize: 11, color: "var(--h421-gray-400)", margin: "4px 0 0" }}>
+              Se crea solo en esta sucursal. Si otra sucursal lo necesita, ahí se agrega con &quot;Agregar uno que ya existe&quot; (o le llega solo con un traspaso).
+            </p>
+            <button onClick={crearInsumo} style={{ width: "100%", marginTop: 8, background: "var(--h421-green)", color: "#fff", padding: "10px 16px" }}>Crear insumo en esta sucursal</button>
+          </div>
+
+          {contexto && (
+            <PanelPreparaciones empresaId={contexto.usuario.empresaId} insumos={todosInsumos} onCambio={() => cargar(sucursalId)} />
+          )}
+
+          <div className="card">
+            <h3 style={{ marginTop: 0 }}>Proveedores</h3>
+            {proveedores.length === 0 && <p style={{ fontSize: 13, color: "var(--h421-gray-400)" }}>Sin proveedores dados de alta todavía.</p>}
+            {proveedores.map((p) => (
+              <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--h421-gray-200)", fontSize: 14 }}>
+                <span>{p.nombre}{p.telefono ? ` · ${p.telefono}` : ""}</span>
+                <button onClick={() => eliminarProveedor(p)} style={{ background: "var(--h421-red-bg)", color: "var(--h421-red-texto)", padding: "4px 8px", fontSize: 12 }}>Eliminar</button>
+              </div>
+            ))}
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <input placeholder="Nombre del proveedor" value={nuevoProveedor.nombre} onChange={(e) => setNuevoProveedor((p) => ({ ...p, nombre: e.target.value }))}
+                style={{ flex: 2, padding: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
+              <input placeholder="Teléfono (opcional)" value={nuevoProveedor.telefono} onChange={(e) => setNuevoProveedor((p) => ({ ...p, telefono: e.target.value }))}
+                style={{ flex: 1, padding: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
+              <button onClick={crearProveedor} style={{ background: "var(--h421-navy)", color: "#fff", padding: "0 14px" }}>+</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
       {traspasosPendientes.length > 0 && (
         <div className="card" style={{ borderLeft: "4px solid var(--h421-blue)", marginBottom: 16 }}>
           <strong>📥 {traspasosPendientes.length} traspaso(s) por recibir</strong>
@@ -537,6 +641,19 @@ export default function InventarioPage() {
         <button onClick={() => setModalListaCompras(true)} style={{ background: "var(--h421-green-bg)", color: "var(--h421-green)", border: "1px solid var(--h421-green)", padding: "10px 14px", fontSize: 13 }}>🛒 Lista de Compras</button>
         <button onClick={() => { setModalMovimientosRecientes(true); cargarMovimientosRecientes(sucursalId); }} style={{ background: "transparent", color: "var(--h421-blue)", border: "1px solid var(--h421-blue)", padding: "10px 14px", fontSize: 13 }}>🔄 Movimientos</button>
         <button onClick={() => { setModalHistorial(true); cargarMovimientosRecientes(sucursalId); }} style={{ background: "transparent", color: "#8b5cf6", border: "1px solid #8b5cf6", padding: "10px 14px", fontSize: 13 }}>🕘 Historial</button>
+        {/* Secciones: salen del nombre del insumo ("Limpieza - Pinol" → Limpieza), ver categoriasInsumo.ts. */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, flexBasis: "100%" }}>
+          {["TODAS", ...SECCIONES_INSUMO.filter((s) => conteoSecciones.has(s))].map((s) => {
+            const activa = seccion === s;
+            const n = s === "TODAS" ? filasSinSeccion.length : conteoSecciones.get(s) ?? 0;
+            return (
+              <button key={s} onClick={() => setSeccion(s)}
+                style={{ background: activa ? "var(--h421-navy)" : "transparent", color: activa ? "#fff" : "var(--h421-navy-texto)", border: "1px solid var(--h421-gray-300)", borderRadius: 999, padding: "4px 12px", fontSize: 12, minHeight: 0 }}>
+                {s === "TODAS" ? "Todas" : s} ({n})
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div className="card h421-tabla-wrap" style={{ overflowX: "auto" }}>
@@ -555,7 +672,11 @@ export default function InventarioPage() {
             </tr>
           </thead>
           <tbody>
-            {filas.map((f) => {
+            {filas.map((f, idx) => <Fragment key={f.insumo.id}>{seccion === "TODAS" && (idx === 0 || filas[idx - 1].seccion !== f.seccion) && (
+              <tr style={{ background: "var(--h421-categoria-bg)" }}>
+                <td colSpan={9} style={{ padding: "8px 8px 6px", fontWeight: 800, fontSize: 13, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--h421-categoria-texto)" }}>{f.seccion}</td>
+              </tr>
+            )}{(() => {
               const i = f.insumo;
               if (editandoInsumoId === i.id) {
                 return (
@@ -646,87 +767,12 @@ export default function InventarioPage() {
                   </td>
                 </tr>
               );
-            })}
+            })()}</Fragment>)}
             {filas.length === 0 && (
               <tr><td colSpan={9} style={{ padding: 16, color: "var(--h421-gray-400)", textAlign: "center" }}>Sin insumos que coincidan.</td></tr>
             )}
           </tbody>
         </table>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16, marginTop: 16 }}>
-        <div className="card">
-          <h3 style={{ marginTop: 0 }}>Nuevo insumo</h3>
-          {(() => {
-            const deOtras = todosInsumos.filter((t) => !t.esPreparacion && !insumos.some((i) => i.id === t.id));
-            return deOtras.length > 0 ? (
-              <select value="" onChange={(e) => agregarExistente(e.target.value)}
-                style={{ width: "100%", padding: 10, marginBottom: 8, borderRadius: 8, border: "1px dashed var(--h421-gray-300)" }}>
-                <option value="">+ Agregar uno que ya existe en otra sucursal…</option>
-                {deOtras.map((t) => <option key={t.id} value={t.id}>{t.nombre} ({t.unidadMedida})</option>)}
-              </select>
-            ) : null;
-          })()}
-          <input placeholder="Nombre (ej. Leche entera)" value={nuevoInsumo.nombre} onChange={(e) => setNuevoInsumo((n) => ({ ...n, nombre: e.target.value }))}
-            style={{ width: "100%", padding: 10, marginBottom: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            <select value={nuevoInsumo.unidadMedida} onChange={(e) => setNuevoInsumo((n) => ({ ...n, unidadMedida: e.target.value }))} style={{ flex: 1, padding: 10 }}>
-              {UNIDADES_INSUMO.map((u) => <option key={u} value={u}>{etiquetaUnidad(u)}</option>)}
-            </select>
-            <select value={nuevoInsumo.proveedorId} onChange={(e) => setNuevoInsumo((n) => ({ ...n, proveedorId: e.target.value }))} style={{ flex: 1, padding: 10 }}>
-              <option value="">Proveedor…</option>
-              {proveedores.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-            </select>
-          </div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            <input placeholder="Precio costo" type="number" value={nuevoInsumo.costoUnitario} onChange={(e) => setNuevoInsumo((n) => ({ ...n, costoUnitario: e.target.value }))}
-              style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-            <input placeholder="Precio venta (si se vende directo)" type="number" value={nuevoInsumo.precioVenta} onChange={(e) => setNuevoInsumo((n) => ({ ...n, precioVenta: e.target.value }))}
-              style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input placeholder="Stock mínimo" type="number" value={nuevoInsumo.minimo} onChange={(e) => setNuevoInsumo((n) => ({ ...n, minimo: e.target.value }))}
-              style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-            <input placeholder="Stock máximo" type="number" value={nuevoInsumo.maximo} onChange={(e) => setNuevoInsumo((n) => ({ ...n, maximo: e.target.value }))}
-              style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-          </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-            <input placeholder="Se compra en (ej. Cartón)" value={nuevoInsumo.presentacionNombre} onChange={(e) => setNuevoInsumo((n) => ({ ...n, presentacionNombre: e.target.value }))}
-              style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-            <input placeholder={`Equivale a (${nuevoInsumo.unidadMedida})`} type="number" value={nuevoInsumo.presentacionCantidad} onChange={(e) => setNuevoInsumo((n) => ({ ...n, presentacionCantidad: e.target.value }))}
-              style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-          </div>
-          <p style={{ fontSize: 11, color: "var(--h421-gray-400)", margin: "4px 0 0" }}>
-            Opcional: si lo compras por empaque, pon cómo se llama y cuánto trae (Cartón · 1000 ml).
-            Después podrás contar &quot;4 cartones&quot; o &quot;2 cartones y 300 ml&quot; sin sacar cuentas.
-          </p>
-          <p style={{ fontSize: 11, color: "var(--h421-gray-400)", margin: "4px 0 0" }}>
-            Se crea solo en esta sucursal. Si otra sucursal lo necesita, ahí se agrega con &quot;Agregar uno que ya existe&quot; (o le llega solo con un traspaso).
-          </p>
-          <button onClick={crearInsumo} style={{ width: "100%", marginTop: 8, background: "var(--h421-green)", color: "#fff", padding: "10px 16px" }}>Crear insumo en esta sucursal</button>
-        </div>
-
-        {contexto && (
-          <PanelPreparaciones empresaId={contexto.usuario.empresaId} insumos={todosInsumos} onCambio={() => cargar(sucursalId)} />
-        )}
-
-        <div className="card">
-          <h3 style={{ marginTop: 0 }}>Proveedores</h3>
-          {proveedores.length === 0 && <p style={{ fontSize: 13, color: "var(--h421-gray-400)" }}>Sin proveedores dados de alta todavía.</p>}
-          {proveedores.map((p) => (
-            <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--h421-gray-200)", fontSize: 14 }}>
-              <span>{p.nombre}{p.telefono ? ` · ${p.telefono}` : ""}</span>
-              <button onClick={() => eliminarProveedor(p)} style={{ background: "var(--h421-red-bg)", color: "var(--h421-red-texto)", padding: "4px 8px", fontSize: 12 }}>Eliminar</button>
-            </div>
-          ))}
-          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-            <input placeholder="Nombre del proveedor" value={nuevoProveedor.nombre} onChange={(e) => setNuevoProveedor((p) => ({ ...p, nombre: e.target.value }))}
-              style={{ flex: 2, padding: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-            <input placeholder="Teléfono (opcional)" value={nuevoProveedor.telefono} onChange={(e) => setNuevoProveedor((p) => ({ ...p, telefono: e.target.value }))}
-              style={{ flex: 1, padding: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
-            <button onClick={crearProveedor} style={{ background: "var(--h421-navy)", color: "#fff", padding: "0 14px" }}>+</button>
-          </div>
-        </div>
       </div>
 
       {modalMovimiento && (
