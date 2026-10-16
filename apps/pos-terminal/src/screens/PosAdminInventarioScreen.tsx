@@ -24,6 +24,8 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
   const { usuario } = useAuthLocalStore();
 
   const [pestana, setPestana] = useState<Pestana>("existencias");
+  /** Se tocó "+ Agregar insumo" fuera de la pestaña Insumos: abrirla con el formulario de alta. */
+  const [altaPedida, setAltaPedida] = useState(false);
   const [items, setItems] = useState<ExistenciaInsumo[]>([]);
   const [movimientos, setMovimientos] = useState<MovimientoInventarioLocal[]>([]);
   const [busqueda, setBusqueda] = useState("");
@@ -331,11 +333,18 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
 
           <View style={estilos.pestanas}>
             {([["existencias", "Existencias"], ["conteo", "Conteo"], ["compras", `Compras (${compras.length})`], ["insumos", "Insumos"]] as [Pestana, string][]).map(([id, etiqueta]) => (
-              <TouchableOpacity key={id} onPress={() => setPestana(id)} style={[estilos.pestana, pestana === id && estilos.pestanaActiva]}>
+              <TouchableOpacity key={id} onPress={() => { setAltaPedida(false); setPestana(id); }} style={[estilos.pestana, pestana === id && estilos.pestanaActiva]}>
                 <Text style={[estilos.pestanaTexto, pestana === id && estilos.pestanaTextoActivo]}>{etiqueta}</Text>
               </TouchableOpacity>
             ))}
           </View>
+
+          {/* Agregar está a la mano en cualquier pestaña, junto a Editar y Dar de baja de cada insumo. */}
+          {pestana !== "insumos" && (
+            <TouchableOpacity onPress={() => { setAltaPedida(true); setPestana("insumos"); }} style={[estilos.botonPrincipal, { backgroundColor: colores.green, marginBottom: 10 }]} accessibilityRole="button">
+              <Text style={{ color: "#fff", fontWeight: "800" }}>＋ Agregar insumo</Text>
+            </TouchableOpacity>
+          )}
 
           {(pestana === "existencias" || pestana === "conteo") && (
             <TextInput
@@ -522,7 +531,7 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
 
           {/* Catálogo de insumos: alta, edición y baja. Al guardar se vuelve a bajar el
               inventario, así que el insumo nuevo aparece ya en Existencias y Conteo. */}
-          {pestana === "insumos" && <PanelInsumos onCambio={cargar} />}
+          {pestana === "insumos" && <PanelInsumos onCambio={cargar} abrirAltaAlEntrar={altaPedida} />}
 
           {movimientos.length > 0 && pestana === "existencias" && (
             <View style={estilos.tarjeta}>

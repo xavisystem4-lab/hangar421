@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { CategoriaProducto, Producto, Sucursal } from "@hangar421/shared";
 import { apiFetch } from "@/lib/api";
+import { OpcionesInsumo } from "@/components/PanelPreparaciones";
 import { useAuthCrm } from "@/lib/authClient";
 import { useSucursalActiva } from "@/store/sucursalActiva";
 import { filtrarProductos } from "@/lib/catalogoFiltro";
@@ -333,7 +334,7 @@ export default function CatalogoPage() {
             ) : (
               <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                 <select value={nuevoItem.insumoId} onChange={(e) => setNuevoItem((n) => ({ ...n, insumoId: e.target.value }))} style={{ flex: 2, padding: 8 }}>
-                  {insumos.map((i) => <option key={i.id} value={i.id}>{i.nombre} ({i.unidadMedida}){i.esPreparacion ? " · preparación" : ""}</option>)}
+                  <OpcionesInsumo insumos={insumos} />
                 </select>
                 <input placeholder="Cantidad" type="number" value={nuevoItem.cantidad} onChange={(e) => setNuevoItem((n) => ({ ...n, cantidad: e.target.value }))}
                   style={{ flex: 1, padding: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
@@ -376,7 +377,7 @@ export default function CatalogoPage() {
                                 style={{ flex: 2, padding: 6, fontSize: 13 }}
                               >
                                 <option value="">Insumo…</option>
-                                {insumos.map((i) => <option key={i.id} value={i.id}>{i.nombre} ({i.unidadMedida}){i.esPreparacion ? " · preparación" : ""}</option>)}
+                                <OpcionesInsumo insumos={insumos} />
                               </select>
                               <input
                                 placeholder="Cantidad" type="number"
