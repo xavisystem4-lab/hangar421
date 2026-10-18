@@ -31,7 +31,13 @@ const ITEMS: { href: string; label: string; icon: string; roles?: RolUsuario[] }
  *  se guarda fuera de pantalla y se abre con el botón ☰ de (dashboard)/layout.tsx; en escritorio
  *  el CSS lo ignora por completo y el menú se ve fijo como siempre. Se cierra solo al elegir una
  *  opción (`onCerrar` en cada Link) para no tapar la pantalla después de navegar. */
-export function Sidebar({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => void }) {
+export function Sidebar({ abierto, onCerrar, colapsado = false, onAlternarColapso }: {
+  abierto: boolean;
+  onCerrar: () => void;
+  /** Escritorio: menú angosto (solo íconos) para dejarle la pantalla al contenido. */
+  colapsado?: boolean;
+  onAlternarColapso?: () => void;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const { contexto, logout } = useAuthCrm();
@@ -42,22 +48,30 @@ export function Sidebar({ abierto, onCerrar }: { abierto: boolean; onCerrar: () 
   const pendientes = usarSolicitudesPendientes(items.some((i) => i.href === "/solicitudes"), seleccion?.sucursalId);
 
   return (
-    <aside className="h421-sidebar" data-abierto={abierto} style={{ width: 220, background: "var(--h421-navy)", color: "#fff", display: "flex", flexDirection: "column", padding: "20px 12px" }}>
-      <div style={{ padding: "0 8px 20px" }}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo-light.png" alt="HANGAR 421" style={{ height: 24, width: "auto" }} />
-        <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>ERP</div>
+    <aside className="h421-sidebar" data-abierto={abierto} data-colapsado={colapsado} style={{ background: "var(--h421-navy)", color: "#fff", display: "flex", flexDirection: "column", padding: "20px 12px" }}>
+      <div style={{ padding: "0 8px 20px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+        <div className="h421-sb-texto">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-light.png" alt="HANGAR 421" style={{ height: 24, width: "auto" }} />
+          <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>ERP</div>
+        </div>
+        {onAlternarColapso && (
+          <button className="h421-sb-colapsar" onClick={onAlternarColapso}
+            aria-label={colapsado ? "Abrir menú" : "Retraer menú"} title={colapsado ? "Abrir menú" : "Retraer menú (pantalla completa)"}>
+            {colapsado ? "»" : "«"}
+          </button>
+        )}
       </div>
 
       <nav style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>
         {items.map((item) => (
-          <Link key={item.href} href={item.href} onClick={onCerrar}
+          <Link key={item.href} href={item.href} onClick={onCerrar} title={colapsado ? item.label : undefined} className="h421-sb-item"
             style={{
               display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10,
               background: pathname === item.href ? "rgba(255,255,255,0.12)" : "transparent",
             }}>
             <span>{item.icon}</span>
-            <span style={{ flex: 1 }}>{item.label}</span>
+            <span className="h421-sb-texto" style={{ flex: 1 }}>{item.label}</span>
             {item.href === "/solicitudes" && pendientes > 0 && (
               <span
                 aria-label={`${pendientes} solicitudes pendientes`}
@@ -72,14 +86,18 @@ export function Sidebar({ abierto, onCerrar }: { abierto: boolean; onCerrar: () 
 
       {/* El botón de modo día/noche ahora está en la cabecera, junto a la sucursal (BotonTema). */}
 
-      <div style={{ fontSize: 13, opacity: 0.8, padding: "0 8px" }}>
+      <div className="h421-sb-texto" style={{ fontSize: 13, opacity: 0.8, padding: "0 8px" }}>
         <div>{contexto?.usuario.nombre}</div>
         <button onClick={() => { logout(); router.replace("/login"); }} style={{ marginTop: 8, background: "transparent", color: "#fff", padding: 0, textDecoration: "underline" }}>
           Cerrar sesión
         </button>
       </div>
 
-      <div style={{ padding: "16px 8px 0", marginTop: 12, borderTop: "1px solid rgba(255,255,255,0.12)", fontSize: 11, opacity: 0.55 }}>
+      {colapsado && (
+        <button className="h421-sb-solo-colapsado" onClick={() => { logout(); router.replace("/login"); }} title="Cerrar sesión" aria-label="Cerrar sesión"
+          style={{ background: "transparent", color: "#fff", padding: 0, fontSize: 18 }}>⎋</button>
+      )}
+      <div className="h421-sb-texto" style={{ padding: "16px 8px 0", marginTop: 12, borderTop: "1px solid rgba(255,255,255,0.12)", fontSize: 11, opacity: 0.55 }}>
         <div>v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.1.0"}</div>
         <div>Desarrollado por Soft Gala</div>
       </div>
