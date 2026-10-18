@@ -363,6 +363,14 @@ describe("factorConversionUnidad", () => {
   });
 
   it("ofrece todas las unidades, abreviadas salvo servicio y unidad", () => {
-    expect(UNIDADES_INSUMO).toEqual(["pz", "g", "kg", "lb", "oz", "ml", "l", "gal", "fl oz", "servicio", "unidad"]);
+    expect(UNIDADES_INSUMO).toEqual(["pz", "g", "kg", "lb", "oz", "ml", "l", "gal", "fl oz", "rebanadas", "servicio", "unidad"]);
   });
+
+describe("unidad rebanadas", () => {
+  it("reconoce 'rebanada' y 'reb' como rebanadas, sin conversión con gramos", () => {
+    expect(normalizarUnidad("Rebanada")).toBe("rebanadas");
+    expect(normalizarUnidad("reb")).toBe("rebanadas");
+    expect(factorConversionUnidad("g", "rebanadas")).toBeNull();
+  });
+});
 });
