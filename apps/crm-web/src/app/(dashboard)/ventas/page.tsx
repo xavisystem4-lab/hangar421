@@ -397,8 +397,8 @@ export default function VentasPage() {
           <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
             {problemas.slice(0, 10).map((p) => (
               <li key={p.id} style={{ marginBottom: 4 }}>
-                <strong>{p.entidad}</strong> · {p.terminal}
-                {p.sucursal && !seleccion?.sucursalId && ` · ${p.sucursal.nombre}`}
+                <strong>{p.entidad}</strong> · tablet &quot;{p.terminal}&quot;
+                {p.sucursal && !seleccion?.sucursalId && ` · sucursal ${p.sucursal.nombre}`}
                 {" · "}
                 {new Date(p.createdAt).toLocaleString("es-MX", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                 {" · "}

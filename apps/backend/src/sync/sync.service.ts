@@ -122,12 +122,17 @@ export class SyncService {
     const items = await this.prisma.syncQueueItem.findMany({
       where: {
         estado: SyncStatus.ERROR,
-        dispositivo: { sucursal: { empresaId, ...(sucursalId ? { id: sucursalId } : {}) } },
+        // La empresa sigue saliendo del dispositivo; la sucursal, de la operación misma (los
+        // registros viejos sin sucursal caen a la del dispositivo).
+        dispositivo: { sucursal: { empresaId } },
+        ...(sucursalId ? { OR: [{ sucursalId }, { sucursalId: null, dispositivo: { sucursalId } }] } : {}),
       },
       include: { dispositivo: { select: { nombre: true, tipo: true, sucursal: { select: { id: true, nombre: true } } } } },
       orderBy: { createdAt: "desc" },
       take: 100,
     });
+    const sucursales = await this.prisma.sucursal.findMany({ where: { empresaId }, select: { id: true, nombre: true } });
+    const nombresSucursal = new Map(sucursales.map((x) => [x.id, x.nombre]));
 
     return items.map((i) => ({
       id: i.id,
@@ -139,7 +144,7 @@ export class SyncService {
       createdAt: i.createdAt,
       terminal: i.dispositivo.nombre,
       tipoTerminal: i.dispositivo.tipo,
-      sucursal: i.dispositivo.sucursal,
+      sucursal: (i.sucursalId && nombresSucursal.get(i.sucursalId)) ? { id: i.sucursalId, nombre: nombresSucursal.get(i.sucursalId)! } : i.dispositivo.sucursal,
     }));
   }
 
@@ -165,6 +170,18 @@ export class SyncService {
       .catch(() => undefined);
   }
 
+  /** ¿La operación ya existe en el ERP aunque este intento haya fallado? (carrera entre dos
+   *  envíos del mismo evento). Solo para altas cuyo resultado se puede comprobar por id. */
+  private async yaQuedoAplicado(item: SyncEnvelope): Promise<boolean> {
+    const otro = await this.prisma.syncQueueItem.findUnique({ where: { idempotencyKey: item.idempotencyKey } });
+    if (otro?.estado === SyncStatus.SYNCED) return true;
+    if (item.entidad === SyncEntidad.PEDIDO && item.operacion === SyncOperacion.CREATE) {
+      const pedido = await this.prisma.pedido.findUnique({ where: { id: item.id }, select: { sucursalId: true } });
+      return !!pedido && (!item.sucursalId || pedido.sucursalId === item.sucursalId);
+    }
+    return false;
+  }
+
   private async aplicarItem(item: SyncEnvelope, empresaId: string): Promise<SyncItemResult> {
     const previo = await this.prisma.syncQueueItem.findUnique({ where: { idempotencyKey: item.idempotencyKey } });
     if (previo?.estado === SyncStatus.SYNCED) {
@@ -175,40 +192,41 @@ export class SyncService {
     // se resuelve/autoregistra la huella que manda el cliente antes de usarla (ver dispositivo.util.ts).
     const dispositivoId = (await resolverDispositivoId(this.prisma, item.dispositivoId, item.sucursalId)) ?? item.dispositivoId;
 
+    const datosBase = {
+      dispositivoId,
+      entidad: item.entidad,
+      entidadId: item.id,
+      operacion: item.operacion,
+      payload: item.payload as any,
+      idempotencyKey: item.idempotencyKey,
+      sucursalId: item.sucursalId ?? null,
+    };
+    const marcarSincronizado = () =>
+      this.prisma.syncQueueItem.upsert({
+        where: { idempotencyKey: item.idempotencyKey },
+        update: { estado: SyncStatus.SYNCED, syncedAt: new Date(), ultimoError: null, intentos: { increment: 1 }, sucursalId: item.sucursalId ?? undefined },
+        create: { ...datosBase, estado: SyncStatus.SYNCED, intentos: 1, syncedAt: new Date() },
+      });
+
     try {
       await this.enrutar(item, empresaId);
-      await this.prisma.syncQueueItem.upsert({
-        where: { idempotencyKey: item.idempotencyKey },
-        update: { estado: SyncStatus.SYNCED, syncedAt: new Date(), intentos: { increment: 1 } },
-        create: {
-          dispositivoId,
-          entidad: item.entidad,
-          entidadId: item.id,
-          operacion: item.operacion,
-          payload: item.payload as any,
-          idempotencyKey: item.idempotencyKey,
-          estado: SyncStatus.SYNCED,
-          intentos: 1,
-          syncedAt: new Date(),
-        },
-      });
+      await marcarSincronizado();
       return { id: item.id, idempotencyKey: item.idempotencyKey, estado: SyncStatus.SYNCED };
     } catch (error: any) {
+      // Dos envíos simultáneos del mismo evento (temporizador + "Subir a ERP"): uno entra y el
+      // otro choca con "Unique constraint failed on the fields: (`id`)". Si la operación ya quedó
+      // aplicada, no es un error — antes el que perdía la carrera marcaba ERROR encima del SYNCED
+      // y el ERP avisaba de ventas "rechazadas" que sí estaban registradas.
+      if (await this.yaQuedoAplicado(item)) {
+        await marcarSincronizado();
+        return { id: item.id, idempotencyKey: item.idempotencyKey, estado: SyncStatus.SYNCED };
+      }
       this.logger.warn(`Fallo al aplicar ${item.entidad}/${item.operacion} (${item.id}): ${error.message}`);
+      // Nunca se pisa un SYNCED con ERROR (yaQuedoAplicado ya revisó si otro envío lo aplicó).
       await this.prisma.syncQueueItem.upsert({
         where: { idempotencyKey: item.idempotencyKey },
-        update: { estado: SyncStatus.ERROR, ultimoError: error.message, intentos: { increment: 1 } },
-        create: {
-          dispositivoId,
-          entidad: item.entidad,
-          entidadId: item.id,
-          operacion: item.operacion,
-          payload: item.payload as any,
-          idempotencyKey: item.idempotencyKey,
-          estado: SyncStatus.ERROR,
-          ultimoError: error.message,
-          intentos: 1,
-        },
+        update: { estado: SyncStatus.ERROR, ultimoError: error.message, intentos: { increment: 1 }, sucursalId: item.sucursalId ?? undefined },
+        create: { ...datosBase, estado: SyncStatus.ERROR, ultimoError: error.message, intentos: 1 },
       });
       return { id: item.id, idempotencyKey: item.idempotencyKey, estado: SyncStatus.ERROR, error: error.message };
     }

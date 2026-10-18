@@ -143,7 +143,20 @@ function traducirUsuariosDelPayload(
  *  outboxRepo.pendientesParaDrenar). `ignorarBackoff: true` es lo que usa el botón manual
  *  "Sincronizar ahora" — salta la espera programada, nunca la conexión en sí (si de verdad no
  *  hay red, sigue sin poder mandar nada, con o sin backoff). */
-export async function procesarCola(ignorarBackoff = false): Promise<void> {
+let colaEnCurso: Promise<void> | null = null;
+
+/** Una sola subida a la vez. El temporizador, "Subir a ERP" y el regreso de la red podían
+ *  disparar dos envíos simultáneos del mismo pedido: uno entraba y el otro chocaba en el ERP
+ *  ("Unique constraint failed on the fields: (`id`)") y quedaba como venta "rechazada" aunque sí
+ *  estuviera registrada. Quien llega mientras hay una subida en curso espera esa misma. */
+export function procesarCola(ignorarBackoff = false): Promise<void> {
+  if (!colaEnCurso) {
+    colaEnCurso = procesarColaUnaVez(ignorarBackoff).finally(() => { colaEnCurso = null; });
+  }
+  return colaEnCurso;
+}
+
+async function procesarColaUnaVez(ignorarBackoff: boolean): Promise<void> {
   const db = await abrirBaseDeDatos();
   const status = useSyncStatusStore.getState();
 
