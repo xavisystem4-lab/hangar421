@@ -128,6 +128,19 @@ table { color: inherit; }
 .h421-menu-hamburguesa { display: none; }
 .h421-sidebar-fondo { display: none; }
 
+/* Menú lateral de escritorio: 220 px abierto, 68 px retraído (solo íconos, con el nombre al
+   pasar el mouse). El contenido (.h421-main, flex: 1 y min-width: 0) toma el ancho que queda. */
+.h421-sidebar { width: 220px; flex-shrink: 0; transition: width 200ms ease; position: sticky; top: 0; height: 100vh; overflow-y: auto; overflow-x: hidden; box-sizing: border-box; }
+.h421-sidebar[data-colapsado="true"] { width: 68px; }
+.h421-sidebar[data-colapsado="true"] .h421-sb-texto { display: none; }
+.h421-sidebar[data-colapsado="true"] .h421-sb-item { justify-content: center; padding-left: 0 !important; padding-right: 0 !important; }
+.h421-sb-solo-colapsado { min-height: 32px; }
+.h421-sb-colapsar {
+  min-height: 0; width: 30px; height: 30px; flex-shrink: 0; border-radius: 8px;
+  background: rgba(255,255,255,0.12); color: #fff; font-size: 16px; line-height: 1;
+}
+.h421-sb-colapsar:hover { background: rgba(255,255,255,0.22); }
+
 @media (max-width: 860px) {
   .h421-menu-hamburguesa {
     display: flex; align-items: center; justify-content: center;
@@ -137,6 +150,11 @@ table { color: inherit; }
     box-shadow: 0 4px 14px rgba(0,0,0,0.25);
   }
 
+  /* En celular el menú es un cajón: siempre completo, sin modo retraído. */
+  .h421-sb-colapsar, .h421-sb-solo-colapsado { display: none; }
+  .h421-sidebar[data-colapsado="true"] { width: min(260px, 80vw); }
+  .h421-sidebar[data-colapsado="true"] .h421-sb-texto { display: block; }
+  .h421-sidebar[data-colapsado="true"] .h421-sb-item { justify-content: flex-start; padding-left: 12px !important; padding-right: 12px !important; }
   .h421-sidebar {
     position: fixed; top: 0; left: 0; height: 100vh; width: min(260px, 80vw);
     transform: translateX(-100%);

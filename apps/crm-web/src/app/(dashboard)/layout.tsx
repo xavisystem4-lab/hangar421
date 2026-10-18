@@ -19,6 +19,28 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // quedado abierto de una sesión anterior): un cajón que aparece abierto solo tapando toda la
   // pantalla al entrar sería peor experiencia que partir siempre cerrado.
   const [menuAbierto, setMenuAbierto] = useState(false);
+  // Escritorio: menú retraído (solo íconos). Se recuerda la elección; en Reportes se retrae solo
+  // para que las tablas y gráficas usen toda la pantalla, y se puede volver a abrir con ».
+  const [colapsadoPreferido, setColapsadoPreferido] = useState(false);
+  const [colapsadoEnReportes, setColapsadoEnReportes] = useState(true);
+  const enReportes = pathname?.startsWith("/reportes") ?? false;
+  const colapsado = enReportes ? colapsadoEnReportes : colapsadoPreferido;
+  useEffect(() => {
+    try { setColapsadoPreferido(localStorage.getItem("h421-menu-colapsado") === "1"); } catch { /* sin almacenamiento */ }
+  }, []);
+  function alternarColapso() {
+    if (enReportes) { setColapsadoEnReportes((c) => !c); return; }
+    setColapsadoPreferido((c) => {
+      try { localStorage.setItem("h421-menu-colapsado", c ? "0" : "1"); } catch { /* sin almacenamiento */ }
+      return !c;
+    });
+  }
+  // Las gráficas se miden al cambiar el tamaño de la ventana: al abrir o retraer el menú se les
+  // avisa cuando termina la animación, para que se acomoden al nuevo ancho.
+  useEffect(() => {
+    const t = setTimeout(() => window.dispatchEvent(new Event("resize")), 240);
+    return () => clearTimeout(t);
+  }, [colapsado]);
   const { seleccion, cargar: cargarSucursal } = useSucursalActiva();
   // Distinto de "no hay selección": esto es el usuario pidiendo cambiarla desde la cabecera,
   // con una ya elegida. Ese diálogo sí se puede cerrar sin elegir.
@@ -54,8 +76,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         ☰
       </button>
       <div className="h421-sidebar-fondo" data-abierto={menuAbierto} onClick={() => setMenuAbierto(false)} />
-      <Sidebar abierto={menuAbierto} onCerrar={() => setMenuAbierto(false)} />
-      <main className="h421-main" style={{ flex: 1, padding: 28, overflowY: "auto" }}>
+      <Sidebar abierto={menuAbierto} onCerrar={() => setMenuAbierto(false)} colapsado={colapsado} onAlternarColapso={alternarColapso} />
+      <main className="h421-main" style={{ flex: 1, minWidth: 0, padding: 28, overflowY: "auto" }}>
         {/* Sucursal activa siempre visible: el error caro en un ERP multisucursal es mirar los
             datos de una creyendo que son de otra. */}
         <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 18 }}>
