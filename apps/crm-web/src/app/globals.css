@@ -175,3 +175,41 @@ table { color: inherit; }
     pointer-events: none;
   }
 }
+
+/* ── Altas del Inventario (Nuevo insumo · Preparaciones · Proveedores) ─────────────────────
+   Tres tarjetas alineadas arriba; cada campo con su etiqueta, todos de 40 px de alto y con
+   min-width: 0 para que ningún input ni botón se salga de su tarjeta en pantallas angostas. */
+.h421-altas {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 20px;
+}
+.h421-altas .card { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.h421-altas h3 { margin: 0 0 2px; font-size: 17px; }
+.h421-ayuda { margin: 0; font-size: 12px; line-height: 1.45; color: var(--h421-gray-400); }
+.h421-campos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.h421-campos > .ancho { grid-column: 1 / -1; }
+.h421-campo { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.h421-campo > span { font-size: 12px; font-weight: 600; color: var(--h421-gray-400); }
+.h421-campo small { font-weight: 400; }
+.h421-control {
+  width: 100%; min-width: 0; box-sizing: border-box;
+  height: 40px; padding: 0 12px;
+  border-radius: 8px; border: 1px solid var(--h421-gray-200);
+}
+.h421-control:focus { outline: 2px solid var(--h421-blue); outline-offset: -1px; }
+.h421-boton-primario { width: 100%; background: var(--h421-green); color: #fff; padding: 0 16px; }
+.h421-boton-primario:disabled { opacity: 0.5; cursor: not-allowed; }
+.h421-boton-secundario {
+  background: transparent; color: var(--h421-blue); border: 1px solid var(--h421-blue);
+  padding: 0 14px; min-height: 34px; font-size: 13px;
+}
+.h421-boton-peligro { background: var(--h421-red-bg); color: var(--h421-red-texto); padding: 0 10px; min-height: 30px; font-size: 12px; flex-shrink: 0; }
+.h421-lista { border-top: 1px solid var(--h421-gray-200); max-height: 340px; overflow-y: auto; }
+.h421-lista-fila {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 10px 2px; border-bottom: 1px solid var(--h421-gray-200); font-size: 14px;
+}
+@media (max-width: 420px) { .h421-campos { grid-template-columns: minmax(0, 1fr); } }
