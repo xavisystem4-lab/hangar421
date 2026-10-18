@@ -262,7 +262,7 @@ export function calcularDescuentosVenta(lineas: LineaConDescuento[], general?: D
  * Unidades de insumo que maneja el sistema, abreviadas. "servicio" y "unidad" van completas: no
  * tienen abreviatura reconocible y una preparación de la casa (un cold foam) se mide así.
  */
-export const UNIDADES_INSUMO = ["pz", "g", "kg", "lb", "oz", "ml", "l", "gal", "fl oz", "servicio", "unidad"] as const;
+export const UNIDADES_INSUMO = ["pz", "g", "kg", "lb", "oz", "ml", "l", "gal", "fl oz", "rebanadas", "servicio", "unidad"] as const;
 export type UnidadInsumo = (typeof UNIDADES_INSUMO)[number];
 
 /** Nombre completo para mostrar junto a la abreviatura en los selectores. */
@@ -276,6 +276,8 @@ export const NOMBRE_UNIDAD: Record<UnidadInsumo, string> = {
   l: "litros",
   gal: "galones",
   "fl oz": "onzas líquidas",
+  // Para lo que se cuenta por rebanada (jamón, queso): se escribe completa porque "reb" no se entiende.
+  rebanadas: "rebanadas",
   servicio: "servicio",
   unidad: "unidad",
 };
@@ -295,6 +297,7 @@ const SINONIMOS_UNIDAD: Record<string, string> = {
   mililitro: "ml", mililitros: "ml",
   galon: "gal", "galón": "gal", galones: "gal",
   floz: "fl oz", "onza liquida": "fl oz", "onzas liquidas": "fl oz",
+  rebanada: "rebanadas", reb: "rebanadas", rebs: "rebanadas", "rebanada(s)": "rebanadas",
   servicios: "servicio", unidades: "unidad",
 };
 
