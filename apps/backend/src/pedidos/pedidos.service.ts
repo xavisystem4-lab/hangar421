@@ -15,6 +15,7 @@ import {
   calcularDescuentosVenta,
   consumoDeVenta,
   agruparRecetas,
+  ajusteDeLeche,
   validarPagoSuficiente,
 } from "@hangar421/shared";
 import { Prisma } from "@prisma/client";
@@ -1057,12 +1058,41 @@ export class PedidosService {
    */
   private async consumoDeItem(item: { productoId: string; cantidad: number; modificadores?: { opcionModificadorId: string }[] }) {
     const opcionIds = (item.modificadores ?? []).map((m) => m.opcionModificadorId);
-    const [recetaProducto, recetaOpciones] = await Promise.all([
+    const hayOpciones = opcionIds.length > 0;
+    const [recetaProducto, recetaOpciones, producto, opciones] = await Promise.all([
       this.prisma.recetaItem.findMany({ where: { productoId: item.productoId } }),
-      opcionIds.length > 0
+      hayOpciones
         ? this.prisma.recetaOpcion.findMany({ where: { opcionModificadorId: { in: opcionIds } } })
         : Promise.resolve([] as { insumoId: string; cantidad: any; opcionModificadorId: string }[]),
+      // Leche por bebida: solo importa si eligieron opciones (la leche es una de ellas).
+      hayOpciones
+        ? this.prisma.producto.findUnique({
+            where: { id: item.productoId },
+            select: { lecheBase: true, lecheConColdFoam: true, lecheConShot: true, lecheConAmbos: true },
+          })
+        : Promise.resolve(null),
+      hayOpciones
+        ? this.prisma.opcionModificador.findMany({
+            where: { id: { in: opcionIds } },
+            select: { id: true, nombre: true, modificador: { select: { nombre: true } } },
+          })
+        : Promise.resolve([] as { id: string; nombre: string; modificador: { nombre: string } }[]),
     ]);
+    const nombres = new Map(opciones.map((o) => [o.id, o]));
+    const leche = ajusteDeLeche(
+      producto && producto.lecheBase !== null
+        ? {
+            base: Number(producto.lecheBase),
+            conColdFoam: producto.lecheConColdFoam === null ? null : Number(producto.lecheConColdFoam),
+            conShot: producto.lecheConShot === null ? null : Number(producto.lecheConShot),
+            conAmbos: producto.lecheConAmbos === null ? null : Number(producto.lecheConAmbos),
+          }
+        : null,
+      opcionIds.flatMap((id) => {
+        const o = nombres.get(id);
+        return o ? [{ opcionModificadorId: id, grupo: o.modificador.nombre, opcion: o.nombre }] : [];
+      }),
+    );
     // Preparaciones de la casa (cold foam) que aparezcan en esas recetas: se descuentan sus
     // ingredientes. Se cargan por niveles solo las que hacen falta.
     const recetaPreparaciones: { preparacionId: string; insumoId: string; cantidad: any }[] = [];
@@ -1077,7 +1107,7 @@ export class PedidosService {
     // La regla vive en shared (consumoDeVenta): la tablet descuenta exactamente lo mismo cuando
     // cobra sin conexión, y una sola prueba cubre a los dos.
     return consumoDeVenta(
-      [item],
+      [{ ...item, leche }],
       agruparRecetas(
         recetaProducto.map((r) => ({ productoId: item.productoId, insumoId: r.insumoId, cantidad: Number(r.cantidad) })),
         recetaOpciones.map((r) => ({ opcionModificadorId: r.opcionModificadorId, insumoId: r.insumoId, cantidad: Number(r.cantidad) })),

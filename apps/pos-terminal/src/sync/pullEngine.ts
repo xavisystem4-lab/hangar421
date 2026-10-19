@@ -66,6 +66,7 @@ export const refrescarCatalogo = unaALaVez(async function refrescarCatalogo(): P
       precioBase: Number(p.precioBase), precioSucursal: p.precioSucursal != null ? Number(p.precioSucursal) : undefined,
       activo: p.activo, disponibleSucursal: p.disponibleSucursal,
       requierePersonalizacion: p.requierePersonalizacion, modificadores: p.modificadores,
+      lecheBase: p.lecheBase, lecheConColdFoam: p.lecheConColdFoam, lecheConShot: p.lecheConShot, lecheConAmbos: p.lecheConAmbos,
     })),
   );
   if (Array.isArray(modificadores)) await upsertModificadores(db, modificadores);

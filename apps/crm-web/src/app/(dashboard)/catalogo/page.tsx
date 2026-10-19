@@ -8,6 +8,7 @@ import { useAuthCrm } from "@/lib/authClient";
 import { useSucursalActiva } from "@/store/sucursalActiva";
 import { filtrarProductos } from "@/lib/catalogoFiltro";
 import { PanelProducto } from "@/components/PanelProducto";
+import { LecheDeBebida } from "@/components/LecheDeBebida";
 
 interface Insumo { id: string; nombre: string; unidadMedida: string; esPreparacion?: boolean }
 interface RecetaItemDto { id: string; insumoId: string; cantidad: string; insumo: { nombre: string; unidadMedida: string } }
@@ -340,6 +341,16 @@ export default function CatalogoPage() {
                   style={{ flex: 1, padding: 8, borderRadius: 8, border: "1px solid var(--h421-gray-200)" }} />
                 <button onClick={agregarItemReceta} style={{ background: "var(--h421-green)", color: "#fff", padding: "0 14px" }}>+</button>
               </div>
+            )}
+
+            {recetaOpciones.some((o) => /leche/i.test(o.modificador)) && (
+              <LecheDeBebida
+                producto={productoReceta}
+                onGuardado={(p) => {
+                  setProductoReceta(p);
+                  setProductos((lista) => lista.map((x) => (x.id === p.id ? { ...x, ...p } : x)));
+                }}
+              />
             )}
 
             {/* Receta POR OPCIÓN de modificador: así un Latte no tiene que listar las cinco

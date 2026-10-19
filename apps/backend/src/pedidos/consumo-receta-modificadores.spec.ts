@@ -12,8 +12,23 @@ function crearServicio(
   recetaProducto: { insumoId: string; cantidad: number }[],
   recetasOpcion: { opcionModificadorId: string; insumoId: string; cantidad: number }[],
   recetasPreparacion: { preparacionId: string; insumoId: string; cantidad: number }[] = [],
+  extra: { leche?: Record<string, number | null>; opciones?: { id: string; nombre: string; grupo: string }[] } = {},
 ) {
   const prisma = {
+    producto: {
+      findUnique: jest.fn(() =>
+        Promise.resolve({ lecheBase: null, lecheConColdFoam: null, lecheConShot: null, lecheConAmbos: null, ...(extra.leche ?? {}) }),
+      ),
+    },
+    opcionModificador: {
+      findMany: jest.fn(({ where }: any) =>
+        Promise.resolve(
+          (extra.opciones ?? [])
+            .filter((o) => where.id.in.includes(o.id))
+            .map((o) => ({ id: o.id, nombre: o.nombre, modificador: { nombre: o.grupo } })),
+        ),
+      ),
+    },
     recetaItem: { findMany: jest.fn(() => Promise.resolve(recetaProducto)) },
     recetaOpcion: {
       findMany: jest.fn(({ where }: any) =>
@@ -105,6 +120,29 @@ describe("consumo de un renglón de venta", () => {
       { insumoId: "cafe", cantidad: 40 },
       { insumoId: "crema", cantidad: 70 },
       { insumoId: "matcha", cantidad: 4 },
+    ]);
+  });
+
+  it("Iced Latte con cold foam y shot baja la leche de la hoja (150 g), no 240", async () => {
+    const CF = { opcionModificadorId: "op-cf", insumoId: "crema", cantidad: 50 };
+    const { service } = crearServicio([CAFE, VASO], [LECHE_ENTERA, SHOT, CF], [], {
+      leche: { lecheBase: 240, lecheConColdFoam: 190, lecheConShot: 240, lecheConAmbos: 150 },
+      opciones: [
+        { id: "op-entera", nombre: "Entera", grupo: "Tipo de leche" },
+        { id: "op-shot", nombre: "Shot extra", grupo: "Extras" },
+        { id: "op-cf", nombre: "Vainilla", grupo: "Cold Foam" },
+      ],
+    });
+    const consumo = await (service as any).consumoDeItem({
+      productoId: "iced-latte",
+      cantidad: 1,
+      modificadores: [{ opcionModificadorId: "op-entera" }, { opcionModificadorId: "op-shot" }, { opcionModificadorId: "op-cf" }],
+    });
+    expect(consumo).toEqual([
+      { insumoId: "cafe", cantidad: 30 },
+      { insumoId: "crema", cantidad: 50 },
+      { insumoId: "leche-entera", cantidad: 150 },
+      { insumoId: "vaso", cantidad: 1 },
     ]);
   });
 });

@@ -138,6 +138,11 @@ export interface Producto {
   requierePersonalizacion: boolean;
   estacionPreparacion?: EstacionPreparacion | null;
   impuestoOverride?: number | null;
+  /** Gramos de leche por bebida (ver lechePorBebida.ts); null = receta de la opción de leche. */
+  lecheBase?: number | null;
+  lecheConColdFoam?: number | null;
+  lecheConShot?: number | null;
+  lecheConAmbos?: number | null;
   modificadores?: Modificador[];
   // resuelto por sucursal en tiempo de consulta:
   precioSucursal?: number;

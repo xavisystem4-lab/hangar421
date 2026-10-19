@@ -1,4 +1,4 @@
-import { descontarConsumoLocal, recetasParaConsumo } from "./inventarioRepo";
+import { descontarConsumoLocal, recetasParaConsumo, lecheParaConsumo } from "./inventarioRepo";
 
 /**
  * La tablet descuenta el almacén al cobrar para enseñar la existencia real en el momento, también
@@ -77,5 +77,30 @@ describe("descontarConsumoLocal", () => {
     const { db, ejecutados } = baseFalsa();
     await descontarConsumoLocal(db, [{ insumoId: "a", cantidad: 0 }, { insumoId: "b", cantidad: -5 }], "suc-1");
     expect(ejecutados).toHaveLength(0);
+  });
+});
+
+describe("lecheParaConsumo", () => {
+  it("trae los gramos del producto y el grupo de cada opción elegida", async () => {
+    const db = {
+      getAllAsync: jest.fn(async (sql: string) =>
+        sql.includes("FROM productos")
+          ? [{ id: "iced-latte", leche_base: 240, leche_con_cold_foam: 190, leche_con_shot: 240, leche_con_ambos: 150 }]
+          : [{ id: "op-entera", opcion: "Entera", grupo: "Tipo de leche" }]),
+    } as any;
+    await expect(lecheParaConsumo(db, ["iced-latte"], ["op-entera"])).resolves.toEqual({
+      porProducto: { "iced-latte": { base: 240, conColdFoam: 190, conShot: 240, conAmbos: 150 } },
+      opciones: { "op-entera": { grupo: "Tipo de leche", opcion: "Entera" } },
+    });
+  });
+
+  it("sin opciones, sin leche definida o con error de base regresa vacío", async () => {
+    const vacio = { porProducto: {}, opciones: {} };
+    const sinFilas = { getAllAsync: jest.fn(async () => []) } as any;
+    await expect(lecheParaConsumo(sinFilas, ["x"], [])).resolves.toEqual(vacio);
+    expect(sinFilas.getAllAsync).not.toHaveBeenCalled();
+    await expect(lecheParaConsumo(sinFilas, ["x"], ["o"])).resolves.toEqual(vacio);
+    const rota = { getAllAsync: jest.fn(async () => { throw new Error("no such column: leche_base"); }) } as any;
+    await expect(lecheParaConsumo(rota, ["x"], ["o"])).resolves.toEqual(vacio);
   });
 });

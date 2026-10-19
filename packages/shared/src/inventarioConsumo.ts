@@ -18,6 +18,12 @@ export interface ItemParaConsumo {
   cantidad: number;
   /** Opciones de modificador elegidas en ESTE renglón; repetidas consumen varias veces. */
   modificadores?: { opcionModificadorId: string }[];
+  /**
+   * Leche que lleva ESTA bebida (ver lechePorBebida.ts). En las opciones de `opcionIds` (la leche
+   * elegida) su línea principal —la de más cantidad: la leche; una proteína u otro extra se queda
+   * igual— se cambia por `gramos` en vez de los 240 g fijos de la receta de la opción.
+   */
+  leche?: { gramos: number; opcionIds: string[] } | null;
 }
 
 export interface RecetasDisponibles {
@@ -87,6 +93,14 @@ function redondear4(n: number): number {
   return Math.round((n + Number.EPSILON) * 10_000) / 10_000;
 }
 
+/** Cambia la línea principal (la de más cantidad) de la receta de una leche por `gramos`. */
+function conLeche(lineas: LineaReceta[], gramos: number): LineaReceta[] {
+  if (lineas.length === 0 || !(gramos >= 0)) return lineas;
+  let principal = 0;
+  lineas.forEach((l, i) => { if (l.cantidad > lineas[principal].cantidad) principal = i; });
+  return lineas.map((l, i) => (i === principal ? { insumoId: l.insumoId, cantidad: gramos } : l));
+}
+
 /**
  * Suma, insumo por insumo, lo que consumen los renglones de una venta. El resultado sale ordenado
  * por insumoId para que dos cálculos de la misma venta sean idénticos (y comparables en pruebas).
@@ -102,7 +116,9 @@ export function consumoDeVenta(items: ItemParaConsumo[], recetas: RecetasDisponi
   for (const item of items) {
     for (const r of abrir(recetas.porProducto[item.productoId] ?? [])) sumar(r.insumoId, r.cantidad, item.cantidad);
     for (const m of item.modificadores ?? []) {
-      for (const r of abrir(recetas.porOpcion[m.opcionModificadorId] ?? [])) sumar(r.insumoId, r.cantidad, item.cantidad);
+      let lineas = recetas.porOpcion[m.opcionModificadorId] ?? [];
+      if (item.leche && item.leche.opcionIds.includes(m.opcionModificadorId)) lineas = conLeche(lineas, item.leche.gramos);
+      for (const r of abrir(lineas)) sumar(r.insumoId, r.cantidad, item.cantidad);
     }
   }
 
