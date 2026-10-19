@@ -4,7 +4,7 @@ import { useTemaStore, usarColores } from "./src/store/temaStore";
 import { useAuthLocalStore } from "./src/store/authLocalStore";
 import { abrirBaseDeDatos } from "./src/db/database";
 import { primerArranqueCompletado } from "./src/db/configFiscalRepo";
-import { iniciarSync, detenerSync } from "./src/sync/syncEngine";
+import { iniciarSync, detenerSync, conectarAlErpAlEntrar } from "./src/sync/syncEngine";
 import { detenerEscuchaDeRed, iniciarEscuchaDeRed } from "./src/sync/conectividad";
 import { registrarTareaSegundoPlano } from "./src/sync/tareaSegundoPlano";
 import { ConfiguracionInicialScreen } from "./src/screens/ConfiguracionInicialScreen";
@@ -44,6 +44,9 @@ export default function App() {
   useEffect(() => {
     if (!auth.usuario) return;
     iniciarSync();
+    // Al entrar (o al cambiar de sucursal) se enlaza con el ERP de inmediato: sube lo pendiente
+    // y baja lo nuevo sin esperar al temporizador.
+    conectarAlErpAlEntrar();
     return () => detenerSync();
   }, [auth.usuario]);
 
