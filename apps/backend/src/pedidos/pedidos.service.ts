@@ -255,6 +255,16 @@ export class PedidosService {
     return pedido;
   }
 
+  /** Choque de llave primaria al crear (P2002 sobre `id`) porque otro envío del mismo pedido lo
+   *  creó un instante antes: es el mismo pedido, no un error. */
+  private async esElMismoPedidoYaCreado(e: any, id: string, sucursalId: string): Promise<boolean> {
+    const destino = e?.meta?.target;
+    const choqueDeId = e?.code === "P2002" && (Array.isArray(destino) ? destino.includes("id") : String(destino ?? "").includes("pkey") || destino === "id");
+    if (!choqueDeId) return false;
+    const existente = await this.prisma.pedido.findUnique({ where: { id }, select: { sucursalId: true } });
+    return !!existente && existente.sucursalId === sucursalId;
+  }
+
   /** Crea un pedido de forma idempotente: si `dto.id` ya existe, devuelve el existente
    *  (reintento de sincronización offline no duplica). */
   /** `opciones.desdeTerminal`: la venta llega por la cola offline y ya ocurrió; un producto que
@@ -314,6 +324,8 @@ export class PedidosService {
       this.logger.warn(`Pedido ${dto.id}: el turno ${dto.turnoId} no existe en el ERP — se guarda sin turno y se resuelve al cobrar.`);
     }
 
+    // Otro envío del mismo pedido pudo crearlo entre la consulta de arriba y esta transacción
+    // (dos sincronizaciones a la vez). Entonces es el mismo pedido: se devuelve el existente.
     const pedido = await this.prisma.$transaction(async (tx) => {
       const creado = await tx.pedido.create({
         data: {
@@ -377,7 +389,11 @@ export class PedidosService {
       }
 
       return creado;
+    }).catch(async (e: any) => {
+      if (await this.esElMismoPedidoYaCreado(e, dto.id, dto.sucursalId)) return null;
+      throw e;
     });
+    if (!pedido) return this.obtener(dto.id);
 
     this.realtime.emitirASucursal(dto.sucursalId, WS_EVENTS.PEDIDO_CREADO, pedido);
     this.realtime.emitirAEmpresa(dto.empresaId, WS_EVENTS.PEDIDO_CREADO, pedido);

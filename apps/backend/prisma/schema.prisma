@@ -1312,6 +1312,9 @@ model SyncQueueItem {
   operacion      SyncOperacion
   payload        Json
   idempotencyKey String        @unique
+  // Sucursal de la operación (la del envelope), no la del dispositivo: una tablet que cambia de
+  // sucursal no debe arrastrar sus avisos a la otra.
+  sucursalId     String?
   estado         SyncStatus    @default(PENDING)
   intentos       Int           @default(0)
   ultimoError    String?
@@ -1321,6 +1324,7 @@ model SyncQueueItem {
   dispositivo Dispositivo @relation(fields: [dispositivoId], references: [id])
 
   @@index([dispositivoId, estado])
+  @@index([sucursalId, estado])
   @@map("sync_queue_items")
 }
 

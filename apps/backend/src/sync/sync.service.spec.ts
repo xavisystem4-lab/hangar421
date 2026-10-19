@@ -142,6 +142,23 @@ describe("SyncService.push — idempotencia", () => {
     expect(resp.resultados[1].estado).toBe(SyncStatus.SYNCED);
   });
 
+  it("si el pedido ya quedó registrado por otro envío simultáneo, el choque de id NO se reporta como error", async () => {
+    const { push, pedidos } = crearServicio();
+    const envelope = envolverPedido("dev-1-PEDIDO-CARRERA");
+    // El otro envío lo crea justo antes: este choca con la llave primaria.
+    pedidos.crear.mockImplementationOnce(async () => {
+      DUENOS.pedido["pedido-1"] = { sucursalId: "suc-1" };
+      throw new Error("Unique constraint failed on the fields: (`id`)");
+    });
+
+    try {
+      const resp = await push([envelope as any]);
+      expect(resp.resultados[0].estado).toBe(SyncStatus.SYNCED);
+    } finally {
+      delete DUENOS.pedido["pedido-1"];
+    }
+  });
+
   it("un item marcado ERROR sí se reintenta en el siguiente push (a diferencia de uno SYNCED)", async () => {
     const { push, pedidos } = crearServicio();
     const envelope = envolverPedido("dev-1-PEDIDO-RETRY");
