@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
@@ -19,6 +19,8 @@ import { obtenerNombreSucursal } from "../db/dispositivoLocal";
 import type { Autorizador } from "../auth/autorizacion";
 import { useExigirPermiso } from "../hooks/useExigirPermiso";
 import { PERMISOS_TERMINAL } from "../auth/permisosTerminal";
+import { GRAMOS_POR_CALIBRACION, MAX_CALIBRACIONES, elegirInsumoCafe, mermaPorCalibraciones } from "../caja/calibraciones";
+import { listarInsumosLocales, registrarMovimiento } from "../db/inventarioRepo";
 
 export function PosCajaScreen() {
   const { usuario } = useAuthLocalStore();
@@ -56,6 +58,9 @@ export function PosCajaScreen() {
   const [sucursal, setSucursal] = useState<string | null>(null);
   /** Corte mostrado en la ventana flotante: en vivo ("Ver corte") o el del turno recién cerrado. */
   const [corteVisible, setCorteVisible] = useState<CorteDetallado | null>(null);
+  /** Paso previo al cierre: cuántas calibraciones tuvo la máquina de café (merma de café). */
+  const [preguntandoCalibraciones, setPreguntandoCalibraciones] = useState(false);
+  const [calibraciones, setCalibraciones] = useState("");
 
   async function cargar() {
     const db = await abrirBaseDeDatos();
@@ -184,7 +189,12 @@ export function PosCajaScreen() {
     });
   }
 
-  function confirmarCierre() {
+  function preguntarCalibraciones() {
+    setCalibraciones("");
+    setPreguntandoCalibraciones(true);
+  }
+
+  function confirmarCierre(nCalibraciones = 0) {
     const signo = diferencia > 0 ? "sobran" : "faltan";
     const detalle = diferencia === 0
       ? "El conteo cuadra con lo esperado."
@@ -194,21 +204,45 @@ export function PosCajaScreen() {
         ? "\nLos dólares cuadran."
         : `\nDólares: contados US$${desglose.totalUSD.toFixed(2)}, esperados US$${ventasEnEfectivo.usd.toFixed(2)} (${diferenciaUsd > 0 ? "sobran" : "faltan"} US$${Math.abs(diferenciaUsd).toFixed(2)}).`
       : "";
+    const lineaCalibraciones = nCalibraciones > 0
+      ? `\nCalibraciones de la máquina: ${nCalibraciones} (merma de ${nCalibraciones * GRAMOS_POR_CALIBRACION} g de café).`
+      : "\nSin calibraciones de la máquina.";
     Alert.alert(
       "Cerrar caja",
-      `Contado: $${desglose.totalMXN.toFixed(2)}\n${detalle}${detalleUsd}\n\nEl corte no se puede deshacer.`,
+      `Contado: $${desglose.totalMXN.toFixed(2)}\n${detalle}${detalleUsd}${lineaCalibraciones}\n\nEl corte no se puede deshacer.`,
       [
         { text: "Cancelar", style: "cancel" },
-        { text: "Cerrar caja", style: "destructive", onPress: cerrar },
+        { text: "Cerrar caja", style: "destructive", onPress: () => cerrar(nCalibraciones) },
       ],
     );
   }
 
-  async function cerrar() {
+  async function cerrar(nCalibraciones = 0) {
     if (!turno) return;
     // El corte se arma ANTES de limpiar el conteo: es el resumen que queda en pantalla.
     const corteFinal = construirCorte(true);
     const db = await abrirBaseDeDatos();
+    // Merma del café por las calibraciones de la máquina (20 g cada una). Va antes del corte y
+    // sin detenerlo: un inventario sin "Café en grano" no puede impedir cerrar la caja.
+    if (nCalibraciones > 0 && usuario) {
+      try {
+        const cafe = elegirInsumoCafe(await listarInsumosLocales(db));
+        const cantidad = cafe ? mermaPorCalibraciones(nCalibraciones, cafe.unidadMedida) : 0;
+        if (cafe && cantidad > 0) {
+          await registrarMovimiento(db, {
+            insumoId: cafe.id,
+            tipo: "MERMA",
+            cantidad,
+            motivo: `Calibración de la máquina de café: ${nCalibraciones} × ${GRAMOS_POR_CALIBRACION} g (cierre de turno ${turno.id.slice(-6)})`,
+            usuarioId: usuario.id,
+          });
+        } else if (!cafe) {
+          Alert.alert("Calibraciones", "No se encontró el insumo \"Café en grano\" en esta sucursal: la merma de las calibraciones no se registró.");
+        }
+      } catch {
+        Alert.alert("Calibraciones", "No se pudo registrar la merma de las calibraciones. El corte sí se guardó.");
+      }
+    }
     await cerrarTurno(db, {
       turnoId: turno.id,
       // El declarado es el TOTAL CONTADO, no un número escrito a mano: es lo que hace que el
@@ -443,7 +477,7 @@ export function PosCajaScreen() {
             <TouchableOpacity onPress={() => setCorteVisible(construirCorte(false))} style={[estilos.botonPrincipal, { backgroundColor: colores.navy }]}>
               <Text style={estilos.botonPrincipalTexto}>📋 Ver corte desglosado</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => exigir(PERMISOS_TERMINAL.CAJA_CERRAR, confirmarCierre)} style={[estilos.botonPrincipal, { backgroundColor: colores.red }]}><Text style={estilos.botonPrincipalTexto}>Cerrar caja</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => exigir(PERMISOS_TERMINAL.CAJA_CERRAR, preguntarCalibraciones)} style={[estilos.botonPrincipal, { backgroundColor: colores.red }]}><Text style={estilos.botonPrincipalTexto}>Cerrar caja</Text></TouchableOpacity>
           </View>
         </>
       )}
@@ -501,6 +535,50 @@ export function PosCajaScreen() {
         />
       )}
       {corteVisible && <ModalCorteDetallado corte={corteVisible} onCerrar={() => setCorteVisible(null)} />}
+
+      {/* Antes de cerrar: calibraciones de la máquina de café en el turno (merma de café). */}
+      <Modal visible={preguntandoCalibraciones} transparent animationType="fade" onRequestClose={() => setPreguntandoCalibraciones(false)}>
+        <View style={estilos.fondoCalibraciones}>
+          <View style={estilos.hojaCalibraciones}>
+            <Text style={estilos.subtitulo}>☕ Calibraciones de la máquina</Text>
+            <Text style={{ color: colores.textoSecundario, marginTop: 4 }}>
+              ¿Cuántas calibraciones tuvo la máquina de café en este turno? Cada una se registra como merma de {GRAMOS_POR_CALIBRACION} g de café.
+            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 14, marginVertical: 16 }}>
+              <TouchableOpacity onPress={() => setCalibraciones((c) => String(Math.max(0, (Number(c) || 0) - 1)))} style={estilos.botonPaso} accessibilityLabel="Una calibración menos">
+                <Text style={estilos.botonPasoTexto}>−</Text>
+              </TouchableOpacity>
+              <TextInput
+                value={calibraciones}
+                onChangeText={(t) => setCalibraciones(t.replace(/[^0-9]/g, "").slice(0, 2))}
+                placeholder="0"
+                placeholderTextColor={colores.textoSecundario}
+                keyboardType="number-pad"
+                style={[estilos.input, { width: 90, fontSize: 28, fontWeight: "800", textAlign: "center", marginBottom: 0 }]}
+              />
+              <TouchableOpacity onPress={() => setCalibraciones((c) => String(Math.min(MAX_CALIBRACIONES, (Number(c) || 0) + 1)))} style={estilos.botonPaso} accessibilityLabel="Una calibración más">
+                <Text style={estilos.botonPasoTexto}>+</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={{ textAlign: "center", color: colores.texto, marginBottom: 14 }}>
+              {(Number(calibraciones) || 0) > 0
+                ? `Merma: ${Math.min(MAX_CALIBRACIONES, Number(calibraciones)) * GRAMOS_POR_CALIBRACION} g de café en grano`
+                : "Sin calibraciones: no se registra merma"}
+            </Text>
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <TouchableOpacity onPress={() => setPreguntandoCalibraciones(false)} style={[estilos.botonPrincipal, { flex: 1, backgroundColor: colores.gray50 }]}>
+                <Text style={[estilos.botonPrincipalTexto, { color: colores.texto }]}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => { const n = Math.min(MAX_CALIBRACIONES, Number(calibraciones) || 0); setPreguntandoCalibraciones(false); confirmarCierre(n); }}
+                style={[estilos.botonPrincipal, { flex: 1, backgroundColor: colores.red }]}
+              >
+                <Text style={estilos.botonPrincipalTexto}>Continuar al cierre</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
       {modalPermiso}
     </>
   );
@@ -508,6 +586,10 @@ export function PosCajaScreen() {
 
 function crearEstilos(colores: ReturnType<typeof usarColores>) {
   return StyleSheet.create({
+    fondoCalibraciones: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "center", padding: 24 },
+    hojaCalibraciones: { backgroundColor: colores.superficie, borderRadius: 16, padding: 20, maxWidth: 460, width: "100%", alignSelf: "center" },
+    botonPaso: { width: 54, height: 54, borderRadius: 27, backgroundColor: colores.navy, alignItems: "center", justifyContent: "center" },
+    botonPasoTexto: { color: "#fff", fontSize: 26, fontWeight: "800" },
     botonVerCorte: { marginTop: 12, alignSelf: "flex-start", paddingHorizontal: 14, minHeight: 44, justifyContent: "center", borderRadius: 10, borderWidth: 1, borderColor: colores.navyTexto, backgroundColor: colores.gray50 },
     botonVerCorteTexto: { color: colores.navyTexto, fontWeight: "800", fontSize: 14 },
     resumenCorte: { marginTop: 14, padding: 12, borderRadius: 10, backgroundColor: colores.gray50 },

@@ -79,6 +79,20 @@ async function descargarTodo(): Promise<ResultadoDescarga> {
 
 const refrescarCatalogoEnSegundoPlano = () => { actualizarDesdeErp().catch(() => undefined); };
 
+/**
+ * Al iniciar sesión en la tablet: enlaza con el ERP en ese momento, sin esperar al siguiente
+ * ciclo. Deja el token en la sucursal elegida, sube lo pendiente (aunque estuviera esperando su
+ * reintento) y baja catálogo, precios e inventario. Nunca lanza: sin red se entra igual y la
+ * tablet trabaja con lo local.
+ */
+export function conectarAlErpAlEntrar(): void {
+  (async () => {
+    await asegurarSesionEnSucursalActiva().catch(() => undefined);
+    await procesarCola(true).catch(() => undefined);
+    await actualizarDesdeErp().catch(() => undefined);
+  })();
+}
+
 export function iniciarSync() {
   if (intervalo) return;
   procesarCola();
