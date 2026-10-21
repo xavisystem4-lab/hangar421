@@ -325,8 +325,10 @@ export function PosCajaScreen() {
   const nombreResponsable = cajeros.find((c) => c.id === turno?.usuarioId)?.nombre ?? "Cajero no identificado";
 
   const totalMovimientos = movimientos.reduce((s, m) => s + (m.tipo === "INGRESO" ? m.monto : -m.monto), 0);
-  const ventasDelTurno = turno ? ventas.filter((v) => v.estado === "COBRADA") : [];
-  const totalVentasTurno = ventasDelTurno.reduce((s, v) => s + v.total, 0);
+  // Ventas reales del turno: el crédito de empleado va aparte (no entró dinero).
+  const creditoTurno = porOrigen.flatMap((o) => o.porMetodo).filter((m) => m.metodo === "MONEDERO_EMPLEADO").reduce((s, m) => s + m.total, 0);
+  const ticketsTurno = porOrigen.reduce((s, o) => s + o.cantidad, 0);
+  const totalVentasTurno = porOrigen.reduce((s, o) => s + o.total, 0) - creditoTurno;
 
   return (
     <>
@@ -353,7 +355,8 @@ export function PosCajaScreen() {
           <View style={estilos.tarjeta}>
             <Text style={estilos.subtitulo}>Turno abierto</Text>
             <Text style={estilos.detalle}>Fondo inicial: ${turno.montoInicial.toFixed(2)}</Text>
-            <Text style={estilos.detalle}>Ventas del turno: {ventasDelTurno.length} · ${totalVentasTurno.toFixed(2)}</Text>
+            <Text style={estilos.detalle}>Ventas del turno: {ticketsTurno} · ${totalVentasTurno.toFixed(2)}</Text>
+            {creditoTurno > 0 && <Text style={estilos.detalle}>👛 Crédito de empleados (no es venta): ${creditoTurno.toFixed(2)}</Text>}
             <Text style={estilos.detalle}>Movimientos: {totalMovimientos >= 0 ? "+" : ""}{totalMovimientos.toFixed(2)}</Text>
             <Text style={[estilos.detalle, estilos.esperado]}>Efectivo esperado: ${efectivoEsperado.toFixed(2)}</Text>
             <Text style={estilos.detalle}>(solo ventas cobradas en efectivo: ${ventasEnEfectivo.mxn.toFixed(2)})</Text>

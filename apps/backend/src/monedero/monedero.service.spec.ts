@@ -3,7 +3,8 @@ import { MonederoService, claveEmpleada, unicosPorNombre } from "./monedero.serv
 
 function crearServicio() {
   const prisma = {
-    usuario: { findUnique: jest.fn(({ where: { id } }: any) => Promise.resolve(id === "u-diana" ? { empresaId: "emp-1" } : id === "u-ajena" ? { empresaId: "otra-empresa" } : null)) },
+    horarioUsuario: { findMany: jest.fn(() => Promise.resolve([] as any[])) },
+    usuario: { findMany: jest.fn(() => Promise.resolve([] as any[])), findUnique: jest.fn(({ where: { id } }: any) => Promise.resolve(id === "u-diana" ? { empresaId: "emp-1" } : id === "u-ajena" ? { empresaId: "otra-empresa" } : null)) },
     sucursal: { findUnique: jest.fn(({ where: { id } }: any) => Promise.resolve(id === "suc-mec" ? { empresaId: "emp-1" } : null)) },
     monederoEmpleado: { upsert: jest.fn((args: any) => Promise.resolve(args.create)), findMany: jest.fn(() => Promise.resolve([])) },
     movimientoMonedero: { findMany: jest.fn(() => Promise.resolve([])) },
@@ -87,5 +88,25 @@ describe("un solo monedero por empleada", () => {
     const { service, prisma } = crearServicio();
     await service.configurar("emp-1", "u-diana", { diaReinicio: 5, horaReinicio: 21, activo: false });
     expect(prisma.monederoEmpleado.upsert).toHaveBeenCalled();
+  });
+
+  it("paraTerminal manda su sucursal y su horario (de todos sus usuarios con el mismo nombre)", async () => {
+    const { service, prisma } = crearServicio();
+    prisma.monederoEmpleado.findMany.mockResolvedValueOnce([{
+      usuarioId: "d-mec", sucursalId: "suc-mec", limite: 500, diaReinicio: 5, horaReinicio: 21, minutoReinicio: 0,
+      usuario: { nombre: "Diana", createdAt: new Date("2025-01-01"), sucursales: [{ sucursalId: "suc-mec" }] }, sucursal: { nombre: "Mecánicos" },
+    }] as any);
+    prisma.usuario.findMany.mockResolvedValueOnce([
+      { id: "d-mec", nombre: "Diana", sucursales: [{ sucursalId: "suc-mec" }] },
+      { id: "d-otra", nombre: "Diana López", sucursales: [{ sucursalId: "suc-bj" }] },
+    ]);
+    prisma.horarioUsuario.findMany.mockResolvedValueOnce([
+      { usuarioId: "d-otra", sucursalId: "suc-mec", diaSemana: 1, horaInicio: "06:00", horaFin: "15:36" },
+    ]);
+    const r = await service.paraTerminal("emp-1");
+    expect(r.monederos[0]).toMatchObject({
+      sucursalesPermitidas: ["suc-mec"],
+      horarios: [{ diaSemana: 1, horaInicio: "06:00", horaFin: "15:36", sucursalId: "suc-mec" }],
+    });
   });
 });

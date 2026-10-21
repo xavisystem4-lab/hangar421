@@ -1,3 +1,4 @@
+import { motivoSinCredito, type HorarioCredito } from "@hangar421/shared";
 import { normalizarTexto } from "../db/busqueda";
 
 /** Una empleada con crédito y su saldo vigente (lo calcula monederoRepo.listarMonederosConSaldo). */
@@ -11,6 +12,23 @@ export interface EmpleadaConCredito {
   saldo: number;
   /** Cuándo vuelve a $limite (próximo reinicio), para mostrarlo al cajero. */
   proximoReinicio: Date;
+  /** Sucursales donde puede usar su crédito (la suya). Vacío = el ERP no lo dijo. */
+  sucursalesPermitidas: string[];
+  /** Horario semanal; fuera de él no hay crédito. Vacío = sin horario capturado. */
+  horarios: HorarioCredito[];
+}
+
+/** Solo las baristas de ESTA sucursal: Mecánicos con Mecánicos, Benito Juárez con Benito Juárez. */
+export function empleadasDeSucursal(empleadas: EmpleadaConCredito[], sucursalActual: string | null): EmpleadaConCredito[] {
+  if (!sucursalActual) return empleadas;
+  return empleadas.filter((e) =>
+    e.sucursalesPermitidas.length > 0 ? e.sucursalesPermitidas.includes(sucursalActual) : !e.sucursalId || e.sucursalId === sucursalActual,
+  );
+}
+
+/** Por qué no puede usar su crédito ahora (null = sí puede): sin saldo, otra sucursal o fuera de horario. */
+export function motivoNoDisponible(e: EmpleadaConCredito, sucursalActual: string | null, ahora: Date = new Date()): string | null {
+  return motivoSinCredito({ saldo: e.saldo, sucursalesPermitidas: e.sucursalesPermitidas, sucursalActual, horarios: e.horarios, ahora });
 }
 
 export interface SucursalDeEmpleadas {

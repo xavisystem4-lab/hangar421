@@ -1,7 +1,8 @@
-import { filtrarEmpleadas, sucursalesDeEmpleadas, textoReinicio, type EmpleadaConCredito } from "./creditoEmpleado";
+import { empleadasDeSucursal, filtrarEmpleadas, motivoNoDisponible, sucursalesDeEmpleadas, textoReinicio, type EmpleadaConCredito } from "./creditoEmpleado";
 
 const e = (usuarioId: string, nombre: string, sucursalId: string | null, sucursalNombre: string | null): EmpleadaConCredito => ({
   usuarioId, nombre, sucursalId, sucursalNombre, limite: 500, saldo: 500, proximoReinicio: new Date(2026, 9, 9, 21, 0),
+  sucursalesPermitidas: sucursalId ? [sucursalId] : [], horarios: [],
 });
 
 const lista = [
@@ -49,5 +50,21 @@ describe("textoReinicio", () => {
     expect(textoReinicio(new Date(2026, 9, 10, 17, 0))).toBe("sábado 5:00 PM");
     expect(textoReinicio(new Date(2026, 9, 11, 0, 5))).toBe("domingo 12:05 AM");
     expect(textoReinicio(new Date(2026, 9, 12, 12, 30))).toBe("lunes 12:30 PM");
+  });
+});
+
+describe("crédito solo en su sucursal y en su horario", () => {
+  it("empleadasDeSucursal deja solo las de esta sucursal", () => {
+    const mec = empleadasDeSucursal(lista, "s-mec");
+    expect(mec.length).toBeGreaterThan(0);
+    expect(mec.every((x) => x.sucursalId === null || x.sucursalesPermitidas.includes("s-mec") || x.sucursalesPermitidas.length === 0)).toBe(true);
+    expect(mec.some((x) => x.sucursalId && x.sucursalId !== "s-mec")).toBe(false);
+  });
+
+  it("motivoNoDisponible: fuera de horario", () => {
+    const diana = { ...e("1", "Diana", "s-mec", "Mecánicos"), horarios: [1, 2, 3, 4, 5].map((d) => ({ diaSemana: d, horaInicio: "06:00", horaFin: "15:36" })) };
+    expect(motivoNoDisponible(diana, "s-mec", new Date(2026, 9, 19, 10, 0))).toBeNull();
+    expect(motivoNoDisponible(diana, "s-mec", new Date(2026, 9, 19, 16, 0))).toMatch(/Fuera de su horario/);
+    expect(motivoNoDisponible({ ...diana, saldo: 0 }, "s-mec", new Date(2026, 9, 19, 10, 0))).toBe("Ya usó todo su crédito");
   });
 });

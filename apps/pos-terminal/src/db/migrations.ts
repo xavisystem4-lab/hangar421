@@ -782,6 +782,18 @@ export const MIGRACIONES: Migracion[] = [
       `);
     },
   },
+  {
+    version: 24,
+    nombre: "credito_sucursal_y_horario",
+    up: async (db) => {
+      // Dónde y cuándo puede usar su crédito cada empleada (lo manda el ERP con el monedero):
+      // solo en su sucursal y dentro de su horario. JSON: string[] y HorarioCredito[].
+      await db.execAsync(`
+        ALTER TABLE monederos_empleado ADD COLUMN sucursales_json TEXT;
+        ALTER TABLE monederos_empleado ADD COLUMN horarios_json TEXT;
+      `);
+    },
+  },
 ];
 
 /** Corre, en orden, toda migración con `version` mayor a la ya aplicada — cada una dentro de su

@@ -96,7 +96,16 @@ describe("armarResumen", () => {
   });
 
   it("devuelve ceros con una lista vacía", () => {
-    expect(armarResumen([])).toEqual({ totalVendido: 0, numTickets: 0, ticketPromedio: 0, porEstado: [] });
+    expect(armarResumen([])).toEqual({ totalVendido: 0, creditoEmpleados: 0, numTickets: 0, ticketPromedio: 0, porEstado: [] });
+  });
+
+  it("el crédito de empleado sale aparte y no suma al total vendido", () => {
+    const r = armarResumen([
+      { estado: "COBRADO", total: 100 },
+      { estado: "COBRADO", total: 80, credito: 80 },
+    ]);
+    expect(r.totalVendido).toBe(100);
+    expect(r.creditoEmpleados).toBe(80);
   });
 
   it("redondea a dos decimales en vez de arrastrar el error del flotante", () => {

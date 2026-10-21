@@ -96,6 +96,13 @@ describe("confirmarVenta — descuentos", () => {
     ).rejects.toThrow(/descuento y cortesía/);
   });
 
+  it("crédito de empleado y descuento no se combinan", async () => {
+    const { db } = baseFalsa();
+    await expect(
+      confirmarVenta(db, { items: ITEMS, pagos: [{ metodo: "MONEDERO_EMPLEADO", monto: 10, empleadoId: "e-1" }], totales: TOTALES, turnoId: "t-1", usuarioId: "u-1" }, { descuentos }),
+    ).rejects.toThrow(/crédito de empleado no puede llevar descuento/);
+  });
+
   it("sin descuentos todo queda como antes (sin filas de descuento ni campos nuevos)", async () => {
     const { db, de } = baseFalsa();
     await confirmarVenta(db, { items: ITEMS, pagos: [{ metodo: "EFECTIVO", monto: 250 }], totales: TOTALES, turnoId: "t-1", usuarioId: "u-1" });
@@ -139,17 +146,6 @@ describe("confirmarVenta — crédito de empleado", () => {
     const { db, de } = baseFalsa();
     await confirmarVenta(db, { items: ITEMS, pagos: [{ ...monedero, monto: 250 }], totales: TOTALES, turnoId: "t-1", usuarioId: "u-1" });
     expect(de("INSERT OR REPLACE INTO monedero_movimientos")[0].params[2]).toBe(250);
-  });
-
-  it("combina descuento y crédito: el monedero paga lo ya descontado", async () => {
-    const { db, de } = baseFalsa();
-    const venta = await confirmarVenta(
-      db,
-      { items: ITEMS, pagos: [{ ...monedero, monto: 225 }], totales: TOTALES, turnoId: "t-1", usuarioId: "u-1" },
-      { descuentos: { general: { tipo: TipoDescuento.PORCENTAJE, valor: 10 }, porProducto: {} } }, // 250 − 25 = 225
-    );
-    expect(venta.total).toBe(225);
-    expect(de("INSERT OR REPLACE INTO monedero_movimientos")[0].params[2]).toBe(225);
   });
 
   it("rechaza un pago con crédito sin empleada", async () => {

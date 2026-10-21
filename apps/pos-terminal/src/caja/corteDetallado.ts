@@ -8,6 +8,8 @@
  *  - VENTAS del turno = tickets cobrados, por método de pago y por origen (mostrador / plataformas).
  *  - Efectivo esperado en cajón = fondo + ventas en efectivo (MXN) + ingresos − egresos.
  *  - Los dólares van aparte (informativos) y no se suman al efectivo en pesos.
+ *  - El CRÉDITO DE EMPLEADO no es venta real (no entró dinero): sale en su propia categoría y no
+ *    suma a las ventas del turno.
  */
 import { BILLETES_MXN, BILLETES_USD, MONEDAS_MXN, round2, type Conteo, type DesgloseEfectivo } from "./denominaciones";
 
@@ -63,6 +65,8 @@ export interface CorteDetallado {
     porOrigen: { origen: string; etiqueta: string; total: number; cantidad: number; porMetodo: { metodo: string; etiqueta: string; total: number }[] }[];
     plataformas: number;
     mostrador: number;
+    /** Consumo de empleadas a crédito: aparte, no es venta. */
+    credito: { total: number; cantidad: number };
   };
   ingresos: { lineas: MovimientoCorte[]; total: number };
   egresos: { lineas: MovimientoCorte[]; total: number };
@@ -95,6 +99,7 @@ export interface CorteDetallado {
   observaciones: string | null;
 }
 
+const METODO_CREDITO = "MONEDERO_EMPLEADO";
 const ORDEN_ORIGEN = ["MOSTRADOR", "DIDI", "UBER", "RAPPI"];
 const ORDEN_METODO = ["EFECTIVO", "EFECTIVO_USD", "TARJETA", "TRANSFERENCIA", "QR", "EN_LINEA", "MONEDERO_EMPLEADO", "OTRO"];
 
@@ -118,9 +123,23 @@ export function armarCorteDetallado(d: DatosCorte): CorteDetallado {
   const etiquetaMetodo = d.etiquetaMetodo ?? ((m) => m);
   const etiquetaOrigen = d.etiquetaOrigen ?? ((o) => o);
 
+  // El crédito de empleado se separa antes de sumar: no es venta.
+  const credito = { total: 0, cantidad: 0 };
+  for (const o of d.porOrigen) {
+    for (const m of o.porMetodo) {
+      if (m.metodo !== METODO_CREDITO) continue;
+      credito.total = round2(credito.total + m.total);
+      credito.cantidad += m.cantidad;
+    }
+  }
+  const origenes = d.porOrigen.map((o) => {
+    const deCredito = o.porMetodo.filter((m) => m.metodo === METODO_CREDITO).reduce((s, m) => s + m.total, 0);
+    return { ...o, total: round2(o.total - deCredito), porMetodo: o.porMetodo.filter((m) => m.metodo !== METODO_CREDITO) };
+  });
+
   // Ventas por método, sumando todos los orígenes.
   const metodos = new Map<string, { total: number; cantidad: number }>();
-  for (const o of d.porOrigen) {
+  for (const o of origenes) {
     for (const m of o.porMetodo) {
       const acum = metodos.get(m.metodo) ?? { total: 0, cantidad: 0 };
       acum.total = round2(acum.total + m.total);
@@ -132,7 +151,7 @@ export function armarCorteDetallado(d: DatosCorte): CorteDetallado {
     .sort(([a], [b]) => porOrden(ORDEN_METODO)(a, b))
     .map(([metodo, v]) => ({ metodo, etiqueta: etiquetaMetodo(metodo), total: v.total, cantidad: v.cantidad }));
 
-  const porOrigen = [...d.porOrigen]
+  const porOrigen = [...origenes]
     .sort((a, b) => porOrden(ORDEN_ORIGEN)(a.origen, b.origen))
     .map((o) => ({
       origen: o.origen,
@@ -163,7 +182,7 @@ export function armarCorteDetallado(d: DatosCorte): CorteDetallado {
   return {
     encabezado: { sucursal: d.sucursal ?? null, cajero: d.cajero, abiertoAt: d.abiertoAt, cortadoAt: d.cortadoAt, cerrado: d.cerrado, tipoCambioUsd: d.tipoCambioUsd ?? null },
     fondo,
-    ventas: { total: totalVentas, tickets, porMetodo, porOrigen, plataformas, mostrador },
+    ventas: { total: totalVentas, tickets, porMetodo, porOrigen, plataformas, mostrador, credito },
     ingresos: { lineas: ingresos, total: totalIngresos },
     egresos: { lineas: egresos, total: totalEgresos },
     efectivo: { fondo, ventasEfectivoMxn: round2(d.ventasEnEfectivo.mxn), ingresos: totalIngresos, egresos: totalEgresos, esperado },
@@ -204,6 +223,7 @@ export function textoCorte(c: CorteDetallado): string {
   L.push(`VENTAS DEL TURNO: ${dinero(c.ventas.total)} (${c.ventas.tickets} tickets)`);
   for (const m of c.ventas.porMetodo) L.push(`  ${m.etiqueta}: ${dinero(m.total)} (${m.cantidad})`);
   L.push(`  Mostrador: ${dinero(c.ventas.mostrador)} · Plataformas: ${dinero(c.ventas.plataformas)}`);
+  if (c.ventas.credito.total > 0) L.push(`CRÉDITO DE EMPLEADOS (no es venta): ${dinero(c.ventas.credito.total)} (${c.ventas.credito.cantidad})`);
   for (const o of c.ventas.porOrigen.filter((x) => x.origen !== "MOSTRADOR")) {
     L.push(`  ${o.etiqueta}: ${dinero(o.total)} (${o.cantidad})`);
     for (const m of o.porMetodo) L.push(`     ${m.etiqueta}: ${dinero(m.total)}`);

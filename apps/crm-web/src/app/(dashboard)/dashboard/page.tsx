@@ -12,6 +12,8 @@ import { suscribirVentas } from "@/lib/realtime";
 
 interface DashboardData {
   ventasHoy: number;
+  /** Crédito de empleados del día: aparte, no es venta. */
+  creditoEmpleadosHoy?: number;
   ticketPromedio: number;
   pedidosHoy: number;
   topProductos: { productoId: string; nombre: string; categoria?: string | null; subcategoria?: string | null; cantidad: number; variantes?: VarianteVendida[] }[];
@@ -75,6 +77,9 @@ export default function DashboardPage() {
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
         <StatTile etiqueta="Ventas hoy" valor={`$${data.ventasHoy.toFixed(2)}`} acento="var(--h421-green)" />
         <StatTile etiqueta="Ticket promedio" valor={`$${data.ticketPromedio.toFixed(2)}`} acento="var(--h421-blue)" />
+        {(data.creditoEmpleadosHoy ?? 0) > 0 && (
+          <StatTile etiqueta="👛 Crédito empleados (no es venta)" valor={`$${(data.creditoEmpleadosHoy ?? 0).toFixed(2)}`} acento="var(--h421-gray-400)" />
+        )}
         <StatTile etiqueta="Pedidos hoy" valor={String(data.pedidosHoy)} acento="var(--h421-amber)" />
       </div>
 

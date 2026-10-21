@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from "expo-sqlite";
-import { inicioPeriodoMonedero, saldoMonedero, type ReglaReinicioMonedero } from "@hangar421/shared";
+import { inicioPeriodoMonedero, saldoMonedero, type HorarioCredito, type ReglaReinicioMonedero } from "@hangar421/shared";
 import type { EmpleadaConCredito } from "../caja/creditoEmpleado";
 
 /**
@@ -17,6 +17,10 @@ export interface MonederoErp {
   diaReinicio: number;
   horaReinicio: number;
   minutoReinicio: number;
+  /** Sucursales donde puede usarlo (un ERP anterior no lo manda). */
+  sucursalesPermitidas?: string[];
+  /** Su horario semanal: fuera de él no hay crédito. */
+  horarios?: HorarioCredito[];
 }
 
 export interface MovimientoMonederoErp {
@@ -39,9 +43,10 @@ export async function guardarMonederos(db: SQLiteDatabase, datos: { monederos: M
     await db.runAsync("DELETE FROM monederos_empleado");
     for (const m of datos.monederos) {
       await db.runAsync(
-        `INSERT INTO monederos_empleado (usuario_id, nombre, sucursal_id, sucursal_nombre, limite, dia_reinicio, hora_reinicio, minuto_reinicio)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO monederos_empleado (usuario_id, nombre, sucursal_id, sucursal_nombre, limite, dia_reinicio, hora_reinicio, minuto_reinicio, sucursales_json, horarios_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         m.usuarioId, m.nombre, m.sucursalId, m.sucursalNombre, m.limite, m.diaReinicio, m.horaReinicio, m.minutoReinicio,
+        JSON.stringify(m.sucursalesPermitidas ?? (m.sucursalId ? [m.sucursalId] : [])), JSON.stringify(m.horarios ?? []),
       );
     }
     for (const mv of datos.movimientos) {
@@ -71,8 +76,20 @@ export async function listarMonederosConSaldo(db: SQLiteDatabase, ahora: Date = 
       limite: m.limite,
       saldo: saldoMonedero(m.limite, movimientos.filter((x) => x.usuario_id === m.usuario_id).map((x) => ({ monto: x.monto, fecha: x.fecha })), inicio),
       proximoReinicio,
+      sucursalesPermitidas: leerJson<string[]>(m.sucursales_json, m.sucursal_id ? [m.sucursal_id] : []),
+      horarios: leerJson<HorarioCredito[]>(m.horarios_json, []),
     };
   });
+}
+
+function leerJson<T>(texto: string | null | undefined, porDefecto: T): T {
+  if (!texto) return porDefecto;
+  try {
+    const v = JSON.parse(texto);
+    return Array.isArray(v) ? (v as T) : porDefecto;
+  } catch {
+    return porDefecto;
+  }
 }
 
 /** Carga un consumo al monedero. Se llama DENTRO de la transacción de la venta (ver

@@ -1,4 +1,4 @@
-import { agruparConsumosPorEmpleada, calcularUsoMonedero, csvConsumosCredito, describirProductoConsumido, filasResumenCredito, htmlReporteCredito, inicioPeriodoMonedero, saldoMonedero } from "./monedero";
+import { agruparConsumosPorEmpleada, calcularUsoMonedero, csvConsumosCredito, describirProductoConsumido, filasResumenCredito, htmlReporteCredito, inicioPeriodoMonedero, saldoMonedero, dentroDeHorario, textoHorario, motivoSinCredito } from "./monedero";
 
 // Fechas con el constructor LOCAL (año, mes, día, hora): las pruebas no dependen de la zona del equipo.
 const viernes9pm = { diaSemana: 5, hora: 21 };
@@ -86,5 +86,39 @@ describe("reporte de consumo de crédito", () => {
     expect(html).toContain("Total consumido a crédito: <b>$185.00</b>");
     expect(html).toContain("Ana · $135.00");
     expect(html).toContain("1 × Latte · Avena (+$25.00)");
+  });
+});
+
+describe("reglas de uso del crédito", () => {
+  // Diana: lunes a viernes de 6:00 a 15:36.
+  const diana = [1, 2, 3, 4, 5].map((d) => ({ diaSemana: d, horaInicio: "06:00", horaFin: "15:36", sucursalId: "mec" }));
+  const lunes = (h: number, m = 0) => new Date(2026, 9, 19, h, m); // 19-oct-2026 es lunes
+
+  it("dentroDeHorario respeta día y rango", () => {
+    expect(dentroDeHorario(diana, lunes(6, 0))).toBe(true);
+    expect(dentroDeHorario(diana, lunes(15, 36))).toBe(true);
+    expect(dentroDeHorario(diana, lunes(15, 37))).toBe(false);
+    expect(dentroDeHorario(diana, lunes(5, 59))).toBe(false);
+    expect(dentroDeHorario(diana, new Date(2026, 9, 18, 10, 0))).toBe(false); // domingo
+    expect(dentroDeHorario([], lunes(3))).toBe(true);
+  });
+
+  it("un horario nocturno cuenta la madrugada siguiente", () => {
+    const noche = [{ diaSemana: 1, horaInicio: "22:00", horaFin: "06:00" }];
+    expect(dentroDeHorario(noche, lunes(23))).toBe(true);
+    expect(dentroDeHorario(noche, new Date(2026, 9, 20, 5, 30))).toBe(true);
+    expect(dentroDeHorario(noche, new Date(2026, 9, 20, 7, 0))).toBe(false);
+  });
+
+  it("textoHorario agrupa días consecutivos", () => {
+    expect(textoHorario(diana)).toBe("lun–vie 06:00–15:36");
+  });
+
+  it("motivoSinCredito: saldo, sucursal y horario", () => {
+    const base = { saldo: 100, sucursalesPermitidas: ["mec"], sucursalActual: "mec", horarios: diana, ahora: lunes(10) };
+    expect(motivoSinCredito(base)).toBeNull();
+    expect(motivoSinCredito({ ...base, saldo: 0 })).toBe("Ya usó todo su crédito");
+    expect(motivoSinCredito({ ...base, sucursalActual: "bj" })).toBe("Su crédito es solo en su sucursal");
+    expect(motivoSinCredito({ ...base, ahora: lunes(16) })).toBe("Fuera de su horario (lun–vie 06:00–15:36)");
   });
 });
