@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { RolUsuario } from "@hangar421/shared";
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { usarColores } from "../store/temaStore";
@@ -52,6 +52,8 @@ export function LoginLocalScreen() {
       setRolNuevo(RolUsuario.CAJERO);
       setMostrarAlta(false);
       await cargarUsuarios();
+    } catch (e: any) {
+      Alert.alert("No se pudo crear", e?.message ?? "Error al crear el usuario.");
     } finally {
       setCreando(false);
     }
