@@ -36,6 +36,7 @@ import { SucursalAccessGuard } from "./common/guards/sucursal-access.guard";
 import { RolesGuard } from "./common/guards/roles.guard";
 import { AllExceptionsFilter } from "./common/filters/http-exception.filter";
 import { AuditInterceptor } from "./common/interceptors/audit.interceptor";
+import { CambiosErpInterceptor } from "./common/interceptors/cambios-erp.interceptor";
 
 @Module({
   imports: [
@@ -78,6 +79,7 @@ import { AuditInterceptor } from "./common/interceptors/audit.interceptor";
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: CambiosErpInterceptor },
   ],
 })
 export class AppModule {}

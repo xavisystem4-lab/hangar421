@@ -6,9 +6,11 @@ import { RolesGuard } from "../common/guards/roles.guard";
 import { Roles } from "../common/decorators/roles.decorator";
 import { Audit } from "../common/interceptors/audit.interceptor";
 import { InventarioService, type ReporteInventarioPorCorreo } from "./inventario.service";
+import { AvisaTerminales } from "../common/interceptors/cambios-erp.interceptor";
 
 @ApiTags("inventario")
 @UseGuards(JwtAuthGuard, RolesGuard)
+@AvisaTerminales("Inventario y recetas")
 @Controller("inventario")
 export class InventarioController {
   constructor(private inventario: InventarioService) {}

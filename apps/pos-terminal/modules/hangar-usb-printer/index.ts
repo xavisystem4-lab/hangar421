@@ -144,6 +144,17 @@ export const MELODIA_DIDI_RECORDATORIO: Nota[] = [
   { f: 1568, ms: 90 }, { f: 0, ms: 70 }, { f: 1568, ms: 90 },
 ];
 
+/** Aviso de "cambiaron cosas en el ERP": dos tonos que bajan, distinto del de DiDi. */
+export const MELODIA_CAMBIO_ERP: Nota[] = [
+  { f: 1319, ms: 160 }, { f: 0, ms: 60 }, { f: 988, ms: 260 },
+  { f: 0, ms: 200 },
+  { f: 1319, ms: 160 }, { f: 0, ms: 60 }, { f: 988, ms: 260 },
+];
+
+export function sonarCambioErp(): boolean {
+  return sonarMelodia(MELODIA_CAMBIO_ERP);
+}
+
 export function sonarAvisoDidi(): boolean {
   return sonarMelodia(MELODIA_DIDI);
 }

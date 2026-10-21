@@ -32,6 +32,7 @@ import { PosAdminImpresoraScreen } from "./PosAdminImpresoraScreen";
 import { PosAdminPlataformasScreen } from "./PosAdminPlataformasScreen";
 import { useAvisosDelivery } from "../plataformas/useAvisosDelivery";
 import { useFrescuraErp } from "../sync/useFrescuraErp";
+import { useCambiosErp } from "../sync/useCambiosErp";
 import { useNotificacionesDidi, type PedidoDetectado } from "../plataformas/useNotificacionesDidi";
 import { nombrePedidoDidi } from "../plataformas/notificacionesDidi";
 import type { ItemPedidoDidi } from "../plataformas/productosDidi";
@@ -118,6 +119,8 @@ export function PosNavigator() {
   // su número y el grupo DIDI abierto (ver plataformas/useNotificacionesDidi.ts).
   // Datos del ERP viejos (descarga fallando o sin red mucho tiempo): banda ámbar con Reintentar.
   const frescura = useFrescuraErp(sync.conectadoAlErp && !mostrarConexion);
+  // Cambios hechos en el ERP: pitido + "Descargar modificación de ERP" al momento.
+  const cambiosErp = useCambiosErp(sync.conectadoAlErp && !mostrarConexion);
 
   const didi = useNotificacionesDidi((puede(PERMISOS_TERMINAL.VENTA_COBRAR) || puedeDelivery) && !mostrarConexion, (numero) => {
     recargarPedidosDidi();
@@ -446,6 +449,20 @@ export function PosNavigator() {
         </View>
       )}
 
+      {cambiosErp.pendiente && pantalla !== "cobro" && (
+        <View style={estilos.avisoCambiosErp} accessibilityRole="alert">
+          <View style={{ flex: 1 }}>
+            <Text style={estilos.avisoCambiosErpTexto}>📥 Hay cambios nuevos en el ERP{cambiosErp.pendiente.que ? `: ${cambiosErp.pendiente.que}` : ""}</Text>
+            <Text style={estilos.avisoCambiosErpSub}>
+              {cambiosErp.error ? `No se pudo descargar: ${cambiosErp.error}` : "Descárgalos para tener precios, recetas e inventario al día. Puedes seguir vendiendo."}
+            </Text>
+          </View>
+          <TouchableOpacity onPress={cambiosErp.descargar} disabled={cambiosErp.descargando} style={estilos.avisoCambiosErpBoton} accessibilityLabel="Descargar modificación de ERP">
+            {cambiosErp.descargando ? <ActivityIndicator color="#fff" /> : <Text style={{ color: "#fff", fontWeight: "800" }}>Descargar modificación de ERP</Text>}
+          </TouchableOpacity>
+        </View>
+      )}
+
       {frescura.atrasada && pantalla !== "cobro" && (
         <View style={estilos.avisoErp} accessibilityRole="alert">
           <View style={{ flex: 1 }}>
@@ -608,6 +625,10 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     botonHeader: { width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
     botonHeaderTexto: { fontSize: 15 },
     avisoFolio: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: colores.green, padding: 10, paddingHorizontal: 16 },
+    avisoCambiosErp: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#0B3D91", paddingHorizontal: 14, paddingVertical: 10 },
+    avisoCambiosErpTexto: { color: "#fff", fontWeight: "800", fontSize: 14 },
+    avisoCambiosErpSub: { color: "#D6E4FF", fontSize: 12, marginTop: 2 },
+    avisoCambiosErpBoton: { backgroundColor: "#FF6A13", paddingHorizontal: 14, minHeight: 44, borderRadius: 10, alignItems: "center", justifyContent: "center" },
     avisoErp: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#FFC24D", padding: 10, paddingHorizontal: 16 },
     avisoErpTexto: { color: "#3D2700", fontWeight: "800", fontSize: 14 },
     avisoErpSub: { color: "#5A3A00", fontSize: 12, marginTop: 2 },

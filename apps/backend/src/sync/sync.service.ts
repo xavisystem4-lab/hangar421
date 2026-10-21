@@ -118,6 +118,12 @@ export class SyncService {
    * administrador tratando de entender por qué falta una venta, y un mensaje genérico no le
    * serviría de nada. No lleva el `payload`, que puede contener datos del ticket completo.
    */
+  /** Marca de cambios del ERP para esta empresa (ver MarcaCambioErp). Sin marca: version null. */
+  async cambiosErp(empresaId: string) {
+    const marca = await this.prisma.marcaCambioErp.findUnique({ where: { empresaId } });
+    return { version: marca?.version.toISOString() ?? null, que: marca?.que ?? null, dispositivoId: marca?.dispositivoId ?? null };
+  }
+
   async listarProblemas(empresaId: string, sucursalId?: string) {
     const items = await this.prisma.syncQueueItem.findMany({
       where: {
