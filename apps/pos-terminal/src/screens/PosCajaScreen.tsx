@@ -6,7 +6,7 @@ import { abrirBaseDeDatos } from "../db/database";
 import { etiquetaMetodoPago } from "../db/metodosPagoRepo";
 import { etiquetaOrigen } from "../caja/origenVenta";
 import { canceladasDelTurno, descuentosDelTurno, ventasPorOrigenDelTurno, type DescuentoDelTurno, type OrigenVentas } from "../db/reportesRepo";
-import { abrirTurno, cerrarTurno, efectivoDelTurno, fijarTipoCambioTurno, listarMovimientosCaja, reasignarTurno, registrarMovimientoCaja, turnoAbierto, type MovimientoCajaLocal, type TurnoLocal } from "../db/turnosRepo";
+import { abrirTurno, cerrarTurno, ultimoTurnoCerrado, efectivoDelTurno, fijarTipoCambioTurno, listarMovimientosCaja, reasignarTurno, registrarMovimientoCaja, turnoAbierto, type MovimientoCajaLocal, type TurnoLocal } from "../db/turnosRepo";
 import { listarVentasRecientes, type VentaResumen } from "../db/ventasHistorialRepo";
 import { BILLETES_MXN, BILLETES_USD, MONEDAS_MXN, calcularDiferencia, construirDesglose, round2, type Conteo } from "../caja/denominaciones";
 import { ColumnaDenominaciones, usarRefsDenominaciones } from "../components/DesgloseEfectivo";
@@ -21,6 +21,12 @@ import { useExigirPermiso } from "../hooks/useExigirPermiso";
 import { PERMISOS_TERMINAL } from "../auth/permisosTerminal";
 import { GRAMOS_POR_CALIBRACION, MAX_CALIBRACIONES, elegirInsumoCafe, mermaPorCalibraciones } from "../caja/calibraciones";
 import { listarInsumosLocales, registrarMovimiento } from "../db/inventarioRepo";
+import { evaluarCuadre, textoDiferencia } from "../caja/cuadreCaja";
+import { ModalFirmaPin } from "../components/ModalFirmaPin";
+import { RolUsuario } from "@hangar421/shared";
+
+/** Solo un administrador puede cerrar una caja que no cuadra. */
+const ROLES_FORZAN_CIERRE: string[] = [RolUsuario.ADMIN_SUCURSAL, RolUsuario.ADMIN_CORPORATIVO];
 
 export function PosCajaScreen() {
   const { usuario } = useAuthLocalStore();
@@ -61,6 +67,16 @@ export function PosCajaScreen() {
   /** Paso previo al cierre: cuántas calibraciones tuvo la máquina de café (merma de café). */
   const [preguntandoCalibraciones, setPreguntandoCalibraciones] = useState(false);
   const [calibraciones, setCalibraciones] = useState("");
+  /** Cierre que no cuadra esperando el PIN de un administrador (guarda las calibraciones). */
+  const [forzando, setForzando] = useState<number | null>(null);
+  /** Firma con PIN personal: de quien entrega su corte o de quien abre el siguiente turno. */
+  const [firma, setFirma] = useState<
+    | { tipo: "cierre"; calibraciones: number; admin: Autorizador | null }
+    | { tipo: "apertura" }
+    | null
+  >(null);
+  /** Último corte de esta sucursal: quien abre confirma lo que recibe. */
+  const [ultimoCorte, setUltimoCorte] = useState<{ monto: number; responsable: string; cerradoAt: string | null } | null>(null);
 
   async function cargar() {
     const db = await abrirBaseDeDatos();
@@ -73,6 +89,10 @@ export function PosCajaScreen() {
       setDescuentos(await descuentosDelTurno(db, t.id));
       setCanceladas(await canceladasDelTurno(db, t.id));
     }
+    if (!t) {
+      const u = await ultimoTurnoCerrado(db);
+      setUltimoCorte(u ? { monto: u.turno.montoFinalDeclarado ?? 0, responsable: u.responsable, cerradoAt: u.turno.cerradoAt } : null);
+    }
     setSucursal(await obtenerNombreSucursal(db));
     setVentas(await listarVentasRecientes(db, 20));
     setCajeros(await listarUsuariosLocales(db));
@@ -81,6 +101,17 @@ export function PosCajaScreen() {
   useEffect(() => {
     cargar();
   }, []);
+
+  /** Antes de abrir, quien abre firma con SU PIN: deja constancia de que recibe la caja. */
+  function pedirFirmaApertura() {
+    if (!usuario) return;
+    const tc = Number(tipoCambioInput.replace(",", "."));
+    if (!(tc > 0)) {
+      setMensaje("Escribe a cuánto está el dólar antes de abrir caja.");
+      return;
+    }
+    setFirma({ tipo: "apertura" });
+  }
 
   async function abrir() {
     if (!usuario) return;
@@ -165,6 +196,15 @@ export function PosCajaScreen() {
   const desglose = construirDesglose(billetesMXN, monedasMXN, billetesUSD, observaciones);
   const diferencia = calcularDiferencia(desglose.totalMXN, efectivoEsperado);
   const diferenciaUsd = calcularDiferencia(desglose.totalUSD, ventasEnEfectivo.usd);
+  // La regla de cierre: el TOTAL en pesos (dólares al tipo de cambio del turno) tiene que cuadrar.
+  const cuadre = evaluarCuadre({
+    contadoMXN: desglose.totalMXN,
+    esperadoMXN: efectivoEsperado,
+    contadoUSD: desglose.totalUSD,
+    esperadoUSD: ventasEnEfectivo.usd,
+    tipoCambio: turno?.tipoCambioUsd ?? null,
+  });
+  const hayDolares = desglose.totalUSD > 0 || ventasEnEfectivo.usd > 0;
 
   /** Arma el corte desglosado con lo que hay en pantalla: sirve tanto para consultarlo en vivo
    *  mientras se cuenta como para enseñar el resumen final al cerrar la caja. */
@@ -195,30 +235,46 @@ export function PosCajaScreen() {
   }
 
   function confirmarCierre(nCalibraciones = 0) {
-    const signo = diferencia > 0 ? "sobran" : "faltan";
-    const detalle = diferencia === 0
-      ? "El conteo cuadra con lo esperado."
-      : `Según el conteo ${signo} $${Math.abs(diferencia).toFixed(2)} respecto a lo esperado ($${efectivoEsperado.toFixed(2)}).`;
-    const detalleUsd = desglose.totalUSD > 0 || ventasEnEfectivo.usd > 0
-      ? diferenciaUsd === 0
-        ? "\nLos dólares cuadran."
-        : `\nDólares: contados US$${desglose.totalUSD.toFixed(2)}, esperados US$${ventasEnEfectivo.usd.toFixed(2)} (${diferenciaUsd > 0 ? "sobran" : "faltan"} US$${Math.abs(diferenciaUsd).toFixed(2)}).`
+    const detalleUsd = hayDolares
+      ? `\nDólares: contados US$${desglose.totalUSD.toFixed(2)}, esperados US$${ventasEnEfectivo.usd.toFixed(2)}${turno?.tipoCambioUsd ? ` (US$1 = $${turno.tipoCambioUsd.toFixed(2)})` : ""}.`
       : "";
     const lineaCalibraciones = nCalibraciones > 0
       ? `\nCalibraciones de la máquina: ${nCalibraciones} (merma de ${nCalibraciones * GRAMOS_POR_CALIBRACION} g de café).`
       : "\nSin calibraciones de la máquina.";
+
+    // No cuadra: NO se cierra. Se recuenta; si de verdad falta o sobra dinero, solo un
+    // administrador puede cerrar y la diferencia queda registrada en el corte.
+    if (!cuadre.cuadra) {
+      Alert.alert(
+        "La caja no cuadra",
+        `Contado: $${desglose.totalMXN.toFixed(2)} · Esperado: $${efectivoEsperado.toFixed(2)}${detalleUsd}\n\n${textoDiferencia(cuadre.diferencia)}${cuadre.sinTipoCambio ? " (el turno no tiene tipo de cambio para convertir los dólares)" : ""}.\n\nRecuenta el efectivo. Si de verdad no cuadra, solo un ADMINISTRADOR puede cerrar el turno y la diferencia queda registrada.`,
+        [
+          { text: "Recontar", style: "cancel" },
+          { text: "Cerrar con administrador", style: "destructive", onPress: () => setForzando(nCalibraciones) },
+        ],
+      );
+      return;
+    }
     Alert.alert(
       "Cerrar caja",
-      `Contado: $${desglose.totalMXN.toFixed(2)}\n${detalle}${detalleUsd}${lineaCalibraciones}\n\nEl corte no se puede deshacer.`,
+      `Contado: $${desglose.totalMXN.toFixed(2)}\nEl conteo cuadra con lo esperado ($${efectivoEsperado.toFixed(2)}).${detalleUsd}${lineaCalibraciones}\n\nAl continuar firmas el corte con tu PIN. El corte no se puede deshacer.`,
       [
         { text: "Cancelar", style: "cancel" },
-        { text: "Cerrar caja", style: "destructive", onPress: () => cerrar(nCalibraciones) },
+        { text: "Firmar y cerrar", style: "destructive", onPress: () => setFirma({ tipo: "cierre", calibraciones: nCalibraciones, admin: null }) },
       ],
     );
   }
 
-  async function cerrar(nCalibraciones = 0) {
+  async function cerrar(nCalibraciones = 0, admin: Autorizador | null = null) {
     if (!turno) return;
+    // Constancia en el corte: quién firmó y, si no cuadraba, qué administrador lo cerró.
+    const firmo = cajeros.find((c) => c.id === turno.usuarioId)?.nombre ?? "Cajero no identificado";
+    const notas = [
+      observaciones.trim(),
+      `Firmó el corte: ${firmo} (PIN personal).`,
+      admin ? `NO CUADRABA (${textoDiferencia(cuadre.diferencia)}): cierre autorizado por ${admin.nombre} (${admin.rol}).` : "",
+    ].filter(Boolean).join("\n");
+    const desgloseFinal = { ...desglose, observaciones: notas };
     // El corte se arma ANTES de limpiar el conteo: es el resumen que queda en pantalla.
     const corteFinal = construirCorte(true);
     const db = await abrirBaseDeDatos();
@@ -248,7 +304,7 @@ export function PosCajaScreen() {
       // El declarado es el TOTAL CONTADO, no un número escrito a mano: es lo que hace que el
       // desglose y la cifra del corte no puedan contradecirse.
       montoFinalDeclarado: desglose.totalMXN,
-      desgloseEfectivo: desglose,
+      desgloseEfectivo: desgloseFinal,
     });
     // El corte alimenta los indicadores de caja del ERP: se sube en el momento, no al
     // siguiente tick del temporizador.
@@ -269,8 +325,10 @@ export function PosCajaScreen() {
   const nombreResponsable = cajeros.find((c) => c.id === turno?.usuarioId)?.nombre ?? "Cajero no identificado";
 
   const totalMovimientos = movimientos.reduce((s, m) => s + (m.tipo === "INGRESO" ? m.monto : -m.monto), 0);
-  const ventasDelTurno = turno ? ventas.filter((v) => v.estado === "COBRADA") : [];
-  const totalVentasTurno = ventasDelTurno.reduce((s, v) => s + v.total, 0);
+  // Ventas reales del turno: el crédito de empleado va aparte (no entró dinero).
+  const creditoTurno = porOrigen.flatMap((o) => o.porMetodo).filter((m) => m.metodo === "MONEDERO_EMPLEADO").reduce((s, m) => s + m.total, 0);
+  const ticketsTurno = porOrigen.reduce((s, o) => s + o.cantidad, 0);
+  const totalVentasTurno = porOrigen.reduce((s, o) => s + o.total, 0) - creditoTurno;
 
   return (
     <>
@@ -281,17 +339,24 @@ export function PosCajaScreen() {
       {!turno ? (
         <View style={estilos.tarjeta}>
           <Text style={estilos.subtitulo}>Abrir turno</Text>
+          {ultimoCorte && (
+            <Text style={estilos.detalle}>
+              Último corte: {ultimoCorte.responsable} entregó ${ultimoCorte.monto.toFixed(2)}
+              {ultimoCorte.cerradoAt ? ` (${new Date(ultimoCorte.cerradoAt).toLocaleString("es-MX", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })})` : ""}. Al abrir firmas con tu PIN lo que recibes.
+            </Text>
+          )}
           <TextInput placeholder="Monto inicial" placeholderTextColor={colores.textoSecundario} value={montoInicial} onChangeText={setMontoInicial} keyboardType="decimal-pad" style={estilos.input} />
           <Text style={estilos.detalle}>¿A cuánto está el dólar hoy? (pesos por dólar)</Text>
           <TextInput placeholder="Ej. 18.50" placeholderTextColor={colores.textoSecundario} value={tipoCambioInput} onChangeText={setTipoCambioInput} keyboardType="decimal-pad" style={estilos.input} />
-          <TouchableOpacity onPress={() => exigir(PERMISOS_TERMINAL.CAJA_ABRIR, abrir)} style={estilos.botonPrincipal}><Text style={estilos.botonPrincipalTexto}>Abrir caja</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => exigir(PERMISOS_TERMINAL.CAJA_ABRIR, pedirFirmaApertura)} style={estilos.botonPrincipal}><Text style={estilos.botonPrincipalTexto}>Abrir caja</Text></TouchableOpacity>
         </View>
       ) : (
         <>
           <View style={estilos.tarjeta}>
             <Text style={estilos.subtitulo}>Turno abierto</Text>
             <Text style={estilos.detalle}>Fondo inicial: ${turno.montoInicial.toFixed(2)}</Text>
-            <Text style={estilos.detalle}>Ventas del turno: {ventasDelTurno.length} · ${totalVentasTurno.toFixed(2)}</Text>
+            <Text style={estilos.detalle}>Ventas del turno: {ticketsTurno} · ${totalVentasTurno.toFixed(2)}</Text>
+            {creditoTurno > 0 && <Text style={estilos.detalle}>👛 Crédito de empleados (no es venta): ${creditoTurno.toFixed(2)}</Text>}
             <Text style={estilos.detalle}>Movimientos: {totalMovimientos >= 0 ? "+" : ""}{totalMovimientos.toFixed(2)}</Text>
             <Text style={[estilos.detalle, estilos.esperado]}>Efectivo esperado: ${efectivoEsperado.toFixed(2)}</Text>
             <Text style={estilos.detalle}>(solo ventas cobradas en efectivo: ${ventasEnEfectivo.mxn.toFixed(2)})</Text>
@@ -376,11 +441,11 @@ export function PosCajaScreen() {
               />
             </View>
 
-            {/* El dólar va aparte y NO se suma al efectivo MXN esperado — mismo criterio que el
-                POS Windows: es informativo hasta que se cambie a pesos en una operación aparte. */}
+            {/* Los dólares se cuentan aparte, pero el cuadre del cierre es del TOTAL en pesos
+                (dólares al tipo de cambio del turno): ver caja/cuadreCaja.ts. */}
             <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
               <ColumnaDenominaciones
-                titulo="Dólares (informativo)"
+                titulo="Dólares"
                 denominaciones={BILLETES_USD}
                 conteo={billetesUSD}
                 onChange={(d, c) => setBilletesUSD((s) => ({ ...s, [d]: c }))}
@@ -468,7 +533,19 @@ export function PosCajaScreen() {
                       {diferenciaUsd === 0 ? "Cuadra" : `${diferenciaUsd > 0 ? "+" : "−"}US$${Math.abs(diferenciaUsd).toFixed(2)}`}
                     </Text>
                   </View>
+                  {/* La que decide si se puede cerrar: todo convertido a pesos. */}
+                  <View style={[estilos.filaResumen, estilos.filaDiferencia, { marginTop: 10 }]}>
+                    <Text style={[estilos.etiquetaResumen, { fontWeight: "800" }]}>Diferencia total (pesos + dólares)</Text>
+                    <Text style={[estilos.valorDiferencia, { color: cuadre.cuadra ? colores.green : colores.red }]}>
+                      {cuadre.cuadra ? "Cuadra" : `${cuadre.diferencia > 0 ? "+" : "−"}$${Math.abs(cuadre.diferencia).toFixed(2)}`}
+                    </Text>
+                  </View>
                 </>
+              )}
+              {!cuadre.cuadra && (
+                <Text style={{ color: colores.red, fontSize: 12, marginTop: 8, fontWeight: "700" }}>
+                  🔒 Mientras no cuadre no se puede cerrar el turno (solo un administrador puede autorizarlo).
+                </Text>
               )}
             </View>
 
@@ -535,6 +612,51 @@ export function PosCajaScreen() {
         />
       )}
       {corteVisible && <ModalCorteDetallado corte={corteVisible} onCerrar={() => setCorteVisible(null)} />}
+
+      {/* Caja que no cuadra: solo un administrador la cierra; después firma la cajera. */}
+      {forzando !== null && usuario && (
+        <ModalAutorizacion
+          titulo="Cerrar caja que no cuadra"
+          descripcion={`${textoDiferencia(cuadre.diferencia)}. Solo un administrador puede autorizar este cierre; la diferencia queda registrada en el corte a nombre de quien lo entrega.`}
+          solicitanteId={usuario.id}
+          roles={ROLES_FORZAN_CIERRE}
+          onCancelar={() => setForzando(null)}
+          onAutorizado={(admin) => {
+            const n = forzando;
+            setForzando(null);
+            setFirma({ tipo: "cierre", calibraciones: n, admin });
+          }}
+        />
+      )}
+
+      {/* Firma con PIN personal: entrega del corte (la responsable del turno) o apertura. */}
+      {firma?.tipo === "cierre" && turno && (
+        <ModalFirmaPin
+          titulo="Firma de entrega del corte"
+          descripcion={`Con tu PIN confirmas el corte: contado $${desglose.totalMXN.toFixed(2)}${hayDolares ? ` y US$${desglose.totalUSD.toFixed(2)}` : ""}${firma.admin ? ` (no cuadra: ${textoDiferencia(cuadre.diferencia)})` : ""}.`}
+          usuarioId={turno.usuarioId}
+          nombre={nombreResponsable}
+          onCancelar={() => setFirma(null)}
+          onFirmado={() => {
+            const f = firma;
+            setFirma(null);
+            cerrar(f.calibraciones, f.admin);
+          }}
+        />
+      )}
+      {firma?.tipo === "apertura" && usuario && (
+        <ModalFirmaPin
+          titulo="Firma de apertura"
+          descripcion={`Con tu PIN confirmas que recibes la caja con un fondo de $${(Number(montoInicial) || 0).toFixed(2)}.`}
+          usuarioId={usuario.id}
+          nombre={usuario.nombre}
+          onCancelar={() => setFirma(null)}
+          onFirmado={() => {
+            setFirma(null);
+            abrir();
+          }}
+        />
+      )}
 
       {/* Antes de cerrar: calibraciones de la máquina de café en el turno (merma de café). */}
       <Modal visible={preguntandoCalibraciones} transparent animationType="fade" onRequestClose={() => setPreguntandoCalibraciones(false)}>

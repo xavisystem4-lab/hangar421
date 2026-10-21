@@ -31,6 +31,17 @@ export class SyncController {
    *
    * Solo lectura y acotado a la empresa del token; `sucursalId` lo valida SucursalAccessGuard.
    */
+  /**
+   * ¿Cambió algo en el ERP que las tablets tienen copiado? (catálogo, precios, recetas, insumos,
+   * crédito, usuarios). La tablet lo consulta cada pocos segundos y, si es más nuevo que su última
+   * descarga, avisa con un pitido y "Descargar modificación de ERP". Una lectura por clave
+   * primaria: barata a propósito.
+   */
+  @Get("cambios")
+  cambios(@Req() req: any) {
+    return this.sync.cambiosErp(req.user.empresaId);
+  }
+
   @Get("problemas")
   problemas(@Req() req: any, @Query("sucursalId") sucursalId?: string) {
     return this.sync.listarProblemas(req.user.empresaId, sucursalId);

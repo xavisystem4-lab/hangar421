@@ -179,7 +179,10 @@ export function hoyEnZona(zona: string, ahora = new Date()): string {
 }
 
 export interface ResumenVentas {
+  /** Ventas reales: sin lo cargado a crédito de empleado (ahí no entró dinero). */
   totalVendido: number;
+  /** Consumo de empleadas a crédito: categoría aparte, no es venta. */
+  creditoEmpleados: number;
   numTickets: number;
   ticketPromedio: number;
   /** Cuántos tickets hay en cada estado. Sirve para ver de un vistazo si quedó alguna venta a
@@ -187,7 +190,7 @@ export interface ResumenVentas {
   porEstado: { estado: string; cantidad: number; total: number }[];
 }
 
-export function armarResumen(filas: { estado: string; total: number }[]): ResumenVentas {
+export function armarResumen(filas: { estado: string; total: number; credito?: number }[]): ResumenVentas {
   const porEstado = new Map<string, { cantidad: number; total: number }>();
   for (const f of filas) {
     const actual = porEstado.get(f.estado) ?? { cantidad: 0, total: 0 };
@@ -195,10 +198,12 @@ export function armarResumen(filas: { estado: string; total: number }[]): Resume
   }
 
   const cerradas = filas.filter((f) => ESTADOS_VENTA_CERRADA.includes(f.estado as EstadoPedido));
-  const totalVendido = redondear(cerradas.reduce((s, f) => s + f.total, 0));
+  const creditoEmpleados = redondear(cerradas.reduce((s, f) => s + (f.credito ?? 0), 0));
+  const totalVendido = redondear(cerradas.reduce((s, f) => s + f.total, 0) - creditoEmpleados);
 
   return {
     totalVendido,
+    creditoEmpleados,
     numTickets: cerradas.length,
     ticketPromedio: cerradas.length > 0 ? redondear(totalVendido / cerradas.length) : 0,
     porEstado: [...porEstado.entries()]

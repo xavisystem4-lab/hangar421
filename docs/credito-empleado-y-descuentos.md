@@ -19,9 +19,21 @@ El ERP recalcula con sus precios y guarda una fila en `descuentos` por línea y 
 
 ## Crédito de empleado (monedero)
 
-Botón **👛 Crédito empleado**: buscador por nombre + filtro por sucursal; muestra el saldo.
+Botón **👛 Crédito empleado**: buscador por nombre; muestra el saldo.
 
-- Tope **$500** por empleada, el mismo monedero en **todas las sucursales**.
+Reglas de uso (`motivoSinCredito` en `packages/shared/src/monedero.ts`):
+
+- **Solo en su sucursal**: la tablet lista únicamente a las baristas de su sucursal (Mecánicos con
+  Mecánicos, Benito Juárez con Benito Juárez). Es la sucursal del monedero o, si no la tiene, las
+  de sus usuarios.
+- **Solo dentro de su horario** (ERP → Usuarios → Horarios, p. ej. Diana lun–vie 06:00–15:36).
+  Sin horario capturado no se restringe.
+- **Sin saldo no hay crédito.**
+- **No se combina con descuentos** (ni con cortesía): la tablet lo impide y `confirmarVenta` lo rechaza.
+- El crédito **no es venta real**: en el corte y en los reportes sale aparte ("Crédito de
+  empleados") y no suma a las ventas del día.
+
+- Tope **$500** por empleada.
 - **Un solo monedero activo por nombre** (primer nombre, sin acentos). Cada empleada tiene un usuario por sucursal; la migración `20261007190000_monedero_unico_por_nombre` deja el de su sucursal (o el usuario más antiguo), apaga los demás y les pasa sus consumos. El servidor además manda a las tablets uno por nombre y rechaza activar un segundo (`PUT /monedero/:usuarioId`).
 - Se **reinicia sin acumular** a un día y hora fijos: Diana, Andrea y Daniela → viernes 9:00 PM;
   Dalia → sábado 5:00 PM.

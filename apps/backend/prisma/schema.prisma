@@ -1645,3 +1645,18 @@ model RecetaOpcion {
   @@index([insumoId])
   @@map("receta_opciones")
 }
+
+// Última vez que alguien cambió en el ERP algo que las tablets tienen copiado (catálogo, precios,
+// recetas, insumos, crédito, usuarios). Las tablets lo consultan cada pocos segundos
+// (GET /sync/cambios) y, si es más nuevo que su última descarga, avisan con un pitido y el botón
+// "Descargar modificación de ERP". Una fila por empresa.
+model MarcaCambioErp {
+  empresaId     String   @id
+  version       DateTime @default(now())
+  // Qué se cambió ("Catálogo", "Inventario y recetas"…), para el aviso.
+  que           String?
+  // Tablet que hizo el cambio (si vino de una): esa no necesita avisarse a sí misma.
+  dispositivoId String?
+
+  @@map("marcas_cambio_erp")
+}

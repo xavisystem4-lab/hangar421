@@ -102,3 +102,25 @@ describe("textoCorte", () => {
     expect(t).toContain("DIFERENCIA: CUADRA");
   });
 });
+
+describe("crédito de empleados en el corte", () => {
+  it("sale aparte y no suma a las ventas", () => {
+    const c = armarCorteDetallado({
+      ...BASE,
+      porOrigen: [
+        {
+          origen: "MOSTRADOR", total: 1290, cantidad: 11,
+          porMetodo: [
+            { metodo: "TARJETA", total: 400, cantidad: 3 },
+            { metodo: "EFECTIVO", total: 800, cantidad: 7 },
+            { metodo: "MONEDERO_EMPLEADO", total: 90, cantidad: 1 },
+          ],
+        },
+      ],
+    });
+    expect(c.ventas.total).toBe(1200);
+    expect(c.ventas.credito).toEqual({ total: 90, cantidad: 1 });
+    expect(c.ventas.porMetodo.some((m) => m.metodo === "MONEDERO_EMPLEADO")).toBe(false);
+    expect(textoCorte(c)).toContain("CRÉDITO DE EMPLEADOS (no es venta): $90.00");
+  });
+});

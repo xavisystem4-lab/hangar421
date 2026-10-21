@@ -6,9 +6,11 @@ import { RolesGuard } from "../common/guards/roles.guard";
 import { Roles } from "../common/decorators/roles.decorator";
 import { Audit } from "../common/interceptors/audit.interceptor";
 import { CatalogoService } from "./catalogo.service";
+import { AvisaTerminales } from "../common/interceptors/cambios-erp.interceptor";
 
 @ApiTags("catalogo")
 @UseGuards(JwtAuthGuard, RolesGuard)
+@AvisaTerminales("Catálogo y precios")
 @Controller("catalogo")
 export class CatalogoController {
   constructor(private catalogo: CatalogoService) {}

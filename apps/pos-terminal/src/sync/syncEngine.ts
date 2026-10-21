@@ -8,6 +8,7 @@ import { asegurarSesionEnSucursalActiva, refrescarMonederos, refrescarTerminalMu
 import { obtenerOCrearDispositivoId, obtenerSucursalErp } from "../db/dispositivoLocal";
 import { encolarUsuariosSinRegistrarEnErp, mapaUsuariosErp, marcarRegistradoEnErp } from "../db/usuariosLocalesRepo";
 import { registrarResultadoDescarga, type ResultadoDescarga } from "../db/estadoDescargaRepo";
+import { guardarVersionAplicada, leerMarcaErp } from "./cambiosErp";
 
 // Más espaciado que los 8s de apps/waiter-mobile: ahí el destino es una Estación en la misma
 // red LAN; aquí es el ERP en la nube (Railway) — pollear cada 8s no aporta nada y sí gasta
@@ -65,6 +66,9 @@ async function descargarTodo(): Promise<ResultadoDescarga> {
       errores.push(`${nombre}: ${e?.message ?? "error desconocido"}`);
     }
   };
+  // Marca de cambios del ERP ANTES de bajar: si la descarga sale bien, todo lo cambiado hasta
+  // ese momento ya está aquí (ver cambiosErp.ts). Best-effort: un ERP anterior no la tiene.
+  const marca = await leerMarcaErp().catch(() => null);
   // Terminal multisucursal: sucursales, personas asignadas y precios de todas (no-op si no lo es).
   await paso("Sucursales y precios", refrescarTerminalMultisucursal);
   await paso("Monederos", refrescarMonederos);
@@ -73,7 +77,9 @@ async function descargarTodo(): Promise<ResultadoDescarga> {
   await paso("Mesas", ejecutarPull);
 
   const resultado: ResultadoDescarga = { ok: errores.length === 0, errores, fecha: new Date().toISOString() };
-  await registrarResultadoDescarga(await abrirBaseDeDatos(), resultado).catch(() => undefined);
+  const db = await abrirBaseDeDatos();
+  await registrarResultadoDescarga(db, resultado).catch(() => undefined);
+  if (resultado.ok) await guardarVersionAplicada(db, marca?.version ?? null).catch(() => undefined);
   return resultado;
 }
 

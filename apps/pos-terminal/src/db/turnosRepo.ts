@@ -62,6 +62,17 @@ export async function turnoPendienteDeDiaAnterior(db: SQLiteDatabase, ahora: Dat
   return { turno, responsable: usuario?.nombre ?? "Usuario desconocido", sucursal: sucursal ?? "Sucursal sin nombre" };
 }
 
+/** Último corte de la sucursal activa: lo que entregó y quién, para que quien abre lo confirme. */
+export async function ultimoTurnoCerrado(db: SQLiteDatabase): Promise<{ turno: TurnoLocal; responsable: string } | null> {
+  const sucursalId = await obtenerOCrearSucursalIdLocal(db);
+  const f = await db.getFirstAsync<any>(
+    `SELECT t.*, u.nombre AS responsable FROM turnos t LEFT JOIN usuarios_locales u ON u.id = t.usuario_id
+     WHERE t.sucursal_id = ? AND t.estado = 'CERRADO' ORDER BY t.cerrado_at DESC LIMIT 1`,
+    sucursalId,
+  );
+  return f ? { turno: aTurnoLocal(f), responsable: f.responsable ?? "Usuario desconocido" } : null;
+}
+
 /** Abrir caja — una sola transacción: fila de turno + su evento de sync, todo o nada. */
 export async function abrirTurno(db: SQLiteDatabase, datos: { usuarioId: string; montoInicial: number; tipoCambioUsd: number | null }): Promise<TurnoLocal> {
   const yaAbierto = await turnoAbierto(db);

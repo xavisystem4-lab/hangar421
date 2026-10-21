@@ -130,6 +130,8 @@ export class PedidosService {
           estado: true,
           total: true,
           canalOrigen: true,
+          // Lo cargado a crédito de empleado no es venta real: se resta del total vendido.
+          pagos: { where: { metodo: MetodoPago.MONEDERO_EMPLEADO }, select: { monto: true } },
           mesero: { select: { id: true, nombre: true } },
           cajero: { select: { id: true, nombre: true } },
           dispositivo: { select: { id: true, nombre: true, tipo: true } },
@@ -139,7 +141,9 @@ export class PedidosService {
 
     return {
       rango: { desde, hasta, zona },
-      resumen: armarResumen(paraResumen.map((p) => ({ estado: p.estado, total: Number(p.total) }))),
+      resumen: armarResumen(
+        paraResumen.map((p) => ({ estado: p.estado, total: Number(p.total), credito: (p.pagos ?? []).reduce((s, x) => s + Number(x.monto), 0) })),
+      ),
       desglose: armarDesglose(
         paraResumen.map((p) => ({
           estado: p.estado,

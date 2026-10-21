@@ -72,17 +72,46 @@ export class MonederoService {
       where: { usuarioId: { in: monederos.map((m) => m.usuarioId) }, createdAt: { gte: desde } },
       select: { id: true, usuarioId: true, monto: true, createdAt: true },
     });
+    // Dónde y cuándo puede usarlo: su crédito es solo en SU sucursal y dentro de su horario
+    // (ERP → Usuarios → Horarios). Cada empleada puede tener un usuario por sucursal: los horarios
+    // de todos sus usuarios (mismo nombre) cuentan.
+    const usuarios = await this.prisma.usuario.findMany({
+      where: { empresaId, eliminado: false },
+      select: { id: true, nombre: true, sucursales: { where: { activo: true }, select: { sucursalId: true } } },
+    });
+    const idsPorClave = new Map<string, string[]>();
+    for (const u of usuarios) {
+      const clave = claveEmpleada(u.nombre);
+      idsPorClave.set(clave, [...(idsPorClave.get(clave) ?? []), u.id]);
+    }
+    const idsDe = (m: (typeof monederos)[number]) => idsPorClave.get(claveEmpleada(m.usuario.nombre)) ?? [m.usuarioId];
+    const horarios = await this.prisma.horarioUsuario.findMany({
+      where: { usuarioId: { in: [...new Set(monederos.flatMap(idsDe))] } },
+      select: { usuarioId: true, sucursalId: true, diaSemana: true, horaInicio: true, horaFin: true },
+    });
+    const sucursalesDe = (m: (typeof monederos)[number]): string[] => {
+      if (m.sucursalId) return [m.sucursalId];
+      const ids = new Set(idsDe(m));
+      return [...new Set(usuarios.filter((u) => ids.has(u.id)).flatMap((u) => u.sucursales.map((s) => s.sucursalId)))];
+    };
     return {
-      monederos: monederos.map((m) => ({
-        usuarioId: m.usuarioId,
-        nombre: m.usuario.nombre,
-        sucursalId: m.sucursalId,
-        sucursalNombre: m.sucursal?.nombre ?? null,
-        limite: Number(m.limite),
-        diaReinicio: m.diaReinicio,
-        horaReinicio: m.horaReinicio,
-        minutoReinicio: m.minutoReinicio,
-      })),
+      monederos: monederos.map((m) => {
+        const ids = new Set(idsDe(m));
+        return {
+          usuarioId: m.usuarioId,
+          nombre: m.usuario.nombre,
+          sucursalId: m.sucursalId,
+          sucursalNombre: m.sucursal?.nombre ?? null,
+          limite: Number(m.limite),
+          diaReinicio: m.diaReinicio,
+          horaReinicio: m.horaReinicio,
+          minutoReinicio: m.minutoReinicio,
+          sucursalesPermitidas: sucursalesDe(m),
+          horarios: horarios
+            .filter((h) => ids.has(h.usuarioId))
+            .map((h) => ({ diaSemana: h.diaSemana, horaInicio: h.horaInicio, horaFin: h.horaFin, sucursalId: h.sucursalId })),
+        };
+      }),
       movimientos: movimientos.map((x) => ({ id: x.id, usuarioId: x.usuarioId, monto: Number(x.monto), fecha: x.createdAt.toISOString() })),
     };
   }

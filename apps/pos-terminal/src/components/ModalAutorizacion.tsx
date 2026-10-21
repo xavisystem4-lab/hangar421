@@ -17,12 +17,15 @@ export function ModalAutorizacion({
   titulo,
   descripcion,
   solicitanteId,
+  roles,
   onCancelar,
   onAutorizado,
 }: {
   titulo: string;
   descripcion: string;
   solicitanteId: string;
+  /** Solo estos roles pueden autorizar (p. ej. cerrar una caja que no cuadra: solo administradores). */
+  roles?: string[];
   onCancelar: () => void;
   onAutorizado: (autorizador: Autorizador) => void;
 }) {
@@ -35,7 +38,8 @@ export function ModalAutorizacion({
   const [validando, setValidando] = useState(false);
 
   useEffect(() => {
-    abrirBaseDeDatos().then(listarAutorizadores).then((lista) => {
+    abrirBaseDeDatos().then(listarAutorizadores).then((todos) => {
+      const lista = roles ? todos.filter((a) => roles.includes(a.rol)) : todos;
       setAutorizadores(lista);
       if (lista.length === 1) setElegido(lista[0].id);
     });
@@ -48,6 +52,11 @@ export function ModalAutorizacion({
     try {
       const db = await abrirBaseDeDatos();
       const r = await autorizarConPin(db, { autorizadorId: elegido, pin, solicitanteId });
+      if (r.autorizado && r.autorizador && roles && !roles.includes(r.autorizador.rol)) {
+        setError("Ese usuario no puede autorizar esta acción.");
+        setPin("");
+        return;
+      }
       if (!r.autorizado || !r.autorizador) {
         setError(r.error ?? "No autorizado.");
         setPin("");
@@ -75,8 +84,9 @@ export function ModalAutorizacion({
             // Sin gerentes dados de alta en la terminal no hay forma de autorizar nada offline.
             // Se dice qué hacer en vez de dejar un modal vacío.
             <Text style={estilos.error}>
-              No hay ningún supervisor o administrador con PIN en esta terminal. Da de alta uno
-              desde Admin → Usuarios antes de poder autorizar esta acción.
+              {roles
+                ? "No hay ningún administrador con PIN en esta terminal. Un administrador debe iniciar sesión aquí al menos una vez para poder autorizar esta acción."
+                : "No hay ningún supervisor o administrador con PIN en esta terminal. Da de alta uno desde Admin → Usuarios antes de poder autorizar esta acción."}
             </Text>
           ) : (
             <>

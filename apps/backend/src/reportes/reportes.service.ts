@@ -82,9 +82,11 @@ export class ReportesService {
       createdAt: { gte: inicioDia },
     };
 
-    const [pedidosHoy, agregados, topProductos, sucursales] = await Promise.all([
+    const [pedidosHoy, agregados, credito, topProductos, sucursales] = await Promise.all([
       this.prisma.pedido.count({ where: whereBase }),
-      this.prisma.pedido.aggregate({ where: whereBase, _sum: { total: true }, _avg: { total: true } }),
+      this.prisma.pedido.aggregate({ where: whereBase, _sum: { total: true } }),
+      // Crédito de empleado: no es venta real (no entró dinero), va aparte.
+      this.prisma.pago.aggregate({ where: { metodo: "MONEDERO_EMPLEADO", pedido: whereBase }, _sum: { monto: true } }),
       this.prisma.pedidoItem.groupBy({
         by: ["productoId"],
         where: { pedido: whereBase },
@@ -99,10 +101,13 @@ export class ReportesService {
     ]);
 
     const detalle = await this.detalleProductos(topProductos.map((t) => t.productoId), whereBase);
+    const creditoHoy = Math.round(Number(credito._sum.monto ?? 0) * 100) / 100;
+    const ventasReales = Math.round((Number(agregados._sum.total ?? 0) - creditoHoy) * 100) / 100;
 
     return {
-      ventasHoy: Number(agregados._sum.total ?? 0),
-      ticketPromedio: Number(agregados._avg.total ?? 0),
+      ventasHoy: ventasReales,
+      creditoEmpleadosHoy: creditoHoy,
+      ticketPromedio: pedidosHoy > 0 ? Math.round((ventasReales / pedidosHoy) * 100) / 100 : 0,
       pedidosHoy,
       topProductos: topProductos.map((t) => {
         const d = detalle.get(t.productoId);

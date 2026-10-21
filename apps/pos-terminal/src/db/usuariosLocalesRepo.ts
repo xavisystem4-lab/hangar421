@@ -65,10 +65,25 @@ export async function guardarRolYPermisos(
  *  exige sesión de administrador y creaba el usuario con OTRO id — así que casi nunca llegaba y,
  *  cuando llegaba, las ventas que nombraban el id local igual quedaban sin atribución. El PIN no
  *  viaja: nunca sale de esta función en texto plano. */
+/** ¿Otra persona de esta tablet ya usa ese PIN? Devuelve su nombre. El PIN es personal: con dos
+ *  iguales una puede entrar con el usuario de la otra. */
+export async function pinEnUsoLocal(db: SQLiteDatabase, pin: string, excluirUsuarioId?: string): Promise<string | null> {
+  const filas = await db.getAllAsync<{ id: string; nombre: string; hash_local: string; salt: string }>(
+    `SELECT u.id, u.nombre, p.hash_local, p.salt FROM pin_cache p JOIN usuarios_locales u ON u.id = p.usuario_local_id WHERE u.activo = 1`,
+  );
+  for (const f of filas) {
+    if (f.id === excluirUsuarioId) continue;
+    if ((await derivarHashPin(pin, f.salt)) === f.hash_local) return f.nombre;
+  }
+  return null;
+}
+
 export async function crearUsuarioLocal(
   db: SQLiteDatabase,
   datos: { nombre: string; rol: string; pin: string },
 ): Promise<UsuarioLocal> {
+  const ocupado = await pinEnUsoLocal(db, datos.pin);
+  if (ocupado) throw new Error(`Ese PIN ya lo usa ${ocupado}. El PIN es personal: elige otro.`);
   const id = uuid7();
   const salt = await generarSalt();
   const hashLocal = await derivarHashPin(datos.pin, salt);

@@ -1,20 +1,22 @@
 import { useMemo, useState } from "react";
 import { KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
-import { filtrarEmpleadas, sucursalesDeEmpleadas, textoReinicio, type EmpleadaConCredito } from "../caja/creditoEmpleado";
+import { filtrarEmpleadas, motivoNoDisponible, textoReinicio, type EmpleadaConCredito } from "../caja/creditoEmpleado";
 
 const NARANJA = "#FF6A13";
 
-/** Crédito de empleado: se busca a la empleada por nombre, se acota por sucursal y se elige. Cada
- *  una muestra lo que le queda del monedero (el mismo en todas las sucursales). */
+/** Crédito de empleado: solo las baristas de ESTA sucursal. Cada una muestra lo que le queda; si
+ *  no puede usarlo ahora (sin saldo o fuera de su horario) sale apagada con el motivo. */
 export function ModalCreditoEmpleado({
   empleadas,
+  sucursalActualId,
   seleccionadaId,
   onElegir,
   onQuitar,
   onCerrar,
 }: {
   empleadas: EmpleadaConCredito[];
+  sucursalActualId: string | null;
   seleccionadaId: string | null;
   onElegir: (empleada: EmpleadaConCredito) => void;
   onQuitar: () => void;
@@ -23,16 +25,15 @@ export function ModalCreditoEmpleado({
   const colores = usarColores();
   const estilos = crearEstilos(colores);
   const [texto, setTexto] = useState("");
-  const [sucursalId, setSucursalId] = useState<string | null>(null);
-  const sucursales = useMemo(() => sucursalesDeEmpleadas(empleadas), [empleadas]);
-  const visibles = useMemo(() => filtrarEmpleadas(empleadas, texto, sucursalId), [empleadas, texto, sucursalId]);
+  const visibles = useMemo(() => filtrarEmpleadas(empleadas, texto, null), [empleadas, texto]);
+  const ahora = new Date();
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onCerrar}>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={estilos.fondo}>
         <View style={estilos.tarjeta}>
           <Text style={estilos.titulo}>👛 Crédito de empleado</Text>
-          <Text style={estilos.ayuda}>Busca a la empleada y elige su sucursal. El monedero es el mismo en todas las sucursales.</Text>
+          <Text style={estilos.ayuda}>Solo baristas de esta sucursal, dentro de su horario y con saldo. No se combina con descuentos.</Text>
 
           <TextInput
             value={texto}
@@ -45,24 +46,15 @@ export function ModalCreditoEmpleado({
             accessibilityLabel="Buscar empleada por nombre"
           />
 
-          {sucursales.length > 0 && (
-            <View style={estilos.chips}>
-              {[{ id: null as string | null, nombre: "Todas" }, ...sucursales].map((s) => (
-                <TouchableOpacity key={s.id ?? "todas"} onPress={() => setSucursalId(s.id)} style={[estilos.chip, sucursalId === s.id && estilos.chipActivo]} accessibilityLabel={`Sucursal ${s.nombre}`}>
-                  <Text style={[estilos.chipTexto, sucursalId === s.id && { color: "#fff" }]}>{s.nombre}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
           <ScrollView style={{ maxHeight: 300 }} keyboardShouldPersistTaps="handled">
             {empleadas.length === 0 ? (
-              <Text style={estilos.vacio}>No hay empleadas con crédito en esta tablet. Conéctala a internet para sincronizarlas.</Text>
+              <Text style={estilos.vacio}>No hay baristas de esta sucursal con crédito. Conéctala a internet para sincronizarlas.</Text>
             ) : visibles.length === 0 ? (
               <Text style={estilos.vacio}>Ninguna empleada coincide con la búsqueda.</Text>
             ) : (
               visibles.map((e) => {
-                const sinSaldo = e.saldo <= 0;
+                const motivo = motivoNoDisponible(e, sucursalActualId, ahora);
+                const sinSaldo = !!motivo;
                 const activa = e.usuarioId === seleccionadaId;
                 return (
                   <TouchableOpacity
@@ -78,7 +70,7 @@ export function ModalCreditoEmpleado({
                     </View>
                     <View style={{ alignItems: "flex-end" }}>
                       <Text style={[estilos.saldo, sinSaldo && { color: colores.red }]}>${e.saldo.toFixed(2)}</Text>
-                      <Text style={estilos.detalle}>{sinSaldo ? "sin saldo" : `de $${e.limite.toFixed(0)}`}</Text>
+                      <Text style={[estilos.detalle, motivo ? { color: colores.red, fontWeight: "700" } : null]}>{motivo ?? `de $${e.limite.toFixed(0)}`}</Text>
                     </View>
                   </TouchableOpacity>
                 );

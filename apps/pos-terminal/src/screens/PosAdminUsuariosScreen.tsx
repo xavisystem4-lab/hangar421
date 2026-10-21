@@ -103,7 +103,12 @@ export function PosAdminUsuariosScreen({ onCerrar }: { onCerrar: () => void }) {
   async function crearUsuario() {
     if (!nombreNuevo.trim() || pinNuevo.length < 4) return;
     const db = await abrirBaseDeDatos();
-    await crearUsuarioLocal(db, { nombre: nombreNuevo.trim(), rol: rolNuevo, pin: pinNuevo });
+    try {
+      await crearUsuarioLocal(db, { nombre: nombreNuevo.trim(), rol: rolNuevo, pin: pinNuevo });
+    } catch (e: any) {
+      Alert.alert("No se pudo crear", e?.message ?? "Error al crear el usuario.");
+      return;
+    }
     sincronizarPronto();
     setNombreNuevo("");
     setPinNuevo("");

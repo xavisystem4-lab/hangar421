@@ -74,6 +74,13 @@ export function ModalCorteDetallado({ corte, onCerrar }: { corte: CorteDetallado
               {corte.ventas.porMetodo.length === 0 && <Text style={e.vacio}>Sin ventas cobradas todavía.</Text>}
             </Seccion>
 
+            {/* Crédito de empleados: consumo sin pago, no se cuenta como venta del día. */}
+            {corte.ventas.credito.total > 0 && (
+              <Seccion titulo="👛 Crédito de empleados (no es venta)" color={colores.textoSecundario}>
+                <Fila etiqueta={`Consumido a crédito (${corte.ventas.credito.cantidad})`} valor={dinero(corte.ventas.credito.total)} fuerte />
+              </Seccion>
+            )}
+
             {/* 3. Mostrador vs plataformas. */}
             <Seccion titulo="3 · Mostrador y plataformas" color="#FF6A13">
               <Fila etiqueta="Mostrador" valor={dinero(corte.ventas.mostrador)} fuerte />

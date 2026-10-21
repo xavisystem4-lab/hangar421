@@ -7,6 +7,7 @@ import { Roles } from "../common/decorators/roles.decorator";
 import { SucursalLibre } from "../common/decorators/sucursal-libre.decorator";
 import { Audit } from "../common/interceptors/audit.interceptor";
 import { MonederoService, type ConfigurarMonederoDto } from "./monedero.service";
+import { AvisaTerminales } from "../common/interceptors/cambios-erp.interceptor";
 
 /**
  * Crédito de empleado. La empresa sale SIEMPRE de la sesión (nunca del query string). El monedero
@@ -15,6 +16,7 @@ import { MonederoService, type ConfigurarMonederoDto } from "./monedero.service"
 @ApiTags("monedero")
 @UseGuards(JwtAuthGuard, RolesGuard)
 @SucursalLibre()
+@AvisaTerminales("Crédito de empleados")
 @Controller("monedero")
 export class MonederoController {
   constructor(private monedero: MonederoService) {}

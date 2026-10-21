@@ -45,6 +45,88 @@ export function calcularUsoMonedero(total: number, saldo: number): { montoMonede
   return { montoMonedero, restante: round2(Math.max(total, 0) - montoMonedero) };
 }
 
+// ── Quién puede usar su crédito, dónde y cuándo ──────────────────────────────────────────────
+
+/** Horario semanal de la empleada (ERP → Usuarios → Horarios): "lunes 06:00 a 15:36". */
+export interface HorarioCredito {
+  /** 0 = domingo … 6 = sábado. */
+  diaSemana: number;
+  /** "06:00" */
+  horaInicio: string;
+  /** "15:36" */
+  horaFin: string;
+  sucursalId?: string | null;
+}
+
+function minutosDe(hhmm: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})/.exec((hhmm ?? "").trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  return h >= 0 && h <= 24 && min >= 0 && min < 60 ? h * 60 + min : null;
+}
+
+/**
+ * ¿`ahora` cae dentro de su horario? Sin horario capturado no hay con qué comparar y se permite.
+ * Con `sucursalId` solo cuentan los horarios de esa sucursal (o los que no dicen sucursal). Un
+ * horario que cruza la medianoche (22:00 a 06:00) cuenta también la madrugada del día siguiente.
+ */
+export function dentroDeHorario(horarios: HorarioCredito[], ahora: Date, sucursalId?: string | null): boolean {
+  if (horarios.length === 0) return true;
+  const aplican = horarios.filter((h) => !sucursalId || !h.sucursalId || h.sucursalId === sucursalId);
+  const minuto = ahora.getHours() * 60 + ahora.getMinutes();
+  const hoy = ahora.getDay();
+  const ayer = (hoy + 6) % 7;
+  return aplican.some((h) => {
+    const ini = minutosDe(h.horaInicio);
+    const fin = minutosDe(h.horaFin);
+    if (ini === null || fin === null) return false;
+    if (fin > ini) return h.diaSemana === hoy && minuto >= ini && minuto <= fin;
+    // Cruza la medianoche.
+    return (h.diaSemana === hoy && minuto >= ini) || (h.diaSemana === ayer && minuto <= fin);
+  });
+}
+
+const DIAS_CORTOS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
+
+/** "lun–vie 06:00–15:36" (agrupa los días con el mismo horario). */
+export function textoHorario(horarios: HorarioCredito[]): string {
+  const porRango = new Map<string, number[]>();
+  for (const h of horarios) {
+    const clave = `${h.horaInicio}–${h.horaFin}`;
+    porRango.set(clave, [...(porRango.get(clave) ?? []), h.diaSemana]);
+  }
+  return [...porRango]
+    .map(([rango, dias]) => {
+      const orden = [...new Set(dias)].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
+      const consecutivos = orden.every((d, i) => i === 0 || (orden[i - 1] + 1) % 7 === d);
+      const txt = orden.length > 2 && consecutivos ? `${DIAS_CORTOS[orden[0]]}–${DIAS_CORTOS[orden[orden.length - 1]]}` : orden.map((d) => DIAS_CORTOS[d]).join(", ");
+      return `${txt} ${rango}`;
+    })
+    .join(" · ");
+}
+
+/**
+ * Por qué una empleada NO puede usar su crédito ahora (null = sí puede). Reglas:
+ * sin saldo no hay crédito; solo en su sucursal; solo dentro de su horario.
+ */
+export function motivoSinCredito(datos: {
+  saldo: number;
+  sucursalesPermitidas: string[];
+  sucursalActual: string | null;
+  horarios: HorarioCredito[];
+  ahora: Date;
+}): string | null {
+  if (!(datos.saldo > 0)) return "Ya usó todo su crédito";
+  if (datos.sucursalActual && datos.sucursalesPermitidas.length > 0 && !datos.sucursalesPermitidas.includes(datos.sucursalActual)) {
+    return "Su crédito es solo en su sucursal";
+  }
+  if (!dentroDeHorario(datos.horarios, datos.ahora, datos.sucursalActual)) {
+    return `Fuera de su horario (${textoHorario(datos.horarios.filter((h) => !datos.sucursalActual || !h.sucursalId || h.sucursalId === datos.sucursalActual)) || "sin horario en esta sucursal"})`;
+  }
+  return null;
+}
+
 // ── Reporte de consumo de crédito de empleados ───────────────────────────────────────────────
 
 export interface ProductoConsumido {

@@ -375,8 +375,17 @@ export class CajaService {
       _count: true,
       _sum: { total: true },
     });
+    // Crédito de empleado: no es venta real, se resta del total del turno.
+    const creditos = await this.prisma.pago.findMany({
+      where: { metodo: MetodoPago.MONEDERO_EMPLEADO, pedido: { turnoId: { in: turnos.map((t) => t.id) }, estado: EstadoPedido.COBRADO } },
+      select: { monto: true, pedido: { select: { turnoId: true } } },
+    });
+    const creditoPorTurno = new Map<string, number>();
+    for (const c of creditos) {
+      if (c.pedido?.turnoId) creditoPorTurno.set(c.pedido.turnoId, (creditoPorTurno.get(c.pedido.turnoId) ?? 0) + Number(c.monto));
+    }
     for (const g of enlazadas) {
-      if (g.turnoId) resultado.set(g.turnoId, { numTickets: g._count, total: round2(Number(g._sum.total ?? 0)) });
+      if (g.turnoId) resultado.set(g.turnoId, { numTickets: g._count, total: round2(Number(g._sum.total ?? 0) - (creditoPorTurno.get(g.turnoId) ?? 0)) });
     }
 
     // Turnos heredados (ninguna venta enlazada, en ningún estado): criterio del corte antiguo.

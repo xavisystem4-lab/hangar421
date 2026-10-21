@@ -73,6 +73,9 @@ export async function confirmarVenta(
 ): Promise<VentaConfirmada> {
   if (datos.items.length === 0) throw new Error("El carrito está vacío");
   if (opciones.descuentos && opciones.cortesia) throw new Error("Una venta no puede llevar descuento y cortesía a la vez");
+  if (opciones.descuentos && datos.pagos.some((p) => p.metodo === "MONEDERO_EMPLEADO")) {
+    throw new Error("Una venta con crédito de empleado no puede llevar descuento");
+  }
 
   const calculoDescuentos = opciones.descuentos ? totalesConDescuentos(datos.items, opciones.descuentos) : null;
   const totales: TotalesPedido = calculoDescuentos

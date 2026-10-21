@@ -40,6 +40,8 @@ interface RespuestaVentas {
   rango: { desde: string; hasta: string; zona: string };
   resumen: {
     totalVendido: number;
+    /** Consumo de empleadas a crédito: aparte, no es venta. */
+    creditoEmpleados?: number;
     numTickets: number;
     ticketPromedio: number;
     porEstado: { estado: string; cantidad: number; total: number }[];
@@ -344,6 +346,9 @@ export default function VentasPage() {
         <StatTile etiqueta="Total vendido" valor={`$${(datos?.resumen.totalVendido ?? 0).toFixed(2)}`} acento="var(--h421-green)" />
         <StatTile etiqueta="Tickets cobrados" valor={String(datos?.resumen.numTickets ?? 0)} acento="var(--h421-blue)" />
         <StatTile etiqueta="Ticket promedio" valor={`$${(datos?.resumen.ticketPromedio ?? 0).toFixed(2)}`} acento="var(--h421-amber)" />
+        {(datos?.resumen.creditoEmpleados ?? 0) > 0 && (
+          <StatTile etiqueta="👛 Crédito empleados (no es venta)" valor={`$${(datos?.resumen.creditoEmpleados ?? 0).toFixed(2)}`} acento="var(--h421-gray-400)" />
+        )}
       </div>
 
       {/* Reporte por origen de las ventas cobradas del rango (no solo de la página). Tocar una
