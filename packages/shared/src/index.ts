@@ -10,6 +10,7 @@ export * from "./utils/urlBackend";
 export * from "./utils/turnos";
 export * from "./calculos";
 export * from "./inventarioConsumo";
+export * from "./lechePorBebida";
 export * from "./presentacion";
 export * from "./monedero";
 export * from "./promociones";

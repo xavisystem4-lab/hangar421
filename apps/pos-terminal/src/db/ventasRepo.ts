@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from "expo-sqlite";
-import { uuid7, round2, validarPagoSuficiente, agruparRecetas, consumoDeVenta, CanalOrigen, SyncEntidad, SyncOperacion, TipoPedido, type TotalesPedido } from "@hangar421/shared";
+import { uuid7, round2, validarPagoSuficiente, agruparRecetas, consumoDeVenta, ajusteDeLeche, CanalOrigen, SyncEntidad, SyncOperacion, TipoPedido, type TotalesPedido } from "@hangar421/shared";
 import { motivoDescuentoGeneral, motivoDescuentoProducto, totalesConDescuentos, type DescuentosVenta } from "../caja/descuentoVenta";
 import { registrarConsumoMonedero, revertirConsumoMonedero } from "./monederoRepo";
 import type { ItemCarrito } from "../store/carritoStore";
@@ -7,7 +7,7 @@ import type { CodigoOrigen } from "../caja/origenVenta";
 import { normalizarNombreCliente, notasConNombreCliente } from "../caja/nombreCliente";
 import { encolarSync } from "./outboxRepo";
 import { obtenerOCrearDispositivoId, obtenerOCrearSucursalIdLocal, obtenerOCrearEmpresaIdLocal } from "./dispositivoLocal";
-import { descontarConsumoLocal, recetasParaConsumo } from "./inventarioRepo";
+import { descontarConsumoLocal, recetasParaConsumo, lecheParaConsumo } from "./inventarioRepo";
 
 export interface PagoVenta {
   metodo: string;
@@ -274,12 +274,24 @@ export async function descontarInventarioDeVenta(
   const opcionIds = [...new Set(items.flatMap((i) => (i.modificadores ?? []).map((m) => m.opcionModificadorId)))];
   const recetas = await recetasParaConsumo(db, productoIds, opcionIds);
   if (recetas.porProducto.length === 0 && recetas.porOpcion.length === 0) return;
+  // Leche por bebida: cada hoja de receta dice cuánta leche lleva (menos con cold foam o shot).
+  const leche = await lecheParaConsumo(db, productoIds, opcionIds);
   const consumo = consumoDeVenta(
-    items.map((i) => ({
-      productoId: i.productoId,
-      cantidad: i.cantidad,
-      modificadores: (i.modificadores ?? []).map((m) => ({ opcionModificadorId: m.opcionModificadorId })),
-    })),
+    items.map((i) => {
+      const elegidas = (i.modificadores ?? []).map((m) => ({ opcionModificadorId: m.opcionModificadorId }));
+      return {
+        productoId: i.productoId,
+        cantidad: i.cantidad,
+        modificadores: elegidas,
+        leche: ajusteDeLeche(
+          leche.porProducto[i.productoId],
+          elegidas.flatMap((m) => {
+            const o = leche.opciones[m.opcionModificadorId];
+            return o ? [{ opcionModificadorId: m.opcionModificadorId, grupo: o.grupo, opcion: o.opcion }] : [];
+          }),
+        ),
+      };
+    }),
     agruparRecetas(recetas.porProducto, recetas.porOpcion, recetas.porPreparacion ?? []),
   );
   await descontarConsumoLocal(db, consumo, sucursalId, ventaId);

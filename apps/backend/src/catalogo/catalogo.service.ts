@@ -65,6 +65,10 @@ export class CatalogoService {
         requierePersonalizacion: p.requierePersonalizacion,
         estacionPreparacion: p.estacionPreparacion,
         impuestoOverride: p.impuestoOverride != null ? Number(p.impuestoOverride) : null,
+        lecheBase: p.lecheBase != null ? Number(p.lecheBase) : null,
+        lecheConColdFoam: p.lecheConColdFoam != null ? Number(p.lecheConColdFoam) : null,
+        lecheConShot: p.lecheConShot != null ? Number(p.lecheConShot) : null,
+        lecheConAmbos: p.lecheConAmbos != null ? Number(p.lecheConAmbos) : null,
         precioSucursal: override ? Number(override.precio) : Number(p.precioBase),
         disponibleSucursal: override ? override.disponible : true,
         modificadores: p.modificadores.map((pm) => ({
@@ -167,9 +171,21 @@ export class CatalogoService {
       requierePersonalizacion: boolean;
       estacionPreparacion: "BARRA" | "COCINA" | "POSTRES";
       impuestoOverride: number | null;
+      lecheBase: number | null;
+      lecheConColdFoam: number | null;
+      lecheConShot: number | null;
+      lecheConAmbos: number | null;
     }>,
   ) {
-    return this.prisma.producto.update({ where: { id }, data });
+    // Gramos de leche: vacío o inválido = null (se usa la receta de la opción de leche).
+    const limpio: Record<string, unknown> = { ...data };
+    for (const campo of ["lecheBase", "lecheConColdFoam", "lecheConShot", "lecheConAmbos"] as const) {
+      if (!(campo in data)) continue;
+      const v = data[campo] as unknown;
+      const n = v === null || v === "" || v === undefined ? NaN : Number(v);
+      limpio[campo] = Number.isFinite(n) && n >= 0 ? n : null;
+    }
+    return this.prisma.producto.update({ where: { id }, data: limpio });
   }
 
   async fijarPrecioSucursal(productoId: string, sucursalId: string, precio: number, disponible = true) {

@@ -340,6 +340,44 @@ export async function upsertRecetas(db: SQLiteDatabase, recetas: RecetasRemotas)
 }
 
 /** Recetas que hacen falta para calcular lo que consume una venta (ver consumoDeVenta en shared). */
+/**
+ * Datos para ajustar la leche de cada bebida (ver @hangar421/shared lechePorBebida): los gramos
+ * que define cada producto y el grupo/nombre de las opciones elegidas. Sin columnas o sin filas
+ * (catálogo aún sin bajar) regresa vacío y se usa la receta de la opción, como antes.
+ */
+export async function lecheParaConsumo(
+  db: SQLiteDatabase,
+  productoIds: string[],
+  opcionIds: string[],
+): Promise<{
+  porProducto: Record<string, { base: number | null; conColdFoam: number | null; conShot: number | null; conAmbos: number | null }>;
+  opciones: Record<string, { grupo: string; opcion: string }>;
+}> {
+  const vacio = { porProducto: {}, opciones: {} };
+  if (productoIds.length === 0 || opcionIds.length === 0) return vacio;
+  const marcas = (n: number) => Array.from({ length: n }, () => "?").join(",");
+  try {
+    const productos = await db.getAllAsync<{ id: string; leche_base: number | null; leche_con_cold_foam: number | null; leche_con_shot: number | null; leche_con_ambos: number | null }>(
+      `SELECT id, leche_base, leche_con_cold_foam, leche_con_shot, leche_con_ambos FROM productos WHERE leche_base IS NOT NULL AND id IN (${marcas(productoIds.length)})`,
+      ...productoIds,
+    );
+    if (productos.length === 0) return vacio;
+    const opciones = await db.getAllAsync<{ id: string; opcion: string; grupo: string }>(
+      `SELECT o.id AS id, o.nombre AS opcion, m.nombre AS grupo FROM opciones_modificador o JOIN modificadores m ON m.id = o.modificador_id WHERE o.id IN (${marcas(opcionIds.length)})`,
+      ...opcionIds,
+    );
+    const porProducto: Record<string, { base: number | null; conColdFoam: number | null; conShot: number | null; conAmbos: number | null }> = {};
+    for (const p of productos) {
+      porProducto[p.id] = { base: p.leche_base, conColdFoam: p.leche_con_cold_foam, conShot: p.leche_con_shot, conAmbos: p.leche_con_ambos };
+    }
+    const porOpcion: Record<string, { grupo: string; opcion: string }> = {};
+    for (const o of opciones) porOpcion[o.id] = { grupo: o.grupo, opcion: o.opcion };
+    return { porProducto, opciones: porOpcion };
+  } catch {
+    return vacio;
+  }
+}
+
 export async function recetasParaConsumo(
   db: SQLiteDatabase,
   productoIds: string[],

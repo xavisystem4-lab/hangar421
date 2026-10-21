@@ -768,6 +768,20 @@ export const MIGRACIONES: Migracion[] = [
       `);
     },
   },
+  {
+    version: 23,
+    nombre: "leche_por_bebida",
+    up: async (db) => {
+      // Gramos de leche por bebida según la hoja de receta (null = la receta de la opción de
+      // leche, 240 g). Bajan del ERP con el catálogo; ver @hangar421/shared lechePorBebida.
+      await db.execAsync(`
+        ALTER TABLE productos ADD COLUMN leche_base REAL;
+        ALTER TABLE productos ADD COLUMN leche_con_cold_foam REAL;
+        ALTER TABLE productos ADD COLUMN leche_con_shot REAL;
+        ALTER TABLE productos ADD COLUMN leche_con_ambos REAL;
+      `);
+    },
+  },
 ];
 
 /** Corre, en orden, toda migración con `version` mayor a la ya aplicada — cada una dentro de su

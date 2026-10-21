@@ -512,6 +512,12 @@ model Producto {
   requierePersonalizacion Boolean              @default(false) // abre el modal de personalización antes de agregarse al pedido
   estacionPreparacion     EstacionPreparacion?
   impuestoOverride        Decimal?             @db.Decimal(5, 4) // null = usa la tasa de la sucursal (Sucursal.tasaImpuesto)
+  // Gramos de leche de la bebida según la hoja de receta (null = usa la receta de la opción de leche).
+  // Ver packages/shared/src/lechePorBebida.ts.
+  lecheBase               Decimal?             @db.Decimal(10, 2)
+  lecheConColdFoam        Decimal?             @db.Decimal(10, 2)
+  lecheConShot            Decimal?             @db.Decimal(10, 2)
+  lecheConAmbos           Decimal?             @db.Decimal(10, 2)
   createdAt               DateTime             @default(now())
   updatedAt               DateTime             @updatedAt
 

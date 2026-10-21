@@ -7,6 +7,13 @@ interface ProductoRemoto {
   id: string; categoriaId: string; nombre: string; subcategoria?: string | null; orden?: number;
   precioBase: number; precioSucursal?: number; activo: boolean; disponibleSucursal?: boolean;
   requierePersonalizacion?: boolean; modificadores?: ModificadorRemoto[];
+  /** Gramos de leche por bebida (null/ausente = receta de la opción de leche). */
+  lecheBase?: number | null; lecheConColdFoam?: number | null; lecheConShot?: number | null; lecheConAmbos?: number | null;
+}
+
+function gramos(v: unknown): number | null {
+  const n = v === null || v === undefined || v === "" ? NaN : Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
 /** Reemplaza el catálogo local con lo que trae el ERP — mismas filas que ya leen
@@ -27,10 +34,12 @@ export async function upsertCatalogo(db: SQLiteDatabase, categorias: CategoriaRe
       const precio = p.precioSucursal ?? p.precioBase;
       const activo = p.activo && p.disponibleSucursal !== false;
       await db.runAsync(
-        `INSERT INTO productos (id, categoria_id, nombre, subcategoria, precio_base, tasa_impuesto, orden, activo, requiere_personalizacion, origen, updated_at_server, synced_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, 'ERP', ?, ?)
-         ON CONFLICT(id) DO UPDATE SET categoria_id = excluded.categoria_id, nombre = excluded.nombre, subcategoria = excluded.subcategoria, precio_base = excluded.precio_base, orden = excluded.orden, activo = excluded.activo, requiere_personalizacion = excluded.requiere_personalizacion, updated_at_server = excluded.updated_at_server, synced_at = excluded.synced_at`,
+        `INSERT INTO productos (id, categoria_id, nombre, subcategoria, precio_base, tasa_impuesto, orden, activo, requiere_personalizacion, leche_base, leche_con_cold_foam, leche_con_shot, leche_con_ambos, origen, updated_at_server, synced_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, 'ERP', ?, ?)
+         ON CONFLICT(id) DO UPDATE SET categoria_id = excluded.categoria_id, nombre = excluded.nombre, subcategoria = excluded.subcategoria, precio_base = excluded.precio_base, orden = excluded.orden, activo = excluded.activo, requiere_personalizacion = excluded.requiere_personalizacion, updated_at_server = excluded.updated_at_server, synced_at = excluded.synced_at, leche_base = excluded.leche_base, leche_con_cold_foam = excluded.leche_con_cold_foam, leche_con_shot = excluded.leche_con_shot, leche_con_ambos = excluded.leche_con_ambos`,
         p.id, p.categoriaId, p.nombre, p.subcategoria ?? null, precio, p.orden ?? 0, activo ? 1 : 0,
-        p.requierePersonalizacion ? 1 : 0, ahora, ahora,
+        p.requierePersonalizacion ? 1 : 0,
+        gramos(p.lecheBase), gramos(p.lecheConColdFoam), gramos(p.lecheConShot), gramos(p.lecheConAmbos),
+        ahora, ahora,
       );
 
       // Modificadores del producto. El endpoint los devuelve anidados en cada producto (ver
