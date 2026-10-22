@@ -125,6 +125,17 @@ export function efectivoEsperadoPorMoneda(datos: {
   return { mxn: round2(mxn), usd: round2(usd) };
 }
 
+/**
+ * Diferencia del corte en PESOS sumando pesos y dólares: lo que decide si la caja cuadra. Los
+ * dólares se convierten al tipo de cambio del turno, así que unos dólares cobrados como pesos ya
+ * no salen como faltante. Sin tipo de cambio no hay cómo convertir: queda la diferencia en pesos.
+ */
+export function diferenciaTotalEnPesos(diferenciaMxn: number, diferenciaUsd: number | null | undefined, tipoCambio: number | null | undefined): number {
+  const tc = Number(tipoCambio ?? 0);
+  if (!(tc > 0) || !diferenciaUsd) return round2(diferenciaMxn);
+  return round2(diferenciaMxn + Number(diferenciaUsd) * tc);
+}
+
 /** Diferencia detectada al recibir un traspaso — positiva si llegó de más, negativa si hubo merma
  *  en tránsito. Se usa para la validación final del flujo de traspasos entre sucursales. */
 export function calcularDiferenciaTraspaso(cantidadEnviada: number, cantidadRecibida: number): number {

@@ -45,6 +45,19 @@ export async function ventasPorOrigenDelTurno(db: SQLiteDatabase, turnoId: strin
   return ventasPorOrigen(db, "v.turno_id = ? AND v.estado = 'COBRADA'", [turnoId]);
 }
 
+/** Tickets cobrados del turno con pago mixto (más de un método; informativo para el corte). */
+export async function ventasMixtasDelTurno(db: SQLiteDatabase, turnoId: string): Promise<number> {
+  const fila = await db.getFirstAsync<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM (
+       SELECT v.id FROM ventas v JOIN pagos p ON p.venta_id = v.id
+       WHERE v.turno_id = ? AND v.estado = 'COBRADA'
+       GROUP BY v.id HAVING COUNT(DISTINCT p.metodo) > 1
+     )`,
+    turnoId,
+  );
+  return fila?.n ?? 0;
+}
+
 export interface DescuentoDelTurno {
   folio: number;
   tipo: string;

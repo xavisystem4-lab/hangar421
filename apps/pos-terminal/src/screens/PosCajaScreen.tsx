@@ -5,7 +5,7 @@ import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
 import { etiquetaMetodoPago } from "../db/metodosPagoRepo";
 import { etiquetaOrigen } from "../caja/origenVenta";
-import { canceladasDelTurno, descuentosDelTurno, ventasPorOrigenDelTurno, type DescuentoDelTurno, type OrigenVentas } from "../db/reportesRepo";
+import { canceladasDelTurno, descuentosDelTurno, ventasMixtasDelTurno, ventasPorOrigenDelTurno, type DescuentoDelTurno, type OrigenVentas } from "../db/reportesRepo";
 import { abrirTurno, cerrarTurno, ultimoTurnoCerrado, efectivoDelTurno, fijarTipoCambioTurno, listarMovimientosCaja, reasignarTurno, registrarMovimientoCaja, turnoAbierto, type MovimientoCajaLocal, type TurnoLocal } from "../db/turnosRepo";
 import { listarVentasRecientes, type VentaResumen } from "../db/ventasHistorialRepo";
 import { BILLETES_MXN, BILLETES_USD, MONEDAS_MXN, calcularDiferencia, construirDesglose, round2, type Conteo } from "../caja/denominaciones";
@@ -61,6 +61,7 @@ export function PosCajaScreen() {
   const [porOrigen, setPorOrigen] = useState<OrigenVentas[]>([]);
   const [descuentos, setDescuentos] = useState<DescuentoDelTurno[]>([]);
   const [canceladas, setCanceladas] = useState(0);
+  const [mixtas, setMixtas] = useState(0);
   const [sucursal, setSucursal] = useState<string | null>(null);
   /** Corte mostrado en la ventana flotante: en vivo ("Ver corte") o el del turno recién cerrado. */
   const [corteVisible, setCorteVisible] = useState<CorteDetallado | null>(null);
@@ -88,6 +89,7 @@ export function PosCajaScreen() {
       setPorOrigen(await ventasPorOrigenDelTurno(db, t.id));
       setDescuentos(await descuentosDelTurno(db, t.id));
       setCanceladas(await canceladasDelTurno(db, t.id));
+      setMixtas(await ventasMixtasDelTurno(db, t.id).catch(() => 0));
     }
     if (!t) {
       const u = await ultimoTurnoCerrado(db);
@@ -224,6 +226,7 @@ export function PosCajaScreen() {
       desglose,
       descuentos,
       canceladas,
+      ventasMixtas: mixtas,
       etiquetaMetodo: (m) => etiquetaMetodoPago[m as keyof typeof etiquetaMetodoPago] ?? m,
       etiquetaOrigen,
     });

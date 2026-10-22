@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { EstadoPedido, EstadoTurno, MetodoPago, TipoMovimientoCaja, efectivoEsperadoPorMoneda } from "@hangar421/shared";
+import { EstadoPedido, EstadoTurno, MetodoPago, TipoMovimientoCaja, diferenciaTotalEnPesos, efectivoEsperadoPorMoneda } from "@hangar421/shared";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { limiteDelDia } from "../pedidos/ventas-consulta";
@@ -470,6 +470,9 @@ function filaTurno(t: TurnoConRelaciones) {
     montoFinalDeclaradoUsd: t.montoFinalDeclaradoUsd == null ? null : Number(t.montoFinalDeclaradoUsd),
     montoFinalSistemaUsd: t.montoFinalSistemaUsd == null ? null : Number(t.montoFinalSistemaUsd),
     diferenciaUsd: t.diferenciaUsd == null ? null : Number(t.diferenciaUsd),
+    // La que cuenta: pesos + dólares al tipo de cambio del turno (unos dólares cobrados como
+    // pesos ya no salen como faltante).
+    diferenciaTotal: t.diferencia == null ? null : diferenciaTotalEnPesos(Number(t.diferencia), t.diferenciaUsd == null ? null : Number(t.diferenciaUsd), t.tipoCambioUsd == null ? null : Number(t.tipoCambioUsd)),
     pendienteDiaAnterior: esTurnoDeDiaAnterior(t, t.sucursal.timezone),
   };
 }
