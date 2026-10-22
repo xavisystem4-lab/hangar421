@@ -1,4 +1,4 @@
-import { UnauthorizedException } from "@nestjs/common";
+import { ConflictException, UnauthorizedException } from "@nestjs/common";
 import * as bcrypt from "bcryptjs";
 import { RolUsuario } from "@hangar421/shared";
 import { TerminalService } from "./terminal.service";
@@ -65,15 +65,26 @@ describe("TerminalService", () => {
       await expect(servicio.verificarPin(SESION, "u-ana", "2222")).resolves.toEqual({ id: "u-ana", nombre: "Ana", sucursales: [{ sucursalId: "suc-mec", rol: "CAJERO" }] });
     });
 
-    it("PIN incorrecto, sin PIN, otra empresa o sin sucursal en esta terminal: mismo rechazo", async () => {
+    it("PIN incorrecto u otra empresa: rechazo (401)", async () => {
       for (const [usuario, pin] of [
         [await conUsuario(), "9999"],
-        [await conUsuario({ pinHash: null }), "2222"],
         [await conUsuario({ empresaId: "emp-2" }), "2222"],
-        [await conUsuario({ sucursales: [] }), "2222"],
       ] as const) {
         const { servicio } = crearServicio(usuario);
         await expect(servicio.verificarPin(SESION, "u-ana", pin)).rejects.toThrow(new UnauthorizedException("Usuario o PIN incorrecto"));
+      }
+    });
+
+    it("sin PIN en el ERP, apagado o sin esta sucursal: 409 con código (la tablet sigue con su PIN local)", async () => {
+      for (const [extra, codigo] of [
+        [{ pinHash: null }, "SIN_PIN_ERP"],
+        [{ activo: false }, "USUARIO_INACTIVO_ERP"],
+        [{ sucursales: [] }, "SIN_SUCURSAL_ERP"],
+      ] as const) {
+        const { servicio } = crearServicio(await conUsuario(extra));
+        const error: any = await servicio.verificarPin(SESION, "u-ana", "2222").catch((e) => e);
+        expect(error).toBeInstanceOf(ConflictException);
+        expect(error.getResponse()).toMatchObject({ codigo });
       }
     });
   });
