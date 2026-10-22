@@ -117,29 +117,22 @@ describe("confirmarVenta — descuentos", () => {
 describe("confirmarVenta — crédito de empleado", () => {
   const monedero = { metodo: "MONEDERO_EMPLEADO", monto: 150, referencia: "Crédito empleado: Diana", empleadoId: "u-diana" };
 
-  it("pago mixto: carga lo que alcanza al monedero (en la misma transacción) y el resto en efectivo", async () => {
-    const { db, de } = baseFalsa();
-    const venta = await confirmarVenta(db, { items: ITEMS, pagos: [monedero, { metodo: "EFECTIVO", monto: 100 }], totales: TOTALES, turnoId: "t-1", usuarioId: "u-1" });
-
-    const pagos = de("INSERT INTO pagos");
-    expect(pagos).toHaveLength(2);
-    expect(pagos[0].params[2]).toBe("MONEDERO_EMPLEADO");
-    expect(pagos[0].params.at(-1)).toBe("u-diana"); // empleado_id
-    expect(pagos[1].params.at(-1)).toBeNull();
-
-    // El consumo se guarda con el id de la VENTA (el mismo con que el ERP lo registrará).
-    const consumo = de("INSERT OR REPLACE INTO monedero_movimientos");
-    expect(consumo).toHaveLength(1);
-    expect(consumo[0].params.slice(0, 3)).toEqual([venta.id, "u-diana", 150]);
+  it("crédito + otro método se rechaza: si no alcanza, es compra normal", async () => {
+    const { db } = baseFalsa();
+    await expect(
+      confirmarVenta(db, { items: ITEMS, pagos: [monedero, { metodo: "EFECTIVO", monto: 100 }], totales: TOTALES, turnoId: "t-1", usuarioId: "u-1" }),
+    ).rejects.toThrow(/cubrir toda la cuenta/);
   });
 
-  it("el pago que viaja al ERP lleva la empleada", async () => {
-    const { db } = baseFalsa();
-    await confirmarVenta(db, { items: ITEMS, pagos: [monedero, { metodo: "EFECTIVO", monto: 100 }], totales: TOTALES, turnoId: "t-1", usuarioId: "u-1" });
-
+  it("cubre toda la cuenta: el consumo usa el id de la venta y el pago al ERP lleva la empleada", async () => {
+    const { db, de } = baseFalsa();
+    const venta = await confirmarVenta(db, { items: ITEMS, pagos: [{ ...monedero, monto: 250 }], totales: TOTALES, turnoId: "t-1", usuarioId: "u-1" });
+    const pagos = de("INSERT INTO pagos");
+    expect(pagos).toHaveLength(1);
+    expect(pagos[0].params.at(-1)).toBe("u-diana");
+    expect(de("INSERT OR REPLACE INTO monedero_movimientos")[0].params.slice(0, 3)).toEqual([venta.id, "u-diana", 250]);
     const pago = encolados.find((e) => e.entidad === "PAGO").payload;
-    expect(pago.pagos[0]).toMatchObject({ metodo: "MONEDERO_EMPLEADO", monto: 150, empleadoId: "u-diana" });
-    expect(pago.pagos[1].empleadoId).toBeUndefined();
+    expect(pago.pagos[0]).toMatchObject({ metodo: "MONEDERO_EMPLEADO", monto: 250, empleadoId: "u-diana" });
   });
 
   it("el monedero puede cubrir toda la cuenta", async () => {

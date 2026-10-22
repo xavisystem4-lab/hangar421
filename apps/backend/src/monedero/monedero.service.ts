@@ -186,7 +186,7 @@ export class MonederoService {
         monedero: { empresaId },
         ...(filtros.sucursalId ? { sucursalId: filtros.sucursalId } : {}),
       },
-      include: { monedero: { select: { usuario: { select: { nombre: true } } } } },
+      include: { monedero: { select: { limite: true, diaReinicio: true, horaReinicio: true, minutoReinicio: true, usuario: { select: { nombre: true } } } } },
       orderBy: { createdAt: "desc" },
     });
     if (movimientos.length === 0) return [];
@@ -226,7 +226,13 @@ export class MonederoService {
         })),
       };
     });
-    return agruparConsumosPorEmpleada(consumos);
+    // La regla de cada empleada (tope y reinicio) para que el ERP separe los consumos por semana
+    // de crédito: un rango de 7 días casi siempre toma dos periodos y la suma pasaba de $500
+    // aunque ninguna semana se pasara. La semana se calcula en el navegador (hora local).
+    const reglas = new Map(movimientos.map((m) => [m.usuarioId, {
+      limite: Number(m.monedero.limite), diaReinicio: m.monedero.diaReinicio, horaReinicio: m.monedero.horaReinicio, minutoReinicio: m.monedero.minutoReinicio,
+    }]));
+    return agruparConsumosPorEmpleada(consumos).map((g) => ({ ...g, regla: reglas.get(g.empleadoId) ?? null }));
   }
 
   /**

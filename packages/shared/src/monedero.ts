@@ -108,7 +108,8 @@ export function textoHorario(horarios: HorarioCredito[]): string {
 
 /**
  * Por qué una empleada NO puede usar su crédito ahora (null = sí puede). Reglas:
- * sin saldo no hay crédito; solo en su sucursal; solo dentro de su horario.
+ * sin saldo no hay crédito; el saldo debe cubrir la cuenta completa (si no alcanza es compra
+ * normal: nada de "crédito + el resto en efectivo"); solo en su sucursal; solo en su horario.
  */
 export function motivoSinCredito(datos: {
   saldo: number;
@@ -116,8 +117,13 @@ export function motivoSinCredito(datos: {
   sucursalActual: string | null;
   horarios: HorarioCredito[];
   ahora: Date;
+  /** Total de la cuenta: el crédito tiene que cubrirla COMPLETA (sin pagar "el resto" aparte). */
+  total?: number;
 }): string | null {
   if (!(datos.saldo > 0)) return "Ya usó todo su crédito";
+  if (datos.total !== undefined && datos.total > datos.saldo + 0.001) {
+    return `Su saldo ($${datos.saldo.toFixed(2)}) no alcanza para $${datos.total.toFixed(2)}: es compra normal`;
+  }
   if (datos.sucursalActual && datos.sucursalesPermitidas.length > 0 && !datos.sucursalesPermitidas.includes(datos.sucursalActual)) {
     return "Su crédito es solo en su sucursal";
   }
@@ -161,6 +167,37 @@ export interface ConsumoPorEmpleada {
   numProductos: number;
   /** Del más reciente al más antiguo. */
   consumos: ConsumoCredito[];
+}
+
+/** Una semana de crédito (de reinicio a reinicio) con lo que se consumió en ella. */
+export interface SemanaCredito<T> {
+  inicio: Date;
+  fin: Date;
+  total: number;
+  consumos: T[];
+}
+
+/**
+ * Separa consumos por semana de crédito (de reinicio a reinicio). Un reporte de "últimos 7 días"
+ * casi siempre toma dos semanas: la suma de todo puede pasar del tope sin que ninguna semana lo
+ * haya hecho. Más reciente primero. Fechas en hora local, como el reinicio.
+ */
+export function semanasDeCredito<T extends { fecha: string | Date; montoCredito: number }>(consumos: T[], regla: ReglaReinicioMonedero): SemanaCredito<T>[] {
+  const porInicio = new Map<number, SemanaCredito<T>>();
+  for (const c of consumos) {
+    const inicio = inicioPeriodoMonedero(new Date(c.fecha), regla);
+    const clave = inicio.getTime();
+    let s = porInicio.get(clave);
+    if (!s) {
+      const fin = new Date(inicio);
+      fin.setDate(fin.getDate() + 7);
+      s = { inicio, fin, total: 0, consumos: [] };
+      porInicio.set(clave, s);
+    }
+    s.total = round2(s.total + c.montoCredito);
+    s.consumos.push(c);
+  }
+  return [...porInicio.values()].sort((a, b) => b.inicio.getTime() - a.inicio.getTime());
 }
 
 /** Agrupa los consumos por empleada (la que más consumió primero) — misma regla en ERP y tablet. */

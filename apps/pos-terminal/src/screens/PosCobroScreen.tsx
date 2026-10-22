@@ -279,7 +279,7 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
       const frescas = await listarMonederosConSaldo(await abrirBaseDeDatos());
       const actual = frescas.find((e) => e.usuarioId === empleada.usuarioId);
       const usoActual = actual ? calcularUsoMonedero(t.total, actual.saldo) : null;
-      const motivo = actual ? motivoNoDisponible(actual, sucursalActual) : "Ya no tiene crédito en esta tablet";
+      const motivo = actual ? motivoNoDisponible(actual, sucursalActual, new Date(), t.total) : "Ya no tiene crédito en esta tablet";
       if (motivo) {
         setEmpleadas(frescas);
         setEmpleadaId(null);
@@ -451,7 +451,7 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
             </Text>
             <Text style={[estilos.cortesiaAyuda, { color: colores.texto, fontWeight: "700" }]}>
               Se cargan ${uso.montoMonedero.toFixed(2)} al monedero · le quedan ${(empleada.saldo - uso.montoMonedero).toFixed(2)}.
-              {uso.restante > 0 ? ` Faltan $${uso.restante.toFixed(2)}: elige abajo cómo se paga el resto.` : ""}
+              {uso.restante > 0 ? ` Su saldo no alcanza para toda la cuenta: quita el crédito y cóbrala como compra normal.` : ""}
             </Text>
           </View>
         )}
@@ -699,6 +699,7 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
         <ModalCreditoEmpleado
           empleadas={empleadasDeSucursal(empleadas, sucursalActual)}
           sucursalActualId={sucursalActual}
+          total={t.total}
           seleccionadaId={empleadaId}
           onElegir={(e) => { setEmpleadaId(e.usuarioId); setMostrandoCredito(false); }}
           onQuitar={() => { setEmpleadaId(null); setMostrandoCredito(false); }}

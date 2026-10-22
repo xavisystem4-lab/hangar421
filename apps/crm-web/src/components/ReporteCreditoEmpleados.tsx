@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
-import { describirProductoConsumido, filasDetalleCredito, filasResumenCredito, type ConsumoPorEmpleada } from "@hangar421/shared";
+import { describirProductoConsumido, filasDetalleCredito, filasResumenCredito, semanasDeCredito, type ConsumoPorEmpleada } from "@hangar421/shared";
 import { apiFetch } from "@/lib/api";
 import { StatTile } from "@/components/StatTile";
 import { guardarConDialogoWeb } from "@/components/ReporteInventario";
@@ -20,6 +20,10 @@ const fmtFechaHora = (iso: string) => `${fmtFecha(iso)} ${fmtHora(iso)}`;
  * (agruparConsumosPorEmpleada en shared).
  */
 const CLAVE_DESTINATARIOS = "hangar421_credito_destinatarios";
+
+/** Regla de la empleada (la manda el ERP con el reporte) para separar por semana de crédito. */
+type ReglaCredito = { limite: number; diaReinicio: number; horaReinicio: number; minutoReinicio: number } | null;
+const fmtCorte = (d: Date) => d.toLocaleString("es-MX", { weekday: "short", day: "2-digit", month: "short", hour: "numeric", minute: "2-digit" });
 
 /** Periodo legible: "12/10/2026" o "06/10/2026 al 12/10/2026". */
 function periodoTexto(desde: string, hasta: string): string {
@@ -201,7 +205,25 @@ export function ReporteCreditoEmpleados({ sucursalId, sucursalNombre, desde, has
                     </tr>
                   </thead>
                   <tbody>
-                    {g.consumos.map((c) => (
+                    {(() => {
+                      const regla = (g as ConsumoPorEmpleada & { regla?: ReglaCredito }).regla ?? null;
+                      // Sin regla (ERP anterior): una sola lista, como antes.
+                      const semanas = regla
+                        ? semanasDeCredito(g.consumos, { diaSemana: regla.diaReinicio, hora: regla.horaReinicio, minuto: regla.minutoReinicio })
+                        : [{ inicio: null as Date | null, fin: null as Date | null, total: g.totalCredito, consumos: g.consumos }];
+                      return semanas.map((sem, i) => (
+                        <Fragment key={i}>
+                          {regla && sem.inicio && sem.fin && (
+                            <tr style={{ background: "var(--h421-gray-50, #f8fafc)" }}>
+                              <td colSpan={4} style={{ padding: "6px 6px", fontWeight: 700, fontSize: 12 }}>
+                                Semana de crédito: {fmtCorte(sem.inicio)} → {fmtCorte(sem.fin)}
+                              </td>
+                              <td style={{ padding: 6, textAlign: "right", fontWeight: 800, fontSize: 12, color: sem.total > regla.limite ? "var(--h421-red)" : "var(--h421-green)" }}>
+                                ${sem.total.toFixed(2)} de ${regla.limite.toFixed(0)}
+                              </td>
+                            </tr>
+                          )}
+                          {sem.consumos.map((c) => (
                       <tr key={c.ventaId} style={{ borderBottom: "1px solid var(--h421-gray-100, #f1f5f9)", verticalAlign: "top" }}>
                         <td style={{ padding: 6, whiteSpace: "nowrap" }}>{fmtFecha(c.fecha)}</td>
                         <td style={{ padding: 6, whiteSpace: "nowrap" }}>{fmtHora(c.fecha)}</td>
@@ -216,7 +238,10 @@ export function ReporteCreditoEmpleados({ sucursalId, sucursalNombre, desde, has
                         </td>
                         <td style={{ padding: 6, textAlign: "right", fontWeight: 700 }}>${c.montoCredito.toFixed(2)}</td>
                       </tr>
-                    ))}
+                          ))}
+                        </Fragment>
+                      ));
+                    })()}
                   </tbody>
                 </table>
               </div>
