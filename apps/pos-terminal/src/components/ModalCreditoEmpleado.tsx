@@ -10,6 +10,7 @@ const NARANJA = "#FF6A13";
 export function ModalCreditoEmpleado({
   empleadas,
   sucursalActualId,
+  total,
   seleccionadaId,
   onElegir,
   onQuitar,
@@ -17,6 +18,8 @@ export function ModalCreditoEmpleado({
 }: {
   empleadas: EmpleadaConCredito[];
   sucursalActualId: string | null;
+  /** Total de la cuenta: solo puede elegirse quien tenga saldo para cubrirla completa. */
+  total: number;
   seleccionadaId: string | null;
   onElegir: (empleada: EmpleadaConCredito) => void;
   onQuitar: () => void;
@@ -33,7 +36,7 @@ export function ModalCreditoEmpleado({
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={estilos.fondo}>
         <View style={estilos.tarjeta}>
           <Text style={estilos.titulo}>👛 Crédito de empleado</Text>
-          <Text style={estilos.ayuda}>Solo baristas de esta sucursal, dentro de su horario y con saldo. No se combina con descuentos.</Text>
+          <Text style={estilos.ayuda}>Solo baristas de esta sucursal, dentro de su horario y con saldo para TODA la cuenta. Si no alcanza, es compra normal. No se combina con descuentos.</Text>
 
           <TextInput
             value={texto}
@@ -53,7 +56,7 @@ export function ModalCreditoEmpleado({
               <Text style={estilos.vacio}>Ninguna empleada coincide con la búsqueda.</Text>
             ) : (
               visibles.map((e) => {
-                const motivo = motivoNoDisponible(e, sucursalActualId, ahora);
+                const motivo = motivoNoDisponible(e, sucursalActualId, ahora, total);
                 const sinSaldo = !!motivo;
                 const activa = e.usuarioId === seleccionadaId;
                 return (

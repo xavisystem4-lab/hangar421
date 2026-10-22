@@ -37,8 +37,12 @@ Reglas de uso (`motivoSinCredito` en `packages/shared/src/monedero.ts`):
 - **Un solo monedero activo por nombre** (primer nombre, sin acentos). Cada empleada tiene un usuario por sucursal; la migración `20261007190000_monedero_unico_por_nombre` deja el de su sucursal (o el usuario más antiguo), apaga los demás y les pasa sus consumos. El servidor además manda a las tablets uno por nombre y rechaza activar un segundo (`PUT /monedero/:usuarioId`).
 - Se **reinicia sin acumular** a un día y hora fijos: Diana, Andrea y Daniela → viernes 9:00 PM;
   Dalia → sábado 5:00 PM.
-- Si la cuenta supera el saldo, se usa todo el monedero y **el resto se cobra con otro método**
-  (pago mixto). El monedero no entra al cajón ni al efectivo del corte.
+- **El crédito tiene que cubrir la cuenta completa.** Si el saldo no alcanza, no se puede usar:
+  es compra normal (nada de "crédito + el resto en efectivo"). La tablet apaga a la empleada con
+  el motivo y `confirmarVenta` rechaza un cobro que mezcle crédito con otro método. El monedero no
+  entra al cajón ni al efectivo del corte.
+- El reporte del ERP separa los consumos **por semana de crédito** (de reinicio a reinicio) con
+  "$X de $500": un rango de 7 días casi siempre toma dos semanas y la suma total no es el tope.
 - Cancelar la venta devuelve el saldo.
 - El saldo no se guarda: es `tope − consumos desde el último reinicio`
   (`packages/shared/src/monedero.ts`). Cada consumo usa el id de la venta, así que el que se hace

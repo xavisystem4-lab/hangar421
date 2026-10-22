@@ -1,4 +1,4 @@
-import { agruparConsumosPorEmpleada, calcularUsoMonedero, csvConsumosCredito, describirProductoConsumido, filasResumenCredito, htmlReporteCredito, inicioPeriodoMonedero, saldoMonedero, dentroDeHorario, textoHorario, motivoSinCredito } from "./monedero";
+import { agruparConsumosPorEmpleada, calcularUsoMonedero, csvConsumosCredito, describirProductoConsumido, filasResumenCredito, htmlReporteCredito, inicioPeriodoMonedero, saldoMonedero, dentroDeHorario, textoHorario, motivoSinCredito, semanasDeCredito } from "./monedero";
 
 // Fechas con el constructor LOCAL (año, mes, día, hora): las pruebas no dependen de la zona del equipo.
 const viernes9pm = { diaSemana: 5, hora: 21 };
@@ -120,5 +120,23 @@ describe("reglas de uso del crédito", () => {
     expect(motivoSinCredito({ ...base, saldo: 0 })).toBe("Ya usó todo su crédito");
     expect(motivoSinCredito({ ...base, sucursalActual: "bj" })).toBe("Su crédito es solo en su sucursal");
     expect(motivoSinCredito({ ...base, ahora: lunes(16) })).toBe("Fuera de su horario (lun–vie 06:00–15:36)");
+    // El saldo debe cubrir la cuenta completa: si no alcanza es compra normal.
+    expect(motivoSinCredito({ ...base, total: 100 })).toBeNull();
+    expect(motivoSinCredito({ ...base, total: 155 })).toMatch(/no alcanza/);
+  });
+});
+
+describe("semanasDeCredito", () => {
+  it("separa por semana de reinicio: Dalia (sábado 5 PM) no se pasó aunque 7 días sumen $510", () => {
+    const regla = { diaSemana: 6, hora: 17 };
+    const consumos = [
+      { fecha: new Date(2026, 9, 21, 18, 29), montoCredito: 165 },
+      { fecha: new Date(2026, 9, 20, 15, 53), montoCredito: 125 },
+      { fecha: new Date(2026, 9, 19, 16, 49), montoCredito: 100 },
+      { fecha: new Date(2026, 9, 15, 16, 33), montoCredito: 120 },
+    ];
+    const semanas = semanasDeCredito(consumos, regla);
+    expect(semanas.map((s) => s.total)).toEqual([390, 120]);
+    expect(semanas[0].inicio).toEqual(new Date(2026, 9, 17, 17, 0));
   });
 });

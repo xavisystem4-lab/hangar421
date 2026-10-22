@@ -76,6 +76,10 @@ export async function confirmarVenta(
   if (opciones.descuentos && datos.pagos.some((p) => p.metodo === "MONEDERO_EMPLEADO")) {
     throw new Error("Una venta con crédito de empleado no puede llevar descuento");
   }
+  // El crédito cubre la cuenta COMPLETA: nada de "crédito + el resto en efectivo".
+  if (datos.pagos.some((p) => p.metodo === "MONEDERO_EMPLEADO") && datos.pagos.some((p) => p.metodo !== "MONEDERO_EMPLEADO")) {
+    throw new Error("El crédito de empleado tiene que cubrir toda la cuenta; si no alcanza, es compra normal");
+  }
 
   const calculoDescuentos = opciones.descuentos ? totalesConDescuentos(datos.items, opciones.descuentos) : null;
   const totales: TotalesPedido = calculoDescuentos

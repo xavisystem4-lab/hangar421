@@ -27,8 +27,8 @@ export function empleadasDeSucursal(empleadas: EmpleadaConCredito[], sucursalAct
 }
 
 /** Por qué no puede usar su crédito ahora (null = sí puede): sin saldo, otra sucursal o fuera de horario. */
-export function motivoNoDisponible(e: EmpleadaConCredito, sucursalActual: string | null, ahora: Date = new Date()): string | null {
-  return motivoSinCredito({ saldo: e.saldo, sucursalesPermitidas: e.sucursalesPermitidas, sucursalActual, horarios: e.horarios, ahora });
+export function motivoNoDisponible(e: EmpleadaConCredito, sucursalActual: string | null, ahora: Date = new Date(), total?: number): string | null {
+  return motivoSinCredito({ saldo: e.saldo, sucursalesPermitidas: e.sucursalesPermitidas, sucursalActual, horarios: e.horarios, ahora, total });
 }
 
 export interface SucursalDeEmpleadas {

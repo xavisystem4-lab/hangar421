@@ -5,7 +5,7 @@ describe("reporteConsumos (crédito de empleados)", () => {
     const prisma = {
       movimientoMonedero: {
         findMany: jest.fn(async () => [
-          { usuarioId: "ana", pedidoId: "p1", monto: "95", createdAt: new Date("2026-10-12T15:00:00Z"), monedero: { usuario: { nombre: "Ana" } } },
+          { usuarioId: "ana", pedidoId: "p1", monto: "95", createdAt: new Date("2026-10-12T15:00:00Z"), monedero: { limite: 500, diaReinicio: 5, horaReinicio: 21, minutoReinicio: 0, usuario: { nombre: "Ana" } } },
         ]),
       },
       pedido: {
@@ -22,7 +22,7 @@ describe("reporteConsumos (crédito de empleados)", () => {
       where: expect.objectContaining({ monedero: { empresaId: "e1" }, sucursalId: "bj" }),
     }));
     expect(r).toEqual([{
-      empleadoId: "ana", empleado: "Ana", totalCredito: 95, numConsumos: 1, numProductos: 1,
+      empleadoId: "ana", empleado: "Ana", totalCredito: 95, numConsumos: 1, numProductos: 1, regla: { limite: 500, diaReinicio: 5, horaReinicio: 21, minutoReinicio: 0 },
       consumos: [{
         empleadoId: "ana", empleado: "Ana", ventaId: "p1", folio: "12", fecha: "2026-10-12T15:00:00.000Z", sucursal: "Benito Juárez",
         montoCredito: 95, totalVenta: 95,
