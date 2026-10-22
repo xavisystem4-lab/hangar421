@@ -17,8 +17,8 @@ const fechaHora = (iso: string) => {
 export function ModalCorteDetallado({ corte, onCerrar }: { corte: CorteDetallado; onCerrar: () => void }) {
   const colores = usarColores();
   const e = crearEstilos(colores);
-  const dif = corte.resultado.diferencia;
-  const colorDif = dif === 0 ? colores.green : colores.red;
+  const dif = corte.resultado.diferenciaTotal;
+  const colorDif = Math.abs(dif) < 1 ? colores.green : colores.red;
 
   const Seccion = ({ titulo, color, children }: { titulo: string; color?: string; children: React.ReactNode }) => (
     <View style={[e.seccion, color ? { borderLeftColor: color } : null]}>
@@ -68,9 +68,20 @@ export function ModalCorteDetallado({ corte, onCerrar }: { corte: CorteDetallado
             {/* 2. Ventas por método de pago. */}
             <Seccion titulo="2 · Ventas del turno" color={colores.green}>
               <Fila etiqueta={`Total vendido · ${corte.ventas.tickets} ticket${corte.ventas.tickets === 1 ? "" : "s"}`} valor={dinero(corte.ventas.total)} fuerte />
-              {corte.ventas.porMetodo.map((m) => (
-                <Fila key={m.metodo} etiqueta={`${m.etiqueta} (${m.cantidad})`} valor={dinero(m.total)} sangria />
-              ))}
+              {/* Como se cuenta en caja: efectivo (pesos + dólares), tarjeta y transferencia. */}
+              <Fila etiqueta="💵 Efectivo total" valor={dinero(corte.ventas.cobrado.efectivoTotal)} fuerte />
+              <Fila etiqueta="      En pesos" valor={dinero(corte.ventas.cobrado.efectivoPesos)} sangria />
+              {corte.ventas.cobrado.efectivoDolares > 0 && <Fila etiqueta="      En dólares (convertidos a pesos)" valor={dinero(corte.ventas.cobrado.efectivoDolares)} sangria />}
+              <Fila etiqueta="💳 Tarjeta" valor={dinero(corte.ventas.cobrado.tarjeta)} fuerte />
+              <Fila etiqueta="🏦 Transferencia" valor={dinero(corte.ventas.cobrado.transferencia)} fuerte />
+              {corte.ventas.porMetodo
+                .filter((m) => !["EFECTIVO", "EFECTIVO_USD", "TARJETA", "TRANSFERENCIA"].includes(m.metodo))
+                .map((m) => (
+                  <Fila key={m.metodo} etiqueta={`${m.etiqueta} (${m.cantidad})`} valor={dinero(m.total)} sangria />
+                ))}
+              {corte.ventas.mixtas > 0 && (
+                <Text style={e.vacio}>🔀 {corte.ventas.mixtas} ticket(s) con pago mixto: cada parte ya está sumada en su método.</Text>
+              )}
               {corte.ventas.porMetodo.length === 0 && <Text style={e.vacio}>Sin ventas cobradas todavía.</Text>}
             </Seccion>
 
@@ -124,26 +135,26 @@ export function ModalCorteDetallado({ corte, onCerrar }: { corte: CorteDetallado
               {corte.conteo.monedas.map((m) => <Fila key={`m${m.denominacion}`} etiqueta={`Moneda ${dinero(m.denominacion)} × ${m.piezas}`} valor={dinero(m.subtotal)} sangria />)}
               {corte.conteo.monedas.length > 0 && <Fila etiqueta="Monedas" valor={dinero(corte.conteo.totalMonedas)} fuerte />}
               {corte.conteo.dolares.map((u) => <Fila key={`u${u.denominacion}`} etiqueta={`US$${u.denominacion} × ${u.piezas}`} valor={`US$${u.subtotal.toFixed(2)}`} sangria />)}
-              {corte.conteo.dolares.length > 0 && <Fila etiqueta="Dólares (informativo, no se suman a pesos)" valor={`US$${corte.conteo.totalUSD.toFixed(2)}`} fuerte />}
+              {corte.conteo.dolares.length > 0 && <Fila etiqueta={corte.encabezado.tipoCambioUsd ? `Dólares (a $${corte.encabezado.tipoCambioUsd.toFixed(2)} = ${dinero(corte.resultado.dolaresEnPesos)})` : "Dólares (sin tipo de cambio)"} valor={`US$${corte.conteo.totalUSD.toFixed(2)}`} fuerte />}
             </Seccion>
 
             {/* 8. Resultado. */}
             <View style={[e.resultado, { borderColor: colorDif }]}>
-              <Fila etiqueta="Contado en cajón" valor={dinero(corte.resultado.contado)} fuerte />
-              <Fila etiqueta="Esperado" valor={dinero(corte.resultado.esperado)} fuerte />
+              <Fila etiqueta="Pesos contados" valor={dinero(corte.resultado.contado)} />
+              {(corte.resultado.dolaresContados > 0 || corte.resultado.dolaresEsperados > 0) && (
+                <Fila
+                  etiqueta={`Dólares contados US$${corte.resultado.dolaresContados.toFixed(2)}`}
+                  valor={corte.resultado.sinTipoCambio ? "sin tipo de cambio" : dinero(corte.resultado.dolaresEnPesos)}
+                />
+              )}
+              <Fila etiqueta="Efectivo total contado" valor={dinero(corte.resultado.contadoTotal)} fuerte />
+              <Fila etiqueta="Efectivo total esperado" valor={dinero(corte.resultado.esperadoTotal)} fuerte />
               <View style={[e.fila, { marginTop: 6 }]}>
                 <Text style={[e.etiqueta, e.fuerte]}>Diferencia</Text>
                 <Text style={[e.diferencia, { color: colorDif }]}>
-                  {dif === 0 ? "✓ Cuadra" : `${dif > 0 ? "Sobran" : "Faltan"} ${dinero(Math.abs(dif))}`}
+                  {Math.abs(dif) < 1 ? "✓ Cuadra" : `${dif > 0 ? "Sobran" : "Faltan"} ${dinero(Math.abs(dif))}`}
                 </Text>
               </View>
-              {(corte.resultado.dolaresContados > 0 || corte.resultado.dolaresEsperados > 0) && (
-                <Fila
-                  etiqueta={`Dólares: contados US$${corte.resultado.dolaresContados.toFixed(2)} · esperados US$${corte.resultado.dolaresEsperados.toFixed(2)}`}
-                  valor={corte.resultado.diferenciaUsd === 0 ? "✓" : `${corte.resultado.diferenciaUsd > 0 ? "+" : "−"}US$${Math.abs(corte.resultado.diferenciaUsd).toFixed(2)}`}
-                  color={corte.resultado.diferenciaUsd === 0 ? colores.green : colores.red}
-                />
-              )}
             </View>
 
             {(corte.descuentos.length > 0 || corte.canceladas > 0) && (

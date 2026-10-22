@@ -427,17 +427,17 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
         {!cortesia && (
           <>
             <Text style={estilos.subtitulo}>Descuento y crédito</Text>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            <View style={estilos.rejilla}>
               <TouchableOpacity
                 onPress={() => (empleada
                   ? Alert.alert("Descuento", "Una venta con crédito de empleado no puede llevar descuento.")
                   : setMostrandoDescuento(true))}
-                style={[estilos.botonChip, conDescuentos && estilos.botonChipActivo, !!empleada && { opacity: 0.4 }]}
+                style={[estilos.botonChip, estilos.celdaMitad, conDescuentos && estilos.botonChipActivo, !!empleada && { opacity: 0.4 }]}
                 accessibilityLabel="Descuento"
               >
                 <Text style={[estilos.botonChipTexto, conDescuentos && { color: "#fff" }]}>🏷 DESCUENTO{conDescuentos ? " ✓" : ""}</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={abrirCredito} style={[estilos.botonChip, empleada && estilos.botonChipActivo]} accessibilityLabel="Crédito de empleado">
+              <TouchableOpacity onPress={abrirCredito} style={[estilos.botonChip, estilos.celdaMitad, empleada && estilos.botonChipActivo]} accessibilityLabel="Crédito de empleado">
                 <Text style={[estilos.botonChipTexto, empleada && { color: "#fff" }]}>👛 CRÉDITO EMPLEADO{empleada ? " ✓" : ""}</Text>
               </TouchableOpacity>
             </View>
@@ -456,25 +456,40 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
           </View>
         )}
         <Text style={estilos.subtitulo}>{esDidi ? "¿Cómo pagó el cliente?" : empleada && uso.restante > 0 ? "Método de pago para el resto" : "Método de pago"}</Text>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-          {hayRestante && metodosDelCobro.map((m) => (
-            <TouchableOpacity key={m.valor} onPress={() => elegirMetodo(m.valor)} style={[estilos.botonChip, metodoActivo === m.valor && !faltaElegirMetodo && !mixto && estilos.botonChipActivo]}>
-              <Text style={[estilos.botonChipTexto, metodoActivo === m.valor && !faltaElegirMetodo && !mixto && { color: "#fff" }]}>{m.icono} {m.etiqueta.toUpperCase()}</Text>
-            </TouchableOpacity>
-          ))}
-          {hayRestante && metodosDelCobro.length > 1 && (
-            <TouchableOpacity onPress={() => setMostrandoMixto(true)} style={[estilos.botonChip, mixto && estilos.botonChipActivo]} accessibilityLabel="Pago mixto">
-              <Text style={[estilos.botonChipTexto, mixto && { color: "#fff" }]}>🔀 PAGO MIXTO{mixto ? " ✓" : ""}</Text>
-            </TouchableOpacity>
-          )}
-          {/* Sin el permiso no se ofrece: el PIN de supervisor ya es obligatorio para la cortesía,
-              así que la casilla decide quién puede siquiera pedirla. */}
-          {tienePermiso(usuario, PERMISOS_TERMINAL.VENTA_CORTESIA) && (
-            <TouchableOpacity onPress={alternarCortesia} style={[estilos.botonChip, cortesia && estilos.botonChipCortesia]}>
-              <Text style={[estilos.botonChipTexto, cortesia && { color: colores.navy }]}>🎁 CORTESÍA{cortesia ? " ✓" : ""}</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+        {/* Métodos en rejilla de 3 columnas iguales: ordenados y fáciles de tocar. */}
+        {hayRestante && (
+          <View style={estilos.rejilla}>
+            {metodosDelCobro.map((m) => {
+              const activo = metodoActivo === m.valor && !faltaElegirMetodo && !mixto;
+              return (
+                <TouchableOpacity key={m.valor} onPress={() => elegirMetodo(m.valor)} style={[estilos.botonChip, estilos.celdaTercio, activo && estilos.botonChipActivo]} accessibilityLabel={m.etiqueta}>
+                  <Text style={estilos.iconoMetodo}>{m.icono}</Text>
+                  <Text numberOfLines={1} adjustsFontSizeToFit style={[estilos.botonChipTexto, { textAlign: "center" }, activo && { color: "#fff" }]}>{m.etiqueta.toUpperCase()}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+
+        {/* Pago mixto y cortesía aparte: no son un método, combinan o regalan la cuenta. */}
+        {(hayRestante && metodosDelCobro.length > 1) || tienePermiso(usuario, PERMISOS_TERMINAL.VENTA_CORTESIA) ? (
+          <View style={[estilos.rejilla, { marginTop: 10 }]}>
+            {hayRestante && metodosDelCobro.length > 1 && (
+              <TouchableOpacity onPress={() => setMostrandoMixto(true)} style={[estilos.botonChip, estilos.celdaMitad, estilos.botonMixto, mixto && estilos.botonMixtoActivo]} accessibilityLabel="Pago mixto">
+                <Text numberOfLines={1} adjustsFontSizeToFit style={[estilos.botonChipTexto, { textAlign: "center", color: mixto ? "#fff" : colores.navy }]}>🔀 PAGO MIXTO{mixto ? " ✓" : ""}</Text>
+                <Text style={[estilos.subtextoBoton, mixto && { color: "rgba(255,255,255,0.85)" }]}>Efectivo + tarjeta, etc.</Text>
+              </TouchableOpacity>
+            )}
+            {/* Sin el permiso no se ofrece: el PIN de supervisor ya es obligatorio para la cortesía,
+                así que la casilla decide quién puede siquiera pedirla. */}
+            {tienePermiso(usuario, PERMISOS_TERMINAL.VENTA_CORTESIA) && (
+              <TouchableOpacity onPress={alternarCortesia} style={[estilos.botonChip, estilos.celdaMitad, cortesia && estilos.botonChipCortesia]}>
+                <Text numberOfLines={1} adjustsFontSizeToFit style={[estilos.botonChipTexto, { textAlign: "center" }, cortesia && { color: colores.navy }]}>🎁 CORTESÍA{cortesia ? " ✓" : ""}</Text>
+                <Text style={estilos.subtextoBoton}>Con PIN de supervisor</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : null}
 
         {cortesia && (
           <View style={estilos.cortesiaBox}>
@@ -710,6 +725,13 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
     botonChipActivo: { backgroundColor: NARANJA, borderColor: NARANJA },
     botonChipTexto: { color: colores.texto, fontWeight: "800", fontSize: 15, letterSpacing: 0.3 },
     botonChipCortesia: { backgroundColor: colores.amber, borderColor: colores.amber },
+    rejilla: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+    celdaTercio: { flexBasis: "30%", flexGrow: 1, alignItems: "center", paddingHorizontal: 8, minHeight: 72 },
+    celdaMitad: { flexBasis: "45%", flexGrow: 1, alignItems: "center", paddingHorizontal: 8 },
+    iconoMetodo: { fontSize: 22, marginBottom: 4 },
+    botonMixto: { borderColor: colores.navy, borderWidth: 2, minHeight: 64 },
+    botonMixtoActivo: { backgroundColor: colores.navy, borderColor: colores.navy },
+    subtextoBoton: { fontSize: 11, color: colores.textoSecundario, marginTop: 2, textAlign: "center" },
     cortesiaBox: { marginTop: 14, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: colores.amber, backgroundColor: colores.superficie },
     cortesiaTitulo: { fontWeight: "800", color: colores.texto, fontSize: 15 },
     cortesiaAyuda: { fontSize: 12, color: colores.textoSecundario, marginTop: 4, lineHeight: 17 },

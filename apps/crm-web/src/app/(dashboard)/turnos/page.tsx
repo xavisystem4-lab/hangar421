@@ -23,6 +23,8 @@ interface Turno {
   montoFinalDeclaradoUsd?: number | null;
   montoFinalSistemaUsd?: number | null;
   diferenciaUsd?: number | null;
+  /** Pesos + dólares al tipo de cambio: la que dice si el corte cuadró. */
+  diferenciaTotal?: number | null;
   pendienteDiaAnterior: boolean;
   ventas?: { numTickets: number; total: number };
 }
@@ -91,7 +93,8 @@ export default function TurnosPage() {
   }, [cargar]);
 
   const cerrados = datos?.items.filter((t) => t.estado === "CERRADO") ?? [];
-  const sumaDiferencias = cerrados.reduce((s, t) => s + (t.diferencia ?? 0), 0);
+  const difTotal = (t: Turno) => t.diferenciaTotal ?? t.diferencia;
+  const sumaDiferencias = cerrados.reduce((s, t) => s + (difTotal(t) ?? 0), 0);
   const consolidado = !seleccion?.sucursalId;
 
   return (
@@ -219,11 +222,17 @@ export default function TurnosPage() {
                       ...celda,
                       textAlign: "right",
                       fontWeight: 700,
-                      color: t.diferencia == null || Math.abs(t.diferencia) < 0.01 ? undefined : "var(--h421-red)",
+                      color: difTotal(t) == null || Math.abs(difTotal(t) as number) < 1 ? "var(--h421-green)" : "var(--h421-red)",
                     }}
+                    title="Diferencia del efectivo total: pesos + dólares al tipo de cambio del turno"
                   >
-                    {dinero(t.diferencia)}
-                    {/* Dólares bajo la cifra en pesos: el corte los cuadra aparte. */}
+                    {difTotal(t) != null && Math.abs(difTotal(t) as number) < 1 ? "✓ Cuadra" : dinero(difTotal(t) ?? null)}
+                    {/* Detalle por moneda bajo la cifra total. */}
+                    {t.montoFinalSistemaUsd != null && (
+                      <div style={{ fontSize: 12, fontWeight: 400, color: "var(--h421-gray-400)" }}>
+                        pesos {dinero(t.diferencia)}
+                      </div>
+                    )}
                     {t.montoFinalSistemaUsd != null && (
                       <div
                         style={{

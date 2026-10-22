@@ -124,3 +124,34 @@ describe("crédito de empleados en el corte", () => {
     expect(textoCorte(c)).toContain("CRÉDITO DE EMPLEADOS (no es venta): $90.00");
   });
 });
+
+describe("efectivo total (pesos + dólares) y métodos claros", () => {
+  it("los dólares se suman al efectivo y cuadran lo que falta en pesos", () => {
+    const c = armarCorteDetallado({
+      ...BASE,
+      tipoCambioUsd: 15.72,
+      porOrigen: [{
+        origen: "MOSTRADOR", total: 1300, cantidad: 9,
+        porMetodo: [
+          { metodo: "EFECTIVO", total: 625, cantidad: 4 },
+          { metodo: "EFECTIVO_USD", total: 110, cantidad: 1 },
+          { metodo: "TARJETA", total: 465, cantidad: 3 },
+          { metodo: "TRANSFERENCIA", total: 100, cantidad: 1 },
+        ],
+      }],
+      movimientos: [],
+      ventasEnEfectivo: { mxn: 625, usd: 7 },
+      desglose: construirDesglose({ 500: 2, 100: 1, 20: 1 }, { 5: 1 }, { 5: 1, 1: 2 }),
+      ventasMixtas: 2,
+    });
+    expect(c.ventas.cobrado).toMatchObject({ efectivoPesos: 625, efectivoDolares: 110, efectivoTotal: 735, tarjeta: 465, transferencia: 100, total: 1300 });
+    expect(c.resultado.dolaresContados).toBe(7);
+    expect(c.resultado.dolaresEnPesos).toBeCloseTo(110.04, 2);
+    expect(Math.abs(c.resultado.diferenciaTotal)).toBeLessThan(1);
+    const t = textoCorte(c);
+    expect(t).toContain("Tarjeta: $465.00");
+    expect(t).toContain("Transferencia: $100.00");
+    expect(t).toContain("Pagos mixtos: 2 ticket(s)");
+    expect(t).toContain("DIFERENCIA: CUADRA");
+  });
+});

@@ -1,6 +1,7 @@
 import { TipoDescuento, TipoMovimientoInventario } from "./enums";
 import {
   calcularCortesia,
+  diferenciaTotalEnPesos,
   cobroEnDolares,
   efectivoEsperadoPorMoneda,
   calcularDiferenciaTraspaso,
@@ -373,4 +374,14 @@ describe("unidad rebanadas", () => {
     expect(factorConversionUnidad("g", "rebanadas")).toBeNull();
   });
 });
+});
+
+describe("diferenciaTotalEnPesos", () => {
+  it("los dólares cubren lo que falta en pesos", () => {
+    expect(diferenciaTotalEnPesos(-110, 7, 15.72)).toBeCloseTo(0.04, 2);
+  });
+  it("sin tipo de cambio o sin dólares queda la diferencia en pesos", () => {
+    expect(diferenciaTotalEnPesos(-21, 0, 18)).toBe(-21);
+    expect(diferenciaTotalEnPesos(-21, 5, null)).toBe(-21);
+  });
 });
