@@ -12,7 +12,7 @@ import {
 import { obtenerSucursalErp } from "../db/dispositivoLocal";
 import { ErrorErp } from "../api/erpHttp";
 import { asegurarSesionEnSucursalActiva, verificarPinEnErp } from "../sync/terminalErp";
-import { ESPERA_ERP_LOGIN_MS, decidirLogin, type RespuestaErpPin } from "../auth/pinEnLinea";
+import { ESPERA_ERP_LOGIN_MS, consultarErp, decidirLogin, type RespuestaErpPin } from "../auth/pinEnLinea";
 
 interface AuthLocalState {
   usuario: UsuarioLocal | null;
@@ -82,29 +82,25 @@ export const useAuthLocalStore = create<AuthLocalState>((set, get) => ({
       }
     } else {
       const local = await validarPinLocal(db, usuarioLocalId, pin);
-      // Usuario del ERP: con red se valida también allá (un PIN cambiado en el ERP manda).
+      // La copia local manda (ver pinEnLinea.ts). Solo si el PIN local NO coincide se pregunta
+      // al ERP, por si a esa persona le pusieron un PIN nuevo allá.
       const fila = await db.getFirstAsync<{ erp_usuario_id: string | null }>("SELECT erp_usuario_id FROM usuarios_locales WHERE id = ?", usuarioLocalId);
       let respuesta: RespuestaErpPin = "sin-red";
       let verificado: Awaited<ReturnType<typeof verificarPinEnErp>> | null = null;
-      if (fila?.erp_usuario_id) {
+      if (consultarErp(local, !!fila?.erp_usuario_id)) {
         try {
           verificado = await Promise.race([
-            verificarPinEnErp(fila.erp_usuario_id, pin),
+            verificarPinEnErp(fila!.erp_usuario_id as string, pin),
             new Promise<never>((_, rechazar) => setTimeout(() => rechazar(new Error("timeout")), ESPERA_ERP_LOGIN_MS)),
           ]);
           respuesta = "ok";
-        } catch (e: any) {
-          // Solo cuenta como rechazo el "PIN incorrecto" del ERP; un 401 de la sesión de la tablet
-          // (token vencido) no debe dejar fuera a nadie: se sigue con la copia local.
-          respuesta = e instanceof ErrorErp && e.status === 401 && /PIN incorrecto/i.test(String(e.cuerpo?.message ?? e.message)) ? "rechazado" : "sin-red";
+        } catch {
+          respuesta = "rechazado";
         }
       }
       const decision = decidirLogin(local, respuesta);
       if (decision === "entrar-con-erp" && verificado) {
         try { await adoptarUsuarioErp(db, verificado, pin); } catch { /* entra igual: el ERP ya lo validó */ }
-      } else if (decision === "pin-cambio") {
-        set({ error: "Tu PIN cambió en el ERP: usa el nuevo." });
-        throw new Error("PIN cambiado");
       } else if (decision === "rechazar") {
         set({ error: "PIN incorrecto" });
         throw new Error("PIN incorrecto");

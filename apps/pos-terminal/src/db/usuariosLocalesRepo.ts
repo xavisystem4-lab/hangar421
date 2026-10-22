@@ -78,6 +78,42 @@ export async function pinEnUsoLocal(db: SQLiteDatabase, pin: string, excluirUsua
   return null;
 }
 
+/**
+ * Cambia el PIN de una persona EN ESTA TABLET (Admin → Usuarios). Sirve para que alguien pueda
+ * entrar ya, sin esperar al ERP. No toca el PIN del ERP: la tablet entra con su copia local (ver
+ * auth/pinEnLinea.ts). El PIN tampoco puede repetirse con el de otra persona de la tablet.
+ */
+export async function cambiarPinLocal(db: SQLiteDatabase, usuarioLocalId: string, pin: string): Promise<void> {
+  if (!/^\d{4,6}$/.test(pin)) throw new Error("El PIN debe tener de 4 a 6 números.");
+  const ocupado = await pinEnUsoLocal(db, pin, usuarioLocalId);
+  if (ocupado) throw new Error(`Ese PIN ya lo usa ${ocupado}. El PIN es personal: elige otro.`);
+  const salt = await generarSalt();
+  const hash = await derivarHashPin(pin, salt);
+  const ahora = new Date().toISOString();
+  await db.withTransactionAsync(async () => {
+    // Persona del ERP que nunca entró en esta tablet: se da de alta aquí con su mismo id, así
+    // entra ya con el PIN nuevo sin validar en línea.
+    const local = await db.getFirstAsync<{ id: string }>("SELECT id FROM usuarios_locales WHERE id = ?", usuarioLocalId);
+    if (!local) {
+      const erp = await db.getFirstAsync<{ nombre: string }>("SELECT nombre FROM usuarios_erp WHERE id = ?", usuarioLocalId);
+      if (!erp) throw new Error("No se encontró a esa persona en esta tablet.");
+      const asignacion = await db.getFirstAsync<{ sucursal_id: string; rol: string }>("SELECT sucursal_id, rol FROM usuarios_sucursales WHERE usuario_id = ? LIMIT 1", usuarioLocalId);
+      const sucursalId = asignacion?.sucursal_id ?? (await obtenerOCrearSucursalIdLocal(db));
+      await db.runAsync(
+        "INSERT INTO usuarios_locales (id, sucursal_id, nombre, rol, erp_usuario_id, activo, ultima_verificacion_online) VALUES (?, ?, ?, ?, ?, 1, ?)",
+        usuarioLocalId, sucursalId, erp.nombre, asignacion?.rol ?? "CAJERO", usuarioLocalId, ahora,
+      );
+    } else {
+      await db.runAsync("UPDATE usuarios_locales SET activo = 1 WHERE id = ?", usuarioLocalId);
+    }
+    await db.runAsync(
+      `INSERT INTO pin_cache (usuario_local_id, hash_local, salt, algoritmo, creado_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(usuario_local_id) DO UPDATE SET hash_local = excluded.hash_local, salt = excluded.salt, algoritmo = excluded.algoritmo, creado_at = excluded.creado_at`,
+      usuarioLocalId, hash, salt, algoritmoHashActual, ahora,
+    );
+  });
+}
+
 export async function crearUsuarioLocal(
   db: SQLiteDatabase,
   datos: { nombre: string; rol: string; pin: string },

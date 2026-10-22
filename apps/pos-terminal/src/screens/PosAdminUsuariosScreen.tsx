@@ -4,7 +4,7 @@ import { RolUsuario } from "@hangar421/shared";
 import { usarColores } from "../store/temaStore";
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { abrirBaseDeDatos } from "../db/database";
-import { listarUsuariosLocales, eliminarUsuarioLocal, crearUsuarioLocal, guardarRolYPermisos, type UsuarioLocal } from "../db/usuariosLocalesRepo";
+import { listarUsuariosLocales, eliminarUsuarioLocal, crearUsuarioLocal, cambiarPinLocal, guardarRolYPermisos, type UsuarioLocal } from "../db/usuariosLocalesRepo";
 import { sincronizarPronto } from "../sync/syncEngine";
 import { asignarTurnoTrabajo, crearTurnoTrabajo, eliminarTurnoTrabajo, listarTurnosTrabajo, motivoTurnoInvalido, textoTurno, type TurnoTrabajo } from "../db/turnosTrabajoRepo";
 import { GRUPOS_PERMISOS, PERMISOS_DEFECTO_POR_ROL, esRolAdmin, permisosEfectivos } from "../auth/permisosTerminal";
@@ -46,6 +46,21 @@ export function PosAdminUsuariosScreen({ onCerrar }: { onCerrar: () => void }) {
   const [rolBorrador, setRolBorrador] = useState<string>(RolUsuario.CAJERO);
   const [permisosBorrador, setPermisosBorrador] = useState<Set<string>>(new Set());
   const [turnoBorrador, setTurnoBorrador] = useState<string | null>(null);
+
+  // Cambio de PIN en esta tablet: para que alguien entre ya, sin esperar al ERP.
+  const [cambiandoPin, setCambiandoPin] = useState<string | null>(null);
+  const [pinCambio, setPinCambio] = useState("");
+
+  async function guardarPinLocal(u: UsuarioLocal) {
+    try {
+      await cambiarPinLocal(await abrirBaseDeDatos(), u.id, pinCambio);
+      setCambiandoPin(null);
+      setPinCambio("");
+      Alert.alert("PIN cambiado", `${u.nombre} ya puede entrar en esta tablet con su PIN nuevo.`);
+    } catch (e: any) {
+      Alert.alert("No se pudo cambiar", e?.message ?? "Error al cambiar el PIN.");
+    }
+  }
 
   // Turnos de trabajo de esta sucursal (informativos, ver turnosTrabajoRepo).
   const [turnos, setTurnos] = useState<TurnoTrabajo[]>([]);
@@ -209,6 +224,24 @@ export function PosAdminUsuariosScreen({ onCerrar }: { onCerrar: () => void }) {
           <Text style={estilos.rol}>{ETIQUETA_ROL[u.rol] ?? u.rol} · {resumenPermisos(u)}</Text>
           <Text style={estilos.rol}>🕒 {(() => { const t = turnos.find((x) => x.id === u.turnoTrabajoId); return t ? textoTurno(t) : "Sin turno"; })()}</Text>
 
+          {cambiandoPin === u.id && (
+            <View style={{ marginTop: 10, flexDirection: "row", gap: 8, alignItems: "center" }}>
+              <TextInput
+                placeholder="PIN nuevo (4 a 6 números)"
+                placeholderTextColor={colores.textoSecundario}
+                value={pinCambio}
+                onChangeText={(t) => setPinCambio(t.replace(/[^0-9]/g, "").slice(0, 6))}
+                secureTextEntry
+                keyboardType="number-pad"
+                autoFocus
+                style={[estilos.input, { flex: 1, marginBottom: 0 }]}
+              />
+              <TouchableOpacity onPress={() => guardarPinLocal(u)} disabled={pinCambio.length < 4} style={[estilos.botonChico, { backgroundColor: colores.green, opacity: pinCambio.length < 4 ? 0.5 : 1, paddingVertical: 12 }]}>
+                <Text style={{ color: "#fff", fontWeight: "800" }}>Guardar PIN</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {editando?.id === u.id ? (
             <EditorPermisos
               usuario={u}
@@ -228,6 +261,9 @@ export function PosAdminUsuariosScreen({ onCerrar }: { onCerrar: () => void }) {
             <View style={{ flexDirection: "row", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
               <TouchableOpacity onPress={() => empezarEdicion(u)} style={[estilos.botonChico, { backgroundColor: colores.navy }]}>
                 <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>Rol, turno y funciones</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { setCambiandoPin(cambiandoPin === u.id ? null : u.id); setPinCambio(""); }} style={[estilos.botonChico, { backgroundColor: colores.amber }]}>
+                <Text style={{ color: colores.navy, fontSize: 12, fontWeight: "800" }}>🔑 Cambiar PIN</Text>
               </TouchableOpacity>
               {yo?.id !== u.id && (
                 <TouchableOpacity onPress={() => confirmarEliminar(u)} style={[estilos.botonChico, { backgroundColor: colores.red + "22" }]}>
