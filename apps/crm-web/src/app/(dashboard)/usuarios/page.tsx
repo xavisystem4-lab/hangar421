@@ -102,6 +102,10 @@ export default function UsuariosPage() {
   const [sucursales, setSucursales] = useState<Sucursal[]>([]);
   const [sucursalId, setSucursalId] = useState("");
   const [filas, setFilas] = useState<UsuarioSucursalRow[]>([]);
+  /** Usuarios activos por sucursal, para las pestañas. */
+  const [conteo, setConteo] = useState<Record<string, number>>({});
+  /** Por defecto solo se ven los activos; los apagados quedan a un clic. */
+  const [verInactivos, setVerInactivos] = useState(false);
   const [mensaje, setMensaje] = useState<string | null>(null);
 
   const [perfiles, setPerfiles] = useState<Perfil[]>([]);
@@ -131,6 +135,15 @@ export default function UsuariosPage() {
     if (!suc) return;
     const filas = await apiFetch<UsuarioSucursalRow[]>(`/usuarios?sucursalId=${suc}`);
     setFilas(filas);
+    setConteo((c) => ({ ...c, [suc]: filas.filter((f) => f.usuario.activo).length }));
+  }
+
+  /** Cuántos usuarios activos tiene cada sucursal (para las pestañas). */
+  async function cargarConteos(lista: Sucursal[]) {
+    const pares = await Promise.all(
+      lista.map(async (s) => [s.id, (await apiFetch<UsuarioSucursalRow[]>(`/usuarios?sucursalId=${s.id}`).catch(() => [])).filter((f) => f.usuario.activo).length] as const),
+    );
+    setConteo(Object.fromEntries(pares));
   }
 
   async function cargarPerfiles() {
@@ -144,6 +157,7 @@ export default function UsuariosPage() {
     apiFetch<Sucursal[]>(`/sucursales?empresaId=${contexto.usuario.empresaId}`).then((s) => {
       setSucursales(s);
       if (s[0]) { setSucursalId(s[0].id); cargar(s[0].id); }
+      cargarConteos(s);
     });
     cargarPerfiles();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -218,6 +232,7 @@ export default function UsuariosPage() {
     const accion = fila.usuario.activo ? "desactivar" : "activar";
     await apiFetch(`/usuarios/${fila.usuarioId}/${accion}`, { method: "PATCH" });
     cargar(sucursalId);
+    cargarConteos(sucursales);
   }
 
   async function eliminarUsuario(fila: UsuarioSucursalRow) {
@@ -301,10 +316,31 @@ export default function UsuariosPage() {
           <button onClick={() => setMostrarPerfiles((v) => !v)} style={{ background: "var(--h421-navy)", color: "#fff", padding: "8px 14px" }}>
             Perfiles
           </button>
-          <select value={sucursalId} onChange={(e) => { setSucursalId(e.target.value); setUsuarioEditando(null); cargar(e.target.value); }} style={{ padding: 8 }}>
-            {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-          </select>
+          <label style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+            <input type="checkbox" checked={verInactivos} onChange={(e) => setVerInactivos(e.target.checked)} /> Ver inactivos
+          </label>
         </div>
+      </div>
+
+      {/* Usuarios desglosados por sucursal: una pestaña por sucursal con cuántos activos tiene. */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "4px 0 14px" }}>
+        {sucursales.map((s) => {
+          const activa = s.id === sucursalId;
+          return (
+            <button
+              key={s.id}
+              onClick={() => { setSucursalId(s.id); setUsuarioEditando(null); cargar(s.id); }}
+              style={{
+                padding: "10px 16px", borderRadius: 12, fontWeight: 700,
+                background: activa ? "var(--h421-navy)" : "var(--h421-gray-50, #f8fafc)",
+                color: activa ? "#fff" : "var(--h421-navy-texto, #0b1e33)",
+                border: activa ? "1px solid var(--h421-navy)" : "1px solid var(--h421-gray-200)",
+              }}
+            >
+              🏪 {s.nombre} <span style={{ opacity: 0.8, fontWeight: 600 }}>· {conteo[s.id] ?? "…"}</span>
+            </button>
+          );
+        })}
       </div>
 
       {mensaje && <p style={{ color: "var(--h421-navy-texto)" }}>{mensaje}</p>}
@@ -369,7 +405,7 @@ export default function UsuariosPage() {
                 </tr>
               </thead>
               <tbody>
-                {filas.map((f) => (
+                {filas.filter((f) => verInactivos || f.usuario.activo).map((f) => (
                   <tr key={f.usuarioId} style={{ borderBottom: "1px solid var(--h421-gray-200)", background: usuarioEditando?.usuarioId === f.usuarioId ? "var(--h421-gray-50)" : "transparent" }}>
                     <td style={{ padding: 8 }}>{f.usuario.nombre}</td>
                     <td style={{ padding: 8 }}>{f.usuario.username ?? f.usuario.email ?? "—"}</td>
@@ -396,7 +432,7 @@ export default function UsuariosPage() {
                     </td>
                   </tr>
                 ))}
-                {filas.length === 0 && (
+                {filas.filter((f) => verInactivos || f.usuario.activo).length === 0 && (
                   <tr><td colSpan={8} style={{ padding: 16, color: "var(--h421-gray-400)", textAlign: "center" }}>Sin usuarios en esta sucursal.</td></tr>
                 )}
               </tbody>

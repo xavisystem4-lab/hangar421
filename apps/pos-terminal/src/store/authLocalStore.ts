@@ -66,7 +66,13 @@ export const useAuthLocalStore = create<AuthLocalState>((set, get) => ({
         await adoptarUsuarioErp(db, verificado, pin);
       } catch (e: any) {
         const mensaje =
-          e instanceof ErrorErp && (e.status === 401 || e.status === 403)
+          e instanceof ErrorErp && e.status === 409
+            ? e.codigo === "USUARIO_INACTIVO_ERP"
+              ? "Tu usuario está apagado en el ERP. Pide a un administrador que lo active."
+              : e.codigo === "SIN_SUCURSAL_ERP"
+                ? "Tu usuario no tiene esta sucursal en el ERP."
+                : "Tu PIN no está en el ERP: pide a un administrador que te lo ponga en ERP → Usuarios."
+            : e instanceof ErrorErp && (e.status === 401 || e.status === 403)
             ? "PIN incorrecto"
             : e instanceof ErrorErp && e.status === 429
               ? "Demasiados intentos. Espera un minuto."

@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from "@nestjs/common";
+import { ConflictException, Injectable, UnauthorizedException } from "@nestjs/common";
 import * as bcrypt from "bcryptjs";
 import { JwtPayload, RolUsuario } from "@hangar421/shared";
 import { PrismaService } from "../prisma/prisma.service";
@@ -89,8 +89,14 @@ export class TerminalService {
         sucursales: { where: { sucursalId: { in: ids }, activo: true }, select: { sucursalId: true, rol: true } },
       },
     });
-    if (!usuario || usuario.empresaId !== sesion.empresaId || !usuario.activo || usuario.eliminado || !usuario.pinHash) throw invalido();
-    if (usuario.sucursales.length === 0) throw invalido();
+    if (!usuario || usuario.empresaId !== sesion.empresaId) throw invalido();
+    // El ERP no puede juzgar este PIN: la persona existe en la empresa, pero su PIN vive solo en
+    // la tablet (la dio de alta ahí y el PIN nunca sube), está apagada en el ERP o no tiene esta
+    // sucursal. 409 con código, NO 401: la tablet sigue con su copia local en vez de decirle
+    // "tu PIN cambió" a alguien a quien nadie le cambió nada (pasó con la APK 0.1.69).
+    if (!usuario.pinHash) throw new ConflictException({ message: "Ese usuario no tiene PIN en el ERP", codigo: "SIN_PIN_ERP" });
+    if (!usuario.activo || usuario.eliminado) throw new ConflictException({ message: "Ese usuario está apagado en el ERP", codigo: "USUARIO_INACTIVO_ERP" });
+    if (usuario.sucursales.length === 0) throw new ConflictException({ message: "Ese usuario no tiene esta sucursal en el ERP", codigo: "SIN_SUCURSAL_ERP" });
     if (!(await bcrypt.compare(pin, usuario.pinHash))) throw invalido();
     return { id: usuario.id, nombre: usuario.nombre, sucursales: usuario.sucursales };
   }
