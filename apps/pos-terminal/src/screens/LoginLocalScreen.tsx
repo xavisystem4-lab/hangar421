@@ -4,7 +4,8 @@ import { RolUsuario } from "@hangar421/shared";
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
-import { crearUsuarioLocal } from "../db/usuariosLocalesRepo";
+import { cambiarPinLocal, crearUsuarioLocal } from "../db/usuariosLocalesRepo";
+import { ModalAutorizacion } from "../components/ModalAutorizacion";
 import { SelectorSucursal } from "../components/SelectorSucursal";
 
 /** Login 100% offline — el PIN se valida contra pin_cache (ver authLocalStore), nunca contra la
@@ -24,6 +25,24 @@ export function LoginLocalScreen() {
   const [pinNuevo, setPinNuevo] = useState("");
   const [rolNuevo, setRolNuevo] = useState<RolUsuario>(RolUsuario.CAJERO);
   const [creando, setCreando] = useState(false);
+  /** ¿Olvidaste tu PIN?: un supervisor autoriza y la persona pone uno nuevo en esta tablet. */
+  const [pidiendoSupervisor, setPidiendoSupervisor] = useState(false);
+  const [cambiandoPin, setCambiandoPin] = useState(false);
+  const [pinCambio, setPinCambio] = useState("");
+
+  async function guardarPinNuevo() {
+    if (!seleccionado) return;
+    try {
+      await cambiarPinLocal(await abrirBaseDeDatos(), seleccionado, pinCambio);
+      setCambiandoPin(false);
+      setPinCambio("");
+      setPin("");
+      await cargarUsuarios();
+      Alert.alert("PIN cambiado", "Ya puedes entrar con tu PIN nuevo en esta tablet.");
+    } catch (e: any) {
+      Alert.alert("No se pudo cambiar", e?.message ?? "Error al cambiar el PIN.");
+    }
+  }
 
   useEffect(() => {
     cargarUsuarios();
@@ -127,7 +146,45 @@ export function LoginLocalScreen() {
             >
               <Text style={estilos.botonTexto}>{entrando ? "Entrando…" : "Entrar"}</Text>
             </TouchableOpacity>
+            {seleccionado && !cambiandoPin && (
+              <TouchableOpacity onPress={() => setPidiendoSupervisor(true)} style={estilos.enlaceAlta}>
+                <Text style={estilos.enlaceAltaTexto}>🔑 ¿Olvidaste tu PIN? Cámbialo con un supervisor</Text>
+              </TouchableOpacity>
+            )}
+            {cambiandoPin && (
+              <View style={estilos.panelAlta}>
+                <Text style={[estilos.usuarioRol, { marginBottom: 6 }]}>
+                  PIN nuevo para {usuariosDisponibles.find((u) => u.id === seleccionado)?.nombre ?? ""} (solo en esta tablet)
+                </Text>
+                <TextInput
+                  placeholder="PIN nuevo (4 a 6 números)"
+                  placeholderTextColor={colores.textoSecundario}
+                  value={pinCambio}
+                  onChangeText={(t) => setPinCambio(t.replace(/[^0-9]/g, "").slice(0, 6))}
+                  secureTextEntry
+                  keyboardType="number-pad"
+                  autoFocus
+                  style={estilos.input}
+                />
+                <TouchableOpacity style={[estilos.boton, pinCambio.length < 4 && estilos.botonDeshabilitado]} onPress={guardarPinNuevo} disabled={pinCambio.length < 4}>
+                  <Text style={estilos.botonTexto}>Guardar PIN nuevo</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => { setCambiandoPin(false); setPinCambio(""); }} style={estilos.enlaceAlta}>
+                  <Text style={estilos.enlaceAltaTexto}>Cancelar</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </>
+        )}
+
+        {pidiendoSupervisor && seleccionado && (
+          <ModalAutorizacion
+            titulo="Cambiar PIN"
+            descripcion="Un supervisor o administrador autoriza el cambio de PIN de esta persona en esta tablet."
+            solicitanteId={seleccionado}
+            onCancelar={() => setPidiendoSupervisor(false)}
+            onAutorizado={() => { setPidiendoSupervisor(false); setCambiandoPin(true); setPinCambio(""); }}
+          />
         )}
 
         <TouchableOpacity onPress={() => setMostrarAlta((v) => !v)} style={estilos.enlaceAlta}>
