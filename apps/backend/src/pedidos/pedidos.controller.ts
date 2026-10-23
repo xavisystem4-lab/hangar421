@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
-import { CanalOrigen, EstadoPedido, EstadoPedidoItem, RolUsuario } from "@hangar421/shared";
+import { CanalOrigen, EstadoPedido, EstadoPedidoItem, MetodoPago, RolUsuario } from "@hangar421/shared";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../common/guards/roles.guard";
 import { Roles } from "../common/decorators/roles.decorator";
@@ -69,6 +69,7 @@ export class PedidosController {
     @Query("dispositivoId") dispositivoId?: string,
     @Query("turnoId") turnoId?: string,
     @Query("estadoTurno") estadoTurno?: string,
+    @Query("metodoPago") metodoPago?: string,
   ) {
     return this.pedidos.consultarVentas(req.user.empresaId, {
       sucursalId: sucursalDeLaConsulta(req.user, sucursalId),
@@ -83,6 +84,7 @@ export class PedidosController {
       dispositivoId: dispositivoId || undefined,
       turnoId: turnoId || undefined,
       estadoTurno: (["ABIERTO", "CERRADO", "SIN_TURNO"] as const).find((e) => e === estadoTurno),
+      metodoPago: valorDe(MetodoPago, metodoPago),
     });
   }
 

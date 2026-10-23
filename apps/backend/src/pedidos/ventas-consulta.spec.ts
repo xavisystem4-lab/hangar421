@@ -1,4 +1,4 @@
-import { CanalOrigen, EstadoPedido } from "@hangar421/shared";
+import { CanalOrigen, EstadoPedido, MetodoPago } from "@hangar421/shared";
 import { armarDesglose, armarResumen, condicionesDeTrazabilidad, hoyEnZona, limiteDelDia, normalizarPaginacion } from "./ventas-consulta";
 
 const MX = "America/Mexico_City";
@@ -138,6 +138,10 @@ describe("condicionesDeTrazabilidad", () => {
     expect(condicionesDeTrazabilidad({ estadoTurno: "ABIERTO" })).toEqual([{ turno: { estado: "ABIERTO" } }]);
     expect(condicionesDeTrazabilidad({ estadoTurno: "SIN_TURNO" })).toEqual([{ turnoId: null }]);
   });
+
+  it("método de pago: tickets con algún pago en ese método", () => {
+    expect(condicionesDeTrazabilidad({ metodoPago: MetodoPago.TARJETA })).toEqual([{ pagos: { some: { metodo: "TARJETA" } } }]);
+  });
 });
 
 describe("armarDesglose", () => {
@@ -165,6 +169,24 @@ describe("armarDesglose", () => {
       { estado: "CANCELADO", total: 999, canalOrigen: "POS_WINDOWS", usuario: ana, dispositivo: pc },
     ]);
     expect(d.porCanal[0].total).toBe(100);
+  });
+
+  it("resume transacciones y total por método de pago, repartiendo los pagos mixtos", () => {
+    const d = armarDesglose([
+      { estado: "COBRADO", total: 100, canalOrigen: "APP_POS_MOVIL", usuario: ana, dispositivo: tablet, pagos: [{ metodo: "TARJETA", monto: 100 }] },
+      { estado: "COBRADO", total: 90, canalOrigen: "APP_POS_MOVIL", usuario: ana, dispositivo: tablet, pagos: [{ metodo: "EFECTIVO", monto: 50 }, { metodo: "TARJETA", monto: 40 }] },
+      { estado: "COBRADO", total: 60, canalOrigen: "APP_POS_MOVIL", usuario: ana, dispositivo: tablet, pagos: [{ metodo: "MONEDERO_EMPLEADO", monto: 60 }] },
+      { estado: "CANCELADO", total: 500, canalOrigen: "APP_POS_MOVIL", usuario: ana, dispositivo: tablet, pagos: [{ metodo: "TARJETA", monto: 500 }] },
+    ]);
+    expect(d.porMetodo).toEqual([
+      { metodo: "TARJETA", numTransacciones: 2, total: 140 },
+      { metodo: "MONEDERO_EMPLEADO", numTransacciones: 1, total: 60 },
+      { metodo: "EFECTIVO", numTransacciones: 1, total: 50 },
+    ]);
+  });
+
+  it("sin pagos el resumen por método queda vacío", () => {
+    expect(armarDesglose([{ estado: "COBRADO", total: 40, canalOrigen: "APP_MESERO", usuario: null, dispositivo: null }]).porMetodo).toEqual([]);
   });
 
   it("lo que no tiene usuario o dispositivo se agrupa aparte en vez de perderse", () => {

@@ -9,6 +9,11 @@ import { useAuthCrm } from "@/lib/authClient";
 import { StatTile } from "@/components/StatTile";
 import { BarChart } from "@/components/BarChart";
 import { ReporteCreditoEmpleados } from "@/components/ReporteCreditoEmpleados";
+import { BotonesExportar } from "@/components/BotonesExportar";
+import { ReporteDidi } from "@/components/ReporteDidi";
+import { TarjetaDidi } from "@/components/TarjetaDidi";
+import { useResumenDidi } from "@/lib/resumenDidi";
+import { exportarReporteVentasExcel, exportarReporteVentasPdf, type DatosReporteVentas } from "@/lib/exportarVentas";
 
 interface VentaPorProducto {
   productoId: string;
@@ -44,8 +49,14 @@ export default function ReportesPage() {
   const [porProducto, setPorProducto] = useState<VentaPorProducto[]>([]);
   const [porMetodo, setPorMetodo] = useState<VentaPorMetodo[]>([]);
   const [cargando, setCargando] = useState(false);
-  /** "ventas" = el reporte de siempre; "credito" = consumo del crédito de cada empleada. */
-  const [vista, setVista] = useState<"ventas" | "credito">("ventas");
+  /** "ventas" = el reporte de siempre; "credito" = consumo del crédito de cada empleada;
+   *  "didi" = ventas de DiDi y ganancia real. `?vista=didi` abre directo esa pestaña. */
+  const [vista, setVista] = useState<"ventas" | "credito" | "didi">(() => {
+    if (typeof window === "undefined") return "ventas";
+    const v = new URLSearchParams(window.location.search).get("vista");
+    return v === "didi" || v === "credito" ? v : "ventas";
+  });
+  const resumenDidi = useResumenDidi(sucursalId, desde, hasta);
 
   // La sucursal la fija el contexto global (cabecera). Antes esta página elegía siempre la
   // primera del listado, así que un reporte podía ser de otra sucursal sin avisar.
@@ -87,6 +98,23 @@ export default function ReportesPage() {
   const totalVentas = porMetodo.reduce((s, m) => s + Number(m._sum.monto ?? 0), 0);
   const totalPagos = porMetodo.reduce((s, m) => s + m._count, 0);
 
+  /** Lo que va al PDF/Excel: TODOS los productos del rango (la pantalla solo enseña el top 10). */
+  function datosExportacion(): DatosReporteVentas {
+    return {
+      sucursal: seleccion?.nombre ?? "Todas las sucursales",
+      desde,
+      hasta,
+      totalVentas,
+      totalPagos,
+      productos: [...porProducto]
+        .map((p) => ({ nombre: p.nombre ?? nombreProducto(p.productoId), categoria: p.categoria, subcategoria: p.subcategoria, unidades: p._sum.cantidad ?? 0, variantes: p.variantes }))
+        .sort((a, b) => b.unidades - a.unidades),
+      metodos: porMetodo
+        .map((m) => ({ metodo: ETIQUETA_METODO[m.metodo] ?? m.metodo, pagos: m._count, monto: Number(m._sum.monto ?? 0) }))
+        .sort((a, b) => b.monto - a.monto),
+    };
+  }
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
@@ -101,7 +129,7 @@ export default function ReportesPage() {
       </div>
 
       <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-        {([["ventas", "Ventas"], ["credito", "👛 Crédito de empleados"]] as const).map(([id, etiqueta]) => (
+        {([["ventas", "Ventas"], ["didi", "🛵 DiDi"], ["credito", "👛 Crédito de empleados"]] as const).map(([id, etiqueta]) => (
           <button key={id} onClick={() => setVista(id)}
             style={{ padding: "8px 14px", fontSize: 13, fontWeight: 700, borderRadius: 999,
               background: vista === id ? "var(--h421-navy)" : "transparent", color: vista === id ? "#fff" : "var(--h421-navy-texto)",
@@ -113,13 +141,23 @@ export default function ReportesPage() {
 
       {vista === "credito" ? (
         <ReporteCreditoEmpleados sucursalId={sucursalId} sucursalNombre={seleccion?.nombre ?? undefined} desde={desde} hasta={hasta} />
+      ) : vista === "didi" ? (
+        <ReporteDidi sucursalId={sucursalId} sucursalNombre={seleccion?.nombre ?? undefined} desde={desde} hasta={hasta} />
       ) : (<>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+        <BotonesExportar
+          deshabilitado={cargando || (porProducto.length === 0 && porMetodo.length === 0)}
+          onPdf={() => exportarReporteVentasPdf(datosExportacion())}
+          onExcel={() => exportarReporteVentasExcel(datosExportacion())}
+        />
+      </div>
       {cargando && <p style={{ color: "var(--h421-gray-400)" }}>Cargando…</p>}
 
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 12 }}>
         <StatTile etiqueta="Ventas en el rango" valor={`$${totalVentas.toFixed(2)}`} acento="var(--h421-green)" />
         <StatTile etiqueta="Pagos registrados" valor={String(totalPagos)} acento="var(--h421-blue)" />
         <StatTile etiqueta="Productos distintos vendidos" valor={String(porProducto.length)} acento="var(--h421-amber)" />
+        {resumenDidi && resumenDidi.tickets > 0 && <TarjetaDidi resumen={resumenDidi} onVerReporte={() => setVista("didi")} />}
       </div>
 
       <div className="h421-grid-2col" style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 16, marginTop: 20 }}>
@@ -149,13 +187,26 @@ export default function ReportesPage() {
             <>
               <BarChart data={porMetodo.map((m) => ({ etiqueta: ETIQUETA_METODO[m.metodo] ?? m.metodo, valor: Number(m._sum.monto ?? 0) }))} alto={160} formatoValor={(v) => `${v.toFixed(2)}`} />
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, marginTop: 10 }}>
+                <thead>
+                  <tr style={{ color: "var(--h421-gray-400)", fontSize: 12, textAlign: "left" }}>
+                    <th style={{ padding: 6 }}>Método</th>
+                    <th style={{ padding: 6, textAlign: "right" }}>Transacciones</th>
+                    <th style={{ padding: 6, textAlign: "right" }}>Total</th>
+                  </tr>
+                </thead>
                 <tbody>
                   {porMetodo.map((m) => (
                     <tr key={m.metodo} style={{ borderBottom: "1px solid var(--h421-gray-200)" }}>
-                      <td style={{ padding: 6 }}>{ETIQUETA_METODO[m.metodo] ?? m.metodo} ({m._count})</td>
-                      <td style={{ padding: 6, textAlign: "right" }}>${Number(m._sum.monto ?? 0).toFixed(2)}</td>
+                      <td style={{ padding: 6 }}>{ETIQUETA_METODO[m.metodo] ?? m.metodo}</td>
+                      <td style={{ padding: 6, textAlign: "right" }}>{m._count}</td>
+                      <td style={{ padding: 6, textAlign: "right", fontWeight: 700 }}>${Number(m._sum.monto ?? 0).toFixed(2)}</td>
                     </tr>
                   ))}
+                  <tr style={{ fontWeight: 800 }}>
+                    <td style={{ padding: 6 }}>Total</td>
+                    <td style={{ padding: 6, textAlign: "right" }}>{totalPagos}</td>
+                    <td style={{ padding: 6, textAlign: "right" }}>${totalVentas.toFixed(2)}</td>
+                  </tr>
                 </tbody>
               </table>
             </>

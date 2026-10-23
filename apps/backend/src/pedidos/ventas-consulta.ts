@@ -1,4 +1,4 @@
-import { CanalOrigen, EstadoPedido } from "@hangar421/shared";
+import { CanalOrigen, EstadoPedido, MetodoPago } from "@hangar421/shared";
 
 /**
  * Lógica pura de la consulta de ventas del ERP (rangos de fecha y resumen).
@@ -26,6 +26,9 @@ export interface FiltroVentas {
   /** Estado de cierre del turno de la venta. SIN_TURNO = ventas que no quedaron enlazadas a
    *  ninguno (históricas, o de un admin que cobró sin turno abierto). */
   estadoTurno?: "ABIERTO" | "CERRADO" | "SIN_TURNO";
+  /** Tickets con al menos un pago en este método (un pago mixto aparece en cada uno de sus
+   *  métodos). */
+  metodoPago?: MetodoPago;
 }
 
 /**
@@ -41,6 +44,7 @@ export function condicionesDeTrazabilidad(f: FiltroVentas): Record<string, unkno
   if (f.turnoId) condiciones.push({ turnoId: f.turnoId });
   if (f.estadoTurno === "SIN_TURNO") condiciones.push({ turnoId: null });
   else if (f.estadoTurno) condiciones.push({ turno: { estado: f.estadoTurno } });
+  if (f.metodoPago) condiciones.push({ pagos: { some: { metodo: f.metodoPago } } });
   return condiciones;
 }
 
@@ -50,6 +54,8 @@ export interface FilaDesglose {
   canalOrigen: string;
   usuario: { id: string; nombre: string } | null;
   dispositivo: { id: string; nombre: string; tipo: string } | null;
+  /** Pagos del ticket; opcional para no romper a quien no los manda. */
+  pagos?: { metodo: string; monto: number }[];
 }
 
 export interface GrupoDesglose {
@@ -59,10 +65,20 @@ export interface GrupoDesglose {
   total: number;
 }
 
+/** Un método de pago del rango: cuántas transacciones (pagos) y cuánto sumaron. */
+export interface GrupoMetodoPago {
+  metodo: string;
+  /** Pagos con este método. Un ticket pagado mitad efectivo y mitad tarjeta cuenta una
+   *  transacción en cada uno. */
+  numTransacciones: number;
+  total: number;
+}
+
 export interface DesgloseVentas {
   porCanal: GrupoDesglose[];
   porUsuario: GrupoDesglose[];
   porDispositivo: GrupoDesglose[];
+  porMetodo: GrupoMetodoPago[];
 }
 
 /**
@@ -92,7 +108,27 @@ export function armarDesglose(filas: FilaDesglose[]): DesgloseVentas {
     porDispositivo: agrupar((f) =>
       f.dispositivo ? { clave: f.dispositivo.id, nombre: f.dispositivo.nombre } : { clave: "SIN_DISPOSITIVO", nombre: "Sin dispositivo" },
     ),
+    porMetodo: agruparPorMetodo(cerradas),
   };
+}
+
+/**
+ * Transacciones y total por método de pago de las ventas cobradas: el resumen de "cuántas fueron
+ * con tarjeta y cuánto sumaron". Va por PAGO, no por ticket: así un pago mixto reparte su monto
+ * real entre efectivo y tarjeta. El crédito de empleado sale como un método más; quien lo pinta
+ * lo marca como "no es venta" (no suma al total vendido).
+ */
+function agruparPorMetodo(cerradas: FilaDesglose[]): GrupoMetodoPago[] {
+  const grupos = new Map<string, GrupoMetodoPago>();
+  for (const f of cerradas) {
+    for (const p of f.pagos ?? []) {
+      const g = grupos.get(p.metodo) ?? { metodo: p.metodo, numTransacciones: 0, total: 0 };
+      g.numTransacciones += 1;
+      g.total = redondear(g.total + (Number(p.monto) || 0));
+      grupos.set(p.metodo, g);
+    }
+  }
+  return [...grupos.values()].sort((a, b) => b.total - a.total);
 }
 
 /** Estados que cuentan como venta real cobrada. Todo lo demás son tickets en curso o anulados:

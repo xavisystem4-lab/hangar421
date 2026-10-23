@@ -8,6 +8,10 @@ import { StatTile } from "@/components/StatTile";
 import { IndicadorEnVivo } from "@/components/IndicadorEnVivo";
 import { suscribirVentas } from "@/lib/realtime";
 import { CanalOrigen } from "@hangar421/shared";
+import { BotonesExportar } from "@/components/BotonesExportar";
+import { TarjetaDidi } from "@/components/TarjetaDidi";
+import { useResumenDidi } from "@/lib/resumenDidi";
+import { exportarVentasExcel, exportarVentasPdf, type DatosVentasExport } from "@/lib/exportarVentas";
 
 interface LineaVenta {
   id: string;
@@ -50,6 +54,8 @@ interface RespuestaVentas {
     porCanal: GrupoDesglose[];
     porUsuario: GrupoDesglose[];
     porDispositivo: GrupoDesglose[];
+    /** Transacciones y total por método de pago (ERP 0.1.2+; un servidor anterior no lo manda). */
+    porMetodo?: { metodo: string; numTransacciones: number; total: number }[];
   };
   paginacion: { total: number; limite: number; offset: number };
   items: Venta[];
@@ -74,9 +80,10 @@ interface FiltroOrigen {
   dispositivoId: string;
   turnoId: string;
   estadoTurno: string;
+  metodoPago: string;
 }
 
-const SIN_FILTRO_ORIGEN: FiltroOrigen = { usuarioId: "", canalOrigen: "", dispositivoId: "", turnoId: "", estadoTurno: "" };
+const SIN_FILTRO_ORIGEN: FiltroOrigen = { usuarioId: "", canalOrigen: "", dispositivoId: "", turnoId: "", estadoTurno: "", metodoPago: "" };
 
 /** Filtros que llegan en la URL — la pantalla de Turnos enlaza aquí con `?turnoId=…&desde=…`
  *  para ver las ventas de un turno. Se lee una sola vez al montar. */
@@ -90,6 +97,7 @@ function filtrosDeLaUrl(): Partial<FiltroOrigen> & { desde?: string; hasta?: str
     dispositivoId: leer("dispositivoId"),
     turnoId: leer("turnoId"),
     estadoTurno: leer("estadoTurno"),
+    metodoPago: leer("metodoPago"),
     desde: leer("desde"),
     hasta: leer("hasta"),
   };
@@ -134,6 +142,20 @@ const ETIQUETA_CANAL: Record<CanalOrigen, string> = {
   [CanalOrigen.PLATAFORMA_DELIVERY]: "Plataforma de reparto",
 };
 
+const ETIQUETA_METODO: Record<string, string> = {
+  EFECTIVO: "Efectivo", EFECTIVO_USD: "Dólares", TARJETA: "Tarjeta", TRANSFERENCIA: "Transferencia", QR: "QR", OTRO: "Otro", EN_LINEA: "Pagado en línea", MONEDERO_EMPLEADO: "Crédito empleado",
+};
+const etiquetaMetodo = (m: string) => ETIQUETA_METODO[m] ?? m;
+const ICONO_METODO: Record<string, string> = {
+  EFECTIVO: "💵", EFECTIVO_USD: "💲", TARJETA: "💳", TRANSFERENCIA: "🏦", QR: "📱", OTRO: "🧾", EN_LINEA: "🌐", MONEDERO_EMPLEADO: "👛",
+};
+
+const ETIQUETA_ESTADO_FILTRO: Record<string, string> = { COBRADO: "Cobradas", CANCELADO: "Canceladas", ABIERTO: "Abiertas", ENVIADO: "Enviadas", POR_COBRAR: "Por cobrar" };
+const ETIQUETA_ESTADO_TURNO: Record<string, string> = { ABIERTO: "Turno abierto", CERRADO: "Turno cerrado", SIN_TURNO: "Sin turno" };
+
+/** Tope de tickets por exportación: un rango enorme no debe colgar el navegador. */
+const TOPE_EXPORTAR = 5000;
+
 function hoyLocal(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -162,6 +184,8 @@ export default function VentasPage() {
   const [abierta, setAbierta] = useState<string | null>(null);
   const [actualizadoEn, setActualizadoEn] = useState<Date | null>(null);
   const [problemas, setProblemas] = useState<ProblemaSync[]>([]);
+  // DiDi del mismo rango y sucursal, con su ganancia real (se refresca con cada recarga).
+  const resumenDidi = useResumenDidi(seleccion?.sucursalId, desde, hasta, actualizadoEn?.getTime());
 
   const cargar = useCallback(async () => {
     if (!contexto) return;
@@ -206,6 +230,81 @@ export default function VentasPage() {
       .catch(() => setOpciones({ usuarios: [], dispositivos: [] }));
   }, [contexto, seleccion?.sucursalId]);
 
+  /**
+   * Para el PDF/Excel se traen TODOS los tickets del rango con los mismos filtros, no solo la
+   * página que se ve (el ERP entrega hasta 200 por consulta, así que se pide página por página).
+   */
+  async function datosExportacion(): Promise<DatosVentasExport> {
+    const base = new URLSearchParams({ desde, hasta, limite: "200" });
+    if (seleccion?.sucursalId) base.set("sucursalId", seleccion.sucursalId);
+    if (estado) base.set("estado", estado);
+    if (busquedaAplicada.trim()) base.set("busqueda", busquedaAplicada.trim());
+    for (const [clave, valor] of Object.entries(origen)) if (valor) base.set(clave, valor);
+
+    let primera: RespuestaVentas | null = null;
+    const todas: Venta[] = [];
+    for (let offset = 0; offset < TOPE_EXPORTAR; offset += 200) {
+      base.set("offset", String(offset));
+      const r = await apiFetch<RespuestaVentas>(`/pedidos/ventas?${base}`);
+      primera ??= r;
+      todas.push(...r.items);
+      if (r.items.length === 0 || todas.length >= r.paginacion.total) break;
+    }
+    if (!primera) throw new Error("No se pudieron cargar las ventas");
+
+    const filtros: string[] = [];
+    if (estado) filtros.push(`Estado: ${ETIQUETA_ESTADO_FILTRO[estado] ?? estado}`);
+    if (busquedaAplicada.trim()) filtros.push(`Búsqueda: "${busquedaAplicada.trim()}"`);
+    if (origen.usuarioId) filtros.push(`Usuario: ${opciones.usuarios.find((u) => u.id === origen.usuarioId)?.nombre ?? "—"}`);
+    if (origen.canalOrigen) filtros.push(`Plataforma: ${ETIQUETA_CANAL[origen.canalOrigen as CanalOrigen] ?? origen.canalOrigen}`);
+    if (origen.dispositivoId) filtros.push(`Dispositivo: ${opciones.dispositivos.find((d) => d.id === origen.dispositivoId)?.nombre ?? "—"}`);
+    if (origen.estadoTurno) filtros.push(ETIQUETA_ESTADO_TURNO[origen.estadoTurno] ?? origen.estadoTurno);
+    if (origen.turnoId) filtros.push("Solo un turno");
+    if (origen.metodoPago) filtros.push(`Método de pago: ${etiquetaMetodo(origen.metodoPago)}`);
+    if (todas.length < primera.paginacion.total) filtros.push(`Primeros ${todas.length} de ${primera.paginacion.total} tickets`);
+
+    const zona = primera.rango.zona;
+    return {
+      sucursal: seleccion?.nombre ?? "Todas las sucursales",
+      desde,
+      hasta,
+      zona,
+      filtros,
+      resumen: {
+        totalVendido: primera.resumen.totalVendido,
+        creditoEmpleados: primera.resumen.creditoEmpleados ?? 0,
+        numTickets: primera.resumen.numTickets,
+        ticketPromedio: primera.resumen.ticketPromedio,
+        porEstado: primera.resumen.porEstado,
+      },
+      porMetodo: (primera.desglose.porMetodo ?? []).map((m) => ({ ...m, nombre: etiquetaMetodo(m.metodo), esCredito: m.metodo === "MONEDERO_EMPLEADO" })),
+      desglose: [
+        { titulo: "Por plataforma", grupos: primera.desglose.porCanal.map((g) => ({ ...g, nombre: ETIQUETA_CANAL[g.clave as CanalOrigen] ?? g.nombre })) },
+        { titulo: "Por usuario", grupos: primera.desglose.porUsuario },
+        { titulo: "Por dispositivo", grupos: primera.desglose.porDispositivo },
+      ],
+      tickets: todas.map((v) => ({
+        folio: v.folio,
+        fecha: v.fecha,
+        estado: v.estado,
+        origen: ETIQUETA_CANAL[v.canalOrigen as CanalOrigen] ?? v.canalOrigen,
+        sucursal: v.sucursal?.nombre ?? "—",
+        atendio: v.cajero?.nombre ?? v.mesero?.nombre ?? "—",
+        dispositivo: v.dispositivo?.nombre ?? "—",
+        turno: v.turno
+          ? `${v.turno.estado === "ABIERTO" ? "Abierto" : "Cerrado"} · ${new Date(v.turno.fechaApertura).toLocaleDateString("es-MX", { timeZone: zona, day: "2-digit", month: "2-digit" })}`
+          : "—",
+        pagos: v.pagos,
+        subtotal: v.subtotal,
+        descuento: v.descuento,
+        impuestos: v.impuestos,
+        total: v.total,
+        items: v.items,
+      })),
+      etiquetaMetodo,
+    };
+  }
+
   function filtrarOrigen(cambio: Partial<FiltroOrigen>) {
     cambiarFiltro(() => setOrigen((o) => ({ ...o, ...cambio })));
   }
@@ -248,6 +347,13 @@ export default function VentasPage() {
       <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
         <h1 style={{ marginTop: 0, marginBottom: 0 }}>Ventas</h1>
         <IndicadorEnVivo actualizadoEn={actualizadoEn} />
+        <span style={{ marginLeft: "auto" }}>
+          <BotonesExportar
+            deshabilitado={!datos || datos.paginacion.total === 0}
+            onPdf={async () => exportarVentasPdf(await datosExportacion())}
+            onExcel={async () => exportarVentasExcel(await datosExportacion())}
+          />
+        </span>
       </div>
       <p style={{ color: "var(--h421-gray-400)", marginTop: -8 }}>
         Tickets de {seleccion?.nombre ?? "todas las sucursales"}. Solo consulta: cancelar un ticket o
@@ -272,6 +378,15 @@ export default function VentasPage() {
             <option value="ABIERTO">Abiertas</option>
             <option value="ENVIADO">Enviadas</option>
             <option value="POR_COBRAR">Por cobrar</option>
+          </select>
+        </label>
+        <label style={campo}>
+          <span style={etiqueta}>Método de pago</span>
+          <select value={origen.metodoPago} onChange={(e) => filtrarOrigen({ metodoPago: e.target.value })} style={entrada}>
+            <option value="">Todos</option>
+            {Object.entries(ETIQUETA_METODO).map(([valor, texto]) => (
+              <option key={valor} value={valor}>{texto}</option>
+            ))}
           </select>
         </label>
         <label style={{ ...campo, flex: 1, minWidth: 180 }}>
@@ -349,7 +464,38 @@ export default function VentasPage() {
         {(datos?.resumen.creditoEmpleados ?? 0) > 0 && (
           <StatTile etiqueta="👛 Crédito empleados (no es venta)" valor={`$${(datos?.resumen.creditoEmpleados ?? 0).toFixed(2)}`} acento="var(--h421-gray-400)" />
         )}
+        {resumenDidi && resumenDidi.tickets > 0 && (
+          <TarjetaDidi resumen={resumenDidi} onVerReporte={() => { window.location.href = "/reportes?vista=didi"; }} />
+        )}
       </div>
+
+      {/* Cuántas transacciones hubo con cada método y cuánto sumaron (ventas cobradas del rango
+          completo). Tocar uno filtra los tickets por ese método. */}
+      {datos && (datos.desglose.porMetodo?.length ?? 0) > 0 && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+            <strong style={{ fontSize: 15 }}>Resumen por método de pago</strong>
+            <span style={{ fontSize: 12, color: "var(--h421-gray-400)" }}>Un pago mixto cuenta en cada método con su monto real</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 10, marginTop: 10 }}>
+            {datos.desglose.porMetodo!.map((m) => {
+              const activo = origen.metodoPago === m.metodo;
+              const credito = m.metodo === "MONEDERO_EMPLEADO";
+              return (
+                <button key={m.metodo} onClick={() => filtrarOrigen({ metodoPago: activo ? "" : m.metodo })}
+                  title={activo ? "Quitar el filtro" : `Ver solo tickets con ${etiquetaMetodo(m.metodo)}`}
+                  style={{ textAlign: "left", padding: "10px 12px", borderRadius: 10, cursor: "pointer",
+                    background: activo ? "var(--h421-navy)" : "var(--h421-gray-50)", color: activo ? "#fff" : "inherit",
+                    border: `1px solid ${activo ? "var(--h421-navy)" : "var(--h421-gray-200)"}` }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, opacity: 0.8 }}>{ICONO_METODO[m.metodo] ?? "💳"} {etiquetaMetodo(m.metodo)}{credito ? " (no es venta)" : ""}</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, marginTop: 2 }}>${m.total.toFixed(2)}</div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>{m.numTransacciones} transacci{m.numTransacciones === 1 ? "ón" : "ones"}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Reporte por origen de las ventas cobradas del rango (no solo de la página). Tocar una
           fila filtra por ella: así se pasa del total de "Tablet 1" a sus tickets. */}
@@ -477,7 +623,7 @@ export default function VentasPage() {
                         "—"
                       )}
                     </td>
-                    <td style={celda}>{v.pagos.map((p) => p.metodo).join(", ") || "—"}</td>
+                    <td style={celda}>{v.pagos.map((p) => etiquetaMetodo(p.metodo)).join(", ") || "—"}</td>
                     <td style={{ ...celda, textAlign: "right", fontWeight: 700 }}>${v.total.toFixed(2)}</td>
                   </tr>
                   {abierta === v.id && (
@@ -497,7 +643,7 @@ export default function VentasPage() {
                         </div>
                         {v.pagos.length > 0 && (
                           <div style={{ fontSize: 13, marginTop: 6 }}>
-                            Pagos: {v.pagos.map((p) => `${p.metodo} $${p.monto.toFixed(2)}`).join(" · ")}
+                            Pagos: {v.pagos.map((p) => `${etiquetaMetodo(p.metodo)} $${p.monto.toFixed(2)}`).join(" · ")}
                           </div>
                         )}
                         <div style={{ fontSize: 13, marginTop: 6, display: "flex", gap: 20, flexWrap: "wrap", color: "var(--h421-gray-400)" }}>

@@ -1660,3 +1660,22 @@ model MarcaCambioErp {
 
   @@map("marcas_cambio_erp")
 }
+
+// Comisión pactada con una plataforma de reparto (hoy DiDi Food), para el reporte de ganancia
+// real del ERP. Los porcentajes y la fórmula viven en @hangar421/shared (comisionPlataforma.ts).
+// `subsidios`: pesos por unidad que la plataforma cofinancia en sus promociones, por productoId
+// ({ "<productoId>": 50 }); la venta solo registra lo que pagó el cliente, así que sin esto el
+// neto de esas promociones saldría por debajo de lo que de verdad paga la plataforma.
+model ConfigComisionPlataforma {
+  empresaId      String
+  plataforma     String   // "DIDI"
+  comisionPct    Decimal  @default(30) @db.Decimal(6, 2)
+  ivaComisionPct Decimal  @default(16) @db.Decimal(6, 2)
+  retencionPct   Decimal  @default(10.5) @db.Decimal(6, 2)
+  ivaVentaPct    Decimal  @default(16) @db.Decimal(6, 2)
+  subsidios      Json     @default("{}")
+  updatedAt      DateTime @updatedAt
+
+  @@id([empresaId, plataforma])
+  @@map("config_comision_plataforma")
+}
