@@ -9,6 +9,8 @@ import { IndicadorEnVivo } from "@/components/IndicadorEnVivo";
 import { suscribirVentas } from "@/lib/realtime";
 import { CanalOrigen } from "@hangar421/shared";
 import { BotonesExportar } from "@/components/BotonesExportar";
+import { TarjetaDidi } from "@/components/TarjetaDidi";
+import { useResumenDidi } from "@/lib/resumenDidi";
 import { exportarVentasExcel, exportarVentasPdf, type DatosVentasExport } from "@/lib/exportarVentas";
 
 interface LineaVenta {
@@ -182,6 +184,8 @@ export default function VentasPage() {
   const [abierta, setAbierta] = useState<string | null>(null);
   const [actualizadoEn, setActualizadoEn] = useState<Date | null>(null);
   const [problemas, setProblemas] = useState<ProblemaSync[]>([]);
+  // DiDi del mismo rango y sucursal, con su ganancia real (se refresca con cada recarga).
+  const resumenDidi = useResumenDidi(seleccion?.sucursalId, desde, hasta, actualizadoEn?.getTime());
 
   const cargar = useCallback(async () => {
     if (!contexto) return;
@@ -459,6 +463,9 @@ export default function VentasPage() {
         <StatTile etiqueta="Ticket promedio" valor={`$${(datos?.resumen.ticketPromedio ?? 0).toFixed(2)}`} acento="var(--h421-amber)" />
         {(datos?.resumen.creditoEmpleados ?? 0) > 0 && (
           <StatTile etiqueta="👛 Crédito empleados (no es venta)" valor={`$${(datos?.resumen.creditoEmpleados ?? 0).toFixed(2)}`} acento="var(--h421-gray-400)" />
+        )}
+        {resumenDidi && resumenDidi.tickets > 0 && (
+          <TarjetaDidi resumen={resumenDidi} onVerReporte={() => { window.location.href = "/reportes?vista=didi"; }} />
         )}
       </div>
 

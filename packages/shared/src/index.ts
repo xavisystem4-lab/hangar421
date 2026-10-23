@@ -15,3 +15,4 @@ export * from "./presentacion";
 export * from "./monedero";
 export * from "./promociones";
 export * from "./categoriasInsumo";
+export * from "./comisionPlataforma";

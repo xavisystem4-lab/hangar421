@@ -1,7 +1,10 @@
-import { Injectable } from "@nestjs/common";
-import { EstadoPedido } from "@hangar421/shared";
+import { BadRequestException, Injectable } from "@nestjs/common";
+import { CanalOrigen, CONFIG_COMISION_DIDI_POR_OMISION, EstadoPedido, type ConfigComisionPlataforma } from "@hangar421/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { hoyEnZona, limiteDelDia } from "../pedidos/ventas-consulta";
+import { armarReporteDidi } from "./reporte-didi";
+
+const PLATAFORMA_DIDI = "DIDI";
 
 /** Una variante de un producto en el reporte: la combinación de opciones de modificador con la
  *  que se vendió ("Grande · Leche de avena") y cuántas unidades llevó. */
@@ -204,4 +207,117 @@ export class ReportesService {
       _count: true,
     });
   }
+
+  // ---------------------------------------------------------------------------------------------
+  // Reporte DiDi: lo vendido por la plataforma y la ganancia real después de su comisión.
+  // ---------------------------------------------------------------------------------------------
+
+  /** Comisión pactada con DiDi y subsidios por producto (con su nombre, para editarlos). */
+  async configDidi(empresaId: string) {
+    const fila = await this.prisma.configComisionPlataforma.findUnique({ where: { empresaId_plataforma: { empresaId, plataforma: PLATAFORMA_DIDI } } });
+    const config: ConfigComisionPlataforma = fila
+      ? { comisionPct: Number(fila.comisionPct), ivaComisionPct: Number(fila.ivaComisionPct), retencionPct: Number(fila.retencionPct), ivaVentaPct: Number(fila.ivaVentaPct) }
+      : { ...CONFIG_COMISION_DIDI_POR_OMISION };
+    const subsidios = limpiarSubsidios(fila?.subsidios);
+    const productos = Object.keys(subsidios).length
+      ? await this.prisma.producto.findMany({ where: { empresaId, id: { in: Object.keys(subsidios) } }, select: { id: true, nombre: true } })
+      : [];
+    return {
+      ...config,
+      subsidios: productos.map((p) => ({ productoId: p.id, nombre: p.nombre, monto: subsidios[p.id] })).sort((a, b) => a.nombre.localeCompare(b.nombre, "es")),
+      personalizada: !!fila,
+    };
+  }
+
+  async guardarConfigDidi(empresaId: string, dto: Partial<ConfigComisionPlataforma> & { subsidios?: { productoId: string; monto: number }[] }) {
+    const num = (v: unknown, nombre: string, max = 100) => {
+      if (v === undefined) return undefined;
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < 0 || n > max) throw new BadRequestException(`${nombre} debe estar entre 0 y ${max}`);
+      return n;
+    };
+    const datos = {
+      comisionPct: num(dto.comisionPct, "La comisión"),
+      ivaComisionPct: num(dto.ivaComisionPct, "El IVA de la comisión"),
+      retencionPct: num(dto.retencionPct, "La retención"),
+      ivaVentaPct: num(dto.ivaVentaPct, "El IVA de la venta"),
+    };
+    let subsidios: Record<string, number> | undefined;
+    if (dto.subsidios) {
+      const ids = dto.subsidios.map((s) => s.productoId);
+      const validos = new Set(
+        (await this.prisma.producto.findMany({ where: { empresaId, id: { in: ids } }, select: { id: true } })).map((p) => p.id),
+      );
+      subsidios = {};
+      for (const s of dto.subsidios) {
+        const monto = num(s.monto, "El subsidio", 100000) ?? 0;
+        if (validos.has(s.productoId) && monto > 0) subsidios[s.productoId] = Math.round(monto * 100) / 100;
+      }
+    }
+    const definidos = Object.fromEntries(Object.entries(datos).filter(([, v]) => v !== undefined));
+    await this.prisma.configComisionPlataforma.upsert({
+      where: { empresaId_plataforma: { empresaId, plataforma: PLATAFORMA_DIDI } },
+      create: { empresaId, plataforma: PLATAFORMA_DIDI, ...CONFIG_COMISION_DIDI_POR_OMISION, ...definidos, subsidios: subsidios ?? {} },
+      update: { ...definidos, ...(subsidios ? { subsidios } : {}) },
+    });
+    return this.configDidi(empresaId);
+  }
+
+  /**
+   * Ventas COBRADAS de DiDi (canal de plataforma de reparto) del rango, días en la zona de la
+   * sucursal ("2026-10-23"), con el neto de cada una según la comisión configurada.
+   */
+  async reporteDidi(empresaId: string, filtro: { sucursalId?: string; desde?: string; hasta?: string }) {
+    const zona = await this.zonaHoraria(empresaId, filtro.sucursalId);
+    const desde = filtro.desde ?? hoyEnZona(zona);
+    const hasta = filtro.hasta ?? desde;
+    const [cfg, pedidos] = await Promise.all([
+      this.configDidi(empresaId),
+      this.prisma.pedido.findMany({
+        where: {
+          empresaId,
+          ...(filtro.sucursalId ? { sucursalId: filtro.sucursalId } : {}),
+          estado: EstadoPedido.COBRADO,
+          canalOrigen: CanalOrigen.PLATAFORMA_DELIVERY,
+          createdAt: { gte: limiteDelDia(desde, zona, "inicio"), lte: limiteDelDia(hasta, zona, "fin") },
+        },
+        select: {
+          id: true, folio: true, createdAt: true, subtotal: true, total: true,
+          sucursal: { select: { nombre: true } },
+          pagos: { select: { metodo: true, monto: true } },
+          items: { select: { productoId: true, cantidad: true, precioUnitario: true, producto: { select: { nombre: true } } } },
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+    const subsidios = Object.fromEntries(cfg.subsidios.map((s) => [s.productoId, s.monto]));
+    const { subsidios: _lista, personalizada, ...config } = cfg;
+    const reporte = armarReporteDidi(
+      pedidos.map((p) => ({
+        id: p.id,
+        folio: p.folio,
+        fecha: p.createdAt,
+        sucursal: p.sucursal?.nombre ?? "—",
+        subtotal: Number(p.subtotal),
+        total: Number(p.total),
+        pagos: p.pagos.map((x) => ({ metodo: x.metodo, monto: Number(x.monto) })),
+        items: p.items.map((i) => ({ productoId: i.productoId, nombre: i.producto?.nombre ?? "—", cantidad: i.cantidad, importe: i.cantidad * Number(i.precioUnitario) })),
+      })),
+      subsidios,
+      config,
+      zona,
+    );
+    return { rango: { desde, hasta, zona }, ...reporte, configPersonalizada: personalizada, subsidios: cfg.subsidios };
+  }
+}
+
+/** `{ productoId: monto }` saneado: lo que no sea un monto positivo se descarta. */
+function limpiarSubsidios(valor: unknown): Record<string, number> {
+  if (!valor || typeof valor !== "object" || Array.isArray(valor)) return {};
+  const r: Record<string, number> = {};
+  for (const [k, v] of Object.entries(valor as Record<string, unknown>)) {
+    const n = Number(v);
+    if (Number.isFinite(n) && n > 0) r[k] = n;
+  }
+  return r;
 }

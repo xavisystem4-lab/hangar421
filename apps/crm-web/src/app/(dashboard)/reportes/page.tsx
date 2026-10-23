@@ -10,6 +10,9 @@ import { StatTile } from "@/components/StatTile";
 import { BarChart } from "@/components/BarChart";
 import { ReporteCreditoEmpleados } from "@/components/ReporteCreditoEmpleados";
 import { BotonesExportar } from "@/components/BotonesExportar";
+import { ReporteDidi } from "@/components/ReporteDidi";
+import { TarjetaDidi } from "@/components/TarjetaDidi";
+import { useResumenDidi } from "@/lib/resumenDidi";
 import { exportarReporteVentasExcel, exportarReporteVentasPdf, type DatosReporteVentas } from "@/lib/exportarVentas";
 
 interface VentaPorProducto {
@@ -46,8 +49,14 @@ export default function ReportesPage() {
   const [porProducto, setPorProducto] = useState<VentaPorProducto[]>([]);
   const [porMetodo, setPorMetodo] = useState<VentaPorMetodo[]>([]);
   const [cargando, setCargando] = useState(false);
-  /** "ventas" = el reporte de siempre; "credito" = consumo del crédito de cada empleada. */
-  const [vista, setVista] = useState<"ventas" | "credito">("ventas");
+  /** "ventas" = el reporte de siempre; "credito" = consumo del crédito de cada empleada;
+   *  "didi" = ventas de DiDi y ganancia real. `?vista=didi` abre directo esa pestaña. */
+  const [vista, setVista] = useState<"ventas" | "credito" | "didi">(() => {
+    if (typeof window === "undefined") return "ventas";
+    const v = new URLSearchParams(window.location.search).get("vista");
+    return v === "didi" || v === "credito" ? v : "ventas";
+  });
+  const resumenDidi = useResumenDidi(sucursalId, desde, hasta);
 
   // La sucursal la fija el contexto global (cabecera). Antes esta página elegía siempre la
   // primera del listado, así que un reporte podía ser de otra sucursal sin avisar.
@@ -120,7 +129,7 @@ export default function ReportesPage() {
       </div>
 
       <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-        {([["ventas", "Ventas"], ["credito", "👛 Crédito de empleados"]] as const).map(([id, etiqueta]) => (
+        {([["ventas", "Ventas"], ["didi", "🛵 DiDi"], ["credito", "👛 Crédito de empleados"]] as const).map(([id, etiqueta]) => (
           <button key={id} onClick={() => setVista(id)}
             style={{ padding: "8px 14px", fontSize: 13, fontWeight: 700, borderRadius: 999,
               background: vista === id ? "var(--h421-navy)" : "transparent", color: vista === id ? "#fff" : "var(--h421-navy-texto)",
@@ -132,6 +141,8 @@ export default function ReportesPage() {
 
       {vista === "credito" ? (
         <ReporteCreditoEmpleados sucursalId={sucursalId} sucursalNombre={seleccion?.nombre ?? undefined} desde={desde} hasta={hasta} />
+      ) : vista === "didi" ? (
+        <ReporteDidi sucursalId={sucursalId} sucursalNombre={seleccion?.nombre ?? undefined} desde={desde} hasta={hasta} />
       ) : (<>
       <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
         <BotonesExportar
@@ -146,6 +157,7 @@ export default function ReportesPage() {
         <StatTile etiqueta="Ventas en el rango" valor={`$${totalVentas.toFixed(2)}`} acento="var(--h421-green)" />
         <StatTile etiqueta="Pagos registrados" valor={String(totalPagos)} acento="var(--h421-blue)" />
         <StatTile etiqueta="Productos distintos vendidos" valor={String(porProducto.length)} acento="var(--h421-amber)" />
+        {resumenDidi && resumenDidi.tickets > 0 && <TarjetaDidi resumen={resumenDidi} onVerReporte={() => setVista("didi")} />}
       </div>
 
       <div className="h421-grid-2col" style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 16, marginTop: 20 }}>

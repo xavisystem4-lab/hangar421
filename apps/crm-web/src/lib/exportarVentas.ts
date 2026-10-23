@@ -344,3 +344,165 @@ export async function exportarVentasExcel(d: DatosVentasExport) {
     archivoVentas(d),
   );
 }
+
+// ---------------------------------------------------------------------------------------------
+// Reportes → DiDi (ganancia real después de la comisión)
+// ---------------------------------------------------------------------------------------------
+
+interface TotalesDidi {
+  tickets: number;
+  bruto: number;
+  descuento: number;
+  pagadoCliente: number;
+  subsidio: number;
+  comision: number;
+  retencion: number;
+  neto: number;
+  porcentajeNeto: number;
+}
+
+export interface ReporteDidi {
+  rango: { desde: string; hasta: string; zona: string };
+  config: { comisionPct: number; ivaComisionPct: number; retencionPct: number; ivaVentaPct: number };
+  resumen: TotalesDidi;
+  porTipoPago: (TotalesDidi & { tipo: string })[];
+  porDia: (TotalesDidi & { dia: string })[];
+  porProducto: { productoId: string; nombre: string; unidades: number; bruto: number; pagadoCliente: number; subsidio: number; neto: number; netoPorUnidad: number }[];
+  tickets: { id: string; folio: string; fecha: string; sucursal: string; tipoPago: string; bruto: number; descuento: number; pagadoCliente: number; subsidio: number; comision: number; retencion: number; neto: number; productos: string }[];
+  subsidios: { productoId: string; nombre: string; monto: number }[];
+  configPersonalizada: boolean;
+}
+
+export const ETIQUETA_TIPO_PAGO_DIDI: Record<string, string> = { EN_LINEA: "Pagado en la app / tarjeta", EFECTIVO: "Efectivo", MIXTO: "Mixto" };
+const tipoDidi = (t: string) => ETIQUETA_TIPO_PAGO_DIDI[t] ?? t;
+const diaCorto = (d: string) => d.split("-").reverse().join("/");
+export const textoReglaDidi = (c: ReporteDidi["config"]) =>
+  `Comisión ${c.comisionPct}% + IVA ${c.ivaComisionPct}% · retenciones ${c.retencionPct}% (solo pagos en la app)`;
+
+export async function exportarDidiPdf(r: ReporteDidi, sucursal: string) {
+  const doc = new jsPDF({ unit: "pt", format: "letter", orientation: "landscape" });
+  let y = encabezado(doc, "DiDi · Ganancia real", `${sucursal} · ${periodoTexto(r.rango.desde, r.rango.hasta)} · ${textoReglaDidi(r.config)}`);
+  const s = r.resumen;
+  y = totales(doc, y, [
+    ["Pedidos", String(s.tickets)],
+    ["Vendido en DiDi (cliente)", dinero(s.pagadoCliente)],
+    ["Subsidio DiDi", dinero(s.subsidio)],
+    ["Comisión DiDi (con IVA)", dinero(s.comision)],
+    ["Retenciones", dinero(s.retencion)],
+    ["Ganancia real", dinero(s.neto)],
+    ["% que te queda", `${s.porcentajeNeto.toFixed(1)}%`],
+  ]);
+
+  y = titulo(doc, "Cómo se llega a la ganancia real", y);
+  autoTable(doc, {
+    startY: y,
+    body: [
+      ["Precio de lista en DiDi", dinero(s.bruto)],
+      ["− Promociones (las paga el negocio)", `−${dinero(s.descuento)}`],
+      ["= Pagado por los clientes", dinero(s.pagadoCliente)],
+      ["+ Subsidio de DiDi en promociones", dinero(s.subsidio)],
+      ["− Comisión de DiDi (con IVA)", `−${dinero(s.comision)}`],
+      ["− Retenciones de impuestos (pagos en la app)", `−${dinero(s.retencion)}`],
+      ["= Ganancia real para el negocio", dinero(s.neto)],
+    ],
+    theme: "plain",
+    styles: { fontSize: 10, cellPadding: 3 },
+    columnStyles: { 1: { halign: "right", fontStyle: "bold" } },
+    didParseCell: (c) => { if (c.row.index === 6) { c.cell.styles.fillColor = [220, 252, 231]; c.cell.styles.fontStyle = "bold"; } },
+    margin: { left: 40 }, tableWidth: 360,
+  });
+  const yIzq = finalY(doc, y);
+  autoTable(doc, {
+    startY: y,
+    head: [["Tipo de pago", "Pedidos", "Pagado cliente", "Comisión", "Retenciones", "Ganancia real", "%"]],
+    body: r.porTipoPago.map((t) => [tipoDidi(t.tipo), String(t.tickets), dinero(t.pagadoCliente), dinero(t.comision), dinero(t.retencion), dinero(t.neto), `${t.porcentajeNeto.toFixed(1)}%`]),
+    headStyles: { fillColor: NAVY }, styles: { fontSize: 9 },
+    columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" }, 5: { halign: "right", fontStyle: "bold" }, 6: { halign: "right" } },
+    didParseCell: derecha(1, 2, 3, 4, 5, 6) as never,
+    margin: { left: 420, right: 40 },
+  });
+  y = Math.max(yIzq, finalY(doc, y)) + 24;
+
+  y = titulo(doc, "Por día", y);
+  autoTable(doc, {
+    startY: y,
+    head: [["Día", "Pedidos", "Precio de lista", "Promociones", "Pagado cliente", "Subsidio", "Comisión", "Retenciones", "Ganancia real"]],
+    body: r.porDia.map((d) => [diaCorto(d.dia), String(d.tickets), dinero(d.bruto), dinero(d.descuento), dinero(d.pagadoCliente), dinero(d.subsidio), dinero(d.comision), dinero(d.retencion), dinero(d.neto)]),
+    foot: [["Total", String(s.tickets), dinero(s.bruto), dinero(s.descuento), dinero(s.pagadoCliente), dinero(s.subsidio), dinero(s.comision), dinero(s.retencion), dinero(s.neto)]],
+    headStyles: { fillColor: NAVY }, footStyles: { fillColor: [243, 244, 246], textColor: NAVY },
+    styles: { fontSize: 8.5 },
+    columnStyles: Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8].map((i) => [i, { halign: "right" as const }])),
+    didParseCell: derecha(1, 2, 3, 4, 5, 6, 7, 8) as never,
+    margin: { left: 40, right: 40 },
+  });
+  y = finalY(doc, y) + 24;
+
+  y = titulo(doc, "Por producto (de mayor a menor ganancia)", y);
+  autoTable(doc, {
+    startY: y,
+    head: [["Producto", "Unidades", "Precio de lista", "Pagado cliente", "Subsidio", "Ganancia real", "Ganancia por unidad"]],
+    body: r.porProducto.map((p) => [p.nombre, String(p.unidades), dinero(p.bruto), dinero(p.pagadoCliente), dinero(p.subsidio), dinero(p.neto), dinero(p.netoPorUnidad)]),
+    headStyles: { fillColor: NARANJA }, styles: { fontSize: 8.5 },
+    columnStyles: Object.fromEntries([1, 2, 3, 4, 5, 6].map((i) => [i, { halign: "right" as const }])),
+    didParseCell: derecha(1, 2, 3, 4, 5, 6) as never,
+    margin: { left: 40, right: 40 },
+  });
+  y = finalY(doc, y) + 24;
+
+  y = titulo(doc, `Pedidos (${r.tickets.length})`, y);
+  autoTable(doc, {
+    startY: y,
+    head: [["Folio", "Fecha", "Sucursal", "Pago", "Productos", "Lista", "Promo", "Cliente", "Subsidio", "Comisión", "Retención", "Ganancia"]],
+    body: r.tickets.map((t) => [t.folio, fechaHora(t.fecha, r.rango.zona), t.sucursal, tipoDidi(t.tipoPago), t.productos, dinero(t.bruto), dinero(t.descuento), dinero(t.pagadoCliente), dinero(t.subsidio), dinero(t.comision), dinero(t.retencion), dinero(t.neto)]),
+    headStyles: { fillColor: NARANJA }, styles: { fontSize: 7, cellPadding: 2.5, valign: "top" },
+    columnStyles: { 4: { cellWidth: 150 }, ...Object.fromEntries([5, 6, 7, 8, 9, 10, 11].map((i) => [i, { halign: "right" as const }])), 11: { halign: "right", fontStyle: "bold" } },
+    didParseCell: derecha(5, 6, 7, 8, 9, 10, 11) as never,
+    margin: { left: 40, right: 40 },
+  });
+  await guardarPdf(doc, `didi-ganancia_${r.rango.desde}_a_${r.rango.hasta}`);
+}
+
+export async function exportarDidiExcel(r: ReporteDidi, sucursal: string) {
+  const s = r.resumen;
+  const resumen: (string | number)[][] = [
+    ["HANGAR 421 · DiDi · Ganancia real"],
+    ["Sucursal", sucursal],
+    ["Periodo", periodoTexto(r.rango.desde, r.rango.hasta)],
+    ["Regla", textoReglaDidi(r.config)],
+    [],
+    ["Pedidos", s.tickets],
+    ["Precio de lista en DiDi", redondo(s.bruto)],
+    ["Promociones (las paga el negocio)", redondo(s.descuento)],
+    ["Pagado por los clientes", redondo(s.pagadoCliente)],
+    ["Subsidio de DiDi", redondo(s.subsidio)],
+    ["Comisión de DiDi (con IVA)", redondo(s.comision)],
+    ["Retenciones (pagos en la app)", redondo(s.retencion)],
+    ["Ganancia real para el negocio", redondo(s.neto)],
+    ["% que te queda", s.porcentajeNeto / 100],
+    [],
+    ["Tipo de pago", "Pedidos", "Pagado cliente", "Comisión", "Retenciones", "Ganancia real"],
+    ...r.porTipoPago.map((t) => [tipoDidi(t.tipo), t.tickets, redondo(t.pagadoCliente), redondo(t.comision), redondo(t.retencion), redondo(t.neto)]),
+  ];
+  const dias: (string | number)[][] = [
+    ["Día", "Pedidos", "Precio de lista", "Promociones", "Pagado cliente", "Subsidio", "Comisión", "Retenciones", "Ganancia real"],
+    ...r.porDia.map((d) => [diaCorto(d.dia), d.tickets, redondo(d.bruto), redondo(d.descuento), redondo(d.pagadoCliente), redondo(d.subsidio), redondo(d.comision), redondo(d.retencion), redondo(d.neto)]),
+    ["Total", s.tickets, redondo(s.bruto), redondo(s.descuento), redondo(s.pagadoCliente), redondo(s.subsidio), redondo(s.comision), redondo(s.retencion), redondo(s.neto)],
+  ];
+  const productos: (string | number)[][] = [
+    ["Producto", "Unidades", "Precio de lista", "Pagado cliente", "Subsidio", "Ganancia real", "Ganancia por unidad"],
+    ...r.porProducto.map((p) => [p.nombre, p.unidades, redondo(p.bruto), redondo(p.pagadoCliente), redondo(p.subsidio), redondo(p.neto), redondo(p.netoPorUnidad)]),
+  ];
+  const tickets: (string | number)[][] = [
+    ["Folio", "Fecha y hora", "Sucursal", "Tipo de pago", "Productos", "Precio de lista", "Promoción", "Pagado cliente", "Subsidio", "Comisión", "Retención", "Ganancia real"],
+    ...r.tickets.map((t) => [t.folio, fechaHora(t.fecha, r.rango.zona), t.sucursal, tipoDidi(t.tipoPago), t.productos, redondo(t.bruto), redondo(t.descuento), redondo(t.pagadoCliente), redondo(t.subsidio), redondo(t.comision), redondo(t.retencion), redondo(t.neto)]),
+  ];
+  await guardarExcel(
+    [
+      { nombre: "Resumen", filas: resumen, anchos: [36, 14, 14, 12, 12, 14] },
+      { nombre: "Por día", filas: dias, anchos: [12, 9, 14, 13, 14, 11, 12, 12, 14] },
+      { nombre: "Por producto", filas: productos, anchos: [36, 10, 14, 14, 11, 14, 16] },
+      { nombre: "Pedidos", filas: tickets, anchos: [16, 18, 16, 22, 40, 12, 11, 13, 10, 11, 11, 13] },
+    ],
+    `didi-ganancia_${r.rango.desde}_a_${r.rango.hasta}`,
+  );
+}
