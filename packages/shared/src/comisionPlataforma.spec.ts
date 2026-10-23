@@ -1,41 +1,48 @@
-import { netoPedidoPlataforma, netoPlataforma } from "./comisionPlataforma";
+import { netoPedidoPlataforma, netoPlataforma, porcentajeComision } from "./comisionPlataforma";
 
-/** Valores tomados de la hoja de precios de DiDi de Hangar 421 ("monto a recibir aprox."). */
-describe("netoPlataforma — reproduce la hoja de DiDi", () => {
-  const casos: [string, number, number, number, number][] = [
-    // producto, pagado por el cliente, subsidio DiDi, esperado efectivo, esperado tarjeta/app
-    ["The Perfect Match", 150, 0, 98, 84],
-    ["Órbita", 180, 0, 117, 101],
-    ["Cortado", 98, 0, 64, 55],
-    ["Latte Frío", 110, 0, 72, 62],
-    ["Latte Maple y Sal (31 % desc.)", 97, 0, 63, 54],
-    ["Blue Lover (50 % desc.)", 140, 0, 91, 79],
-    ["Latte caliente (promo con subsidio)", 50, 50, 65, 56],
-    ["Americano caliente (promo con subsidio)", 49, 27, 50, 43],
-  ];
-  it.each(casos)("%s", (_n, pagado, subsidio, efectivo, tarjeta) => {
-    expect(Math.round(netoPlataforma({ pagadoCliente: pagado, subsidio, enLinea: false }).neto)).toBe(efectivo);
-    expect(Math.round(netoPlataforma({ pagadoCliente: pagado, subsidio, enLinea: true }).neto)).toBe(tarjeta);
+describe("netoPlataforma — 43 % con tarjeta / 35 % en efectivo", () => {
+  it("pagado con tarjeta o en la app: DiDi se queda el 43 % del total", () => {
+    expect(netoPlataforma({ pagadoCliente: 100, enLinea: true })).toEqual({ base: 100, comision: 43, neto: 57 });
+    expect(netoPlataforma({ pagadoCliente: 110, enLinea: true })).toEqual({ base: 110, comision: 47.3, neto: 62.7 });
   });
 
-  it("desglosa comisión con IVA y retención solo en pagos en línea", () => {
-    expect(netoPlataforma({ pagadoCliente: 100, enLinea: false })).toEqual({ base: 100, comision: 34.8, retencion: 0, neto: 65.2 });
-    expect(netoPlataforma({ pagadoCliente: 116, enLinea: true })).toEqual({ base: 116, comision: 40.37, retencion: 10.5, neto: 65.13 });
+  it("pagado en efectivo: DiDi se queda el 35 % del total", () => {
+    expect(netoPlataforma({ pagadoCliente: 100, enLinea: false })).toEqual({ base: 100, comision: 35, neto: 65 });
+    expect(netoPlataforma({ pagadoCliente: 77, enLinea: false })).toEqual({ base: 77, comision: 26.95, neto: 50.05 });
   });
 
-  it("respeta una comisión distinta", () => {
-    expect(netoPlataforma({ pagadoCliente: 100, enLinea: false }, { comisionPct: 25, ivaComisionPct: 16, retencionPct: 0, ivaVentaPct: 16 }).neto).toBe(71);
+  it("el subsidio de DiDi suma a la base", () => {
+    expect(netoPlataforma({ pagadoCliente: 50, subsidio: 50, enLinea: true })).toEqual({ base: 100, comision: 43, neto: 57 });
+  });
+
+  it("respeta porcentajes configurados", () => {
+    const cfg = { comisionEnLineaPct: 40, comisionEfectivoPct: 30 };
+    expect(netoPlataforma({ pagadoCliente: 100, enLinea: true }, cfg).neto).toBe(60);
+    expect(netoPlataforma({ pagadoCliente: 100, enLinea: false }, cfg).neto).toBe(70);
+    expect(porcentajeComision(true, cfg)).toBe(40);
   });
 });
 
 describe("netoPedidoPlataforma", () => {
   const latteFrio = { productoId: "lf", nombre: "Latte Frío", cantidad: 1, importe: 110 };
 
-  it("pedido pagado en la app con 30 % de promoción", () => {
+  it("pedido pagado en la app con 30 % de promoción: 43 % sobre lo que pagó el cliente", () => {
     const r = netoPedidoPlataforma({ total: 77, subtotal: 110, pagos: [{ metodo: "EN_LINEA", monto: 77 }], items: [latteFrio] });
-    expect(r).toMatchObject({ bruto: 110, descuento: 33, pagadoCliente: 77, subsidio: 0, tipoPago: "EN_LINEA" });
-    expect(r.neto).toBeCloseTo(77 * 0.5615, 0);
+    expect(r).toMatchObject({ bruto: 110, descuento: 33, pagadoCliente: 77, subsidio: 0, comision: 33.11, neto: 43.89, tipoPago: "EN_LINEA" });
     expect(r.porProducto[0].neto).toBeCloseTo(r.neto, 1);
+  });
+
+  it("la tarjeta normal también cuenta como pago con tarjeta (43 %)", () => {
+    expect(netoPedidoPlataforma({ total: 100, subtotal: 100, pagos: [{ metodo: "TARJETA", monto: 100 }], items: [] })).toMatchObject({ tipoPago: "EN_LINEA", neto: 57 });
+  });
+
+  it("efectivo y dólares cuentan como efectivo (35 %)", () => {
+    expect(netoPedidoPlataforma({ total: 100, subtotal: 100, pagos: [{ metodo: "EFECTIVO", monto: 100 }], items: [] })).toMatchObject({ tipoPago: "EFECTIVO", comision: 35, neto: 65 });
+    expect(netoPedidoPlataforma({ total: 100, subtotal: 100, pagos: [{ metodo: "EFECTIVO_USD", monto: 100 }], items: [] }).neto).toBe(65);
+  });
+
+  it("sin pagos registrados se asume pagado en la app", () => {
+    expect(netoPedidoPlataforma({ total: 100, subtotal: 100, pagos: [], items: [] })).toMatchObject({ tipoPago: "EN_LINEA", neto: 57 });
   });
 
   it("suma el subsidio capturado por producto", () => {
@@ -43,20 +50,12 @@ describe("netoPedidoPlataforma", () => {
       { total: 49, subtotal: 49, pagos: [{ metodo: "EN_LINEA", monto: 49 }], items: [{ productoId: "latte", nombre: "Latte", cantidad: 1, importe: 49 }] },
       { latte: 50 },
     );
-    expect(r.subsidio).toBe(50);
-    expect(r.base).toBe(99);
-    expect(Math.round(r.neto)).toBe(56);
+    expect(r).toMatchObject({ subsidio: 50, base: 99, comision: 42.57, neto: 56.43 });
   });
 
   it("un pago mixto se calcula por partes", () => {
     const r = netoPedidoPlataforma({ total: 200, subtotal: 200, pagos: [{ metodo: "EFECTIVO", monto: 100 }, { metodo: "EN_LINEA", monto: 100 }], items: [{ ...latteFrio, importe: 200 }] });
-    expect(r.tipoPago).toBe("MIXTO");
-    expect(r.neto).toBeCloseTo(65.2 + netoPlataforma({ pagadoCliente: 100, enLinea: true }).neto, 1);
-  });
-
-  it("efectivo no lleva retención; sin pagos se asume pagado en la app", () => {
-    expect(netoPedidoPlataforma({ total: 100, subtotal: 100, pagos: [{ metodo: "EFECTIVO", monto: 100 }], items: [] })).toMatchObject({ tipoPago: "EFECTIVO", retencion: 0, neto: 65.2 });
-    expect(netoPedidoPlataforma({ total: 100, subtotal: 100, pagos: [], items: [] }).tipoPago).toBe("EN_LINEA");
+    expect(r).toMatchObject({ tipoPago: "MIXTO", comision: 78, neto: 122 });
   });
 
   it("reparte el neto entre los productos del ticket", () => {

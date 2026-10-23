@@ -216,7 +216,7 @@ export class ReportesService {
   async configDidi(empresaId: string) {
     const fila = await this.prisma.configComisionPlataforma.findUnique({ where: { empresaId_plataforma: { empresaId, plataforma: PLATAFORMA_DIDI } } });
     const config: ConfigComisionPlataforma = fila
-      ? { comisionPct: Number(fila.comisionPct), ivaComisionPct: Number(fila.ivaComisionPct), retencionPct: Number(fila.retencionPct), ivaVentaPct: Number(fila.ivaVentaPct) }
+      ? { comisionEnLineaPct: Number(fila.comisionEnLineaPct), comisionEfectivoPct: Number(fila.comisionEfectivoPct) }
       : { ...CONFIG_COMISION_DIDI_POR_OMISION };
     const subsidios = limpiarSubsidios(fila?.subsidios);
     const productos = Object.keys(subsidios).length
@@ -237,10 +237,8 @@ export class ReportesService {
       return n;
     };
     const datos = {
-      comisionPct: num(dto.comisionPct, "La comisión"),
-      ivaComisionPct: num(dto.ivaComisionPct, "El IVA de la comisión"),
-      retencionPct: num(dto.retencionPct, "La retención"),
-      ivaVentaPct: num(dto.ivaVentaPct, "El IVA de la venta"),
+      comisionEnLineaPct: num(dto.comisionEnLineaPct, "La comisión con tarjeta"),
+      comisionEfectivoPct: num(dto.comisionEfectivoPct, "La comisión en efectivo"),
     };
     let subsidios: Record<string, number> | undefined;
     if (dto.subsidios) {
