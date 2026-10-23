@@ -1,4 +1,4 @@
-import { JwtPayload, RolUsuario, SyncEntidad, SyncEnvelope, SyncOperacion } from "@hangar421/shared";
+import { JwtPayload, RolUsuario, SyncEntidad, SyncEnvelope, SyncOperacion, SyncStatus } from "@hangar421/shared";
 import { PrismaService } from "../prisma/prisma.service";
 
 /**
@@ -34,7 +34,9 @@ export class AlcanceSync {
   /** null si el item está dentro del alcance de la sesión; si no, el motivo del rechazo. */
   async motivoDeRechazo(item: SyncEnvelope): Promise<string | null> {
     if (!item.sucursalId) return "La operación no indica sucursal";
-    if (!(await this.sucursalAccesible(item.sucursalId))) return this.motivoSinAcceso(item.sucursalId);
+    if (!(await this.sucursalAccesible(item.sucursalId)) && !(await this.dispositivoEstuvoEnSucursal(item))) {
+      return this.motivoSinAcceso(item.sucursalId);
+    }
 
     const p = (item.payload ?? {}) as any;
     const ajena = await this.referenciaAjena(item, p);
@@ -139,6 +141,57 @@ export class AlcanceSync {
       default:
         return null;
     }
+  }
+
+  private readonly enlacesAnteriores = new Map<string, boolean>();
+
+  /**
+   * La MISMA tablet que envía estuvo enlazada antes a la sucursal del evento.
+   *
+   * Pasó en producción: una tablet se enlazó primero a Mecánicos, registró ahí una venta y un
+   * movimiento de caja, y antes de subirlos se volvió a enlazar a Benito Juárez. Su sesión nueva
+   * (usuario-terminal de Benito Juárez) ya no tiene Mecánicos, así que el ERP rechazaba esos
+   * eventos para siempre y la tablet mostraba "No se pudo subir" cada vez. Son operaciones
+   * legítimas: se hicieron cuando la tablet sí tenía acceso a esa sucursal. Se aceptan EN SU
+   * sucursal (nunca se mueven a la actual, eso falsearía dónde ocurrió la venta).
+   *
+   * La prueba sale del ERP, no del cliente: un código de vinculación de esa sucursal canjeado por
+   * este dispositivo, o eventos de este dispositivo ya aceptados antes en esa sucursal. Y el
+   * dispositivo del evento tiene que ser el de la sesión (el token lo lleva firmado), para que una
+   * terminal no pueda escribir en otra sucursal nombrando la huella de otra tablet.
+   */
+  private async dispositivoEstuvoEnSucursal(item: SyncEnvelope): Promise<boolean> {
+    const dispositivoId = this.sesion.dispositivoId;
+    const sucursalId = item.sucursalId;
+    if (!dispositivoId || item.dispositivoId !== dispositivoId) return false;
+    if (!(await this.datosSucursal(sucursalId))) return false; // no existe o es de otra empresa
+
+    const clave = `${dispositivoId}|${sucursalId}`;
+    const cacheado = this.enlacesAnteriores.get(clave);
+    if (cacheado !== undefined) return cacheado;
+
+    const codigo = await this.prisma.codigoVinculacion.findFirst({
+      where: {
+        empresaId: this.sesion.empresaId,
+        dispositivoId,
+        usadoAt: { not: null },
+        OR: [
+          { sucursalId },
+          // Código de empresa: las sucursales que nombraba, o todas si no nombraba ninguna.
+          { sucursalId: null, sucursalesIds: { has: sucursalId } },
+          { sucursalId: null, sucursalesIds: { isEmpty: true } },
+        ],
+      },
+      select: { id: true },
+    });
+    const estuvo =
+      !!codigo ||
+      !!(await this.prisma.syncQueueItem.findFirst({
+        where: { sucursalId, estado: SyncStatus.SYNCED, dispositivo: { identificador: dispositivoId } },
+        select: { id: true },
+      }));
+    this.enlacesAnteriores.set(clave, estuvo);
+    return estuvo;
   }
 
   /** true solo si la fila EXISTE y es de otra sucursal. */

@@ -51,7 +51,18 @@ function crearServicio() {
         Promise.resolve(where.usuarioId === "user-1" && where.sucursalId === "suc-1" ? { id: "acceso-1" } : null),
       ),
     },
+    // Historial de enlaces: la tablet "dev-viajera" canjeó un código de suc-2 antes de pasarse a
+    // suc-1, y "dev-con-historial" ya subió eventos a suc-2 cuando estaba enlazada ahí.
+    codigoVinculacion: {
+      findFirst: jest.fn(({ where }: any) => {
+        const nombra = where.OR.some((o: any) => o.sucursalId === "suc-2" || o.sucursalesIds?.has === "suc-2");
+        return Promise.resolve(where.dispositivoId === "dev-viajera" && where.empresaId === "emp-1" && nombra ? { id: "codigo-suc-2" } : null);
+      }),
+    },
     syncQueueItem: {
+      findFirst: jest.fn(({ where }: any) =>
+        Promise.resolve(where.sucursalId === "suc-2" && where.dispositivo?.identificador === "dev-con-historial" ? { id: "sqi-1" } : null),
+      ),
       findUnique: jest.fn(({ where: { idempotencyKey } }: any) => Promise.resolve(registros.get(idempotencyKey) ?? null)),
       upsert: jest.fn(({ where: { idempotencyKey }, create, update }: any) => {
         const existente = registros.get(idempotencyKey);
@@ -390,6 +401,59 @@ describe("SyncService.push — alcance de la sesión", () => {
     const resp = await push([sobre({ sucursalId: "suc-2" })]);
     expect(resp.resultados[0].error).toMatch(/^No tienes acceso a esta sucursal \(.+\)$/);
     expect(pedidos.crear).not.toHaveBeenCalled();
+  });
+
+  describe("tablet re-enlazada a otra sucursal", () => {
+    const viajera = { ...SESION, dispositivoId: "dev-viajera" };
+
+    it("acepta, EN SU sucursal, lo que la tablet registró cuando estaba enlazada allá", async () => {
+      const { push, pedidos } = crearServicio();
+      const resp = await push([sobre({ sucursalId: "suc-2", dispositivoId: "dev-viajera" })], viajera);
+      expect(resp.resultados[0].estado).toBe(SyncStatus.SYNCED);
+      expect(pedidos.crear).toHaveBeenCalledWith(expect.objectContaining({ sucursalId: "suc-2" }), { desdeTerminal: true });
+    });
+
+    it("también acepta el movimiento de caja de esa sucursal", async () => {
+      const { push, caja } = crearServicio();
+      const resp = await push(
+        [sobre({ sucursalId: "suc-2", dispositivoId: "dev-viajera", entidad: SyncEntidad.MOVIMIENTO_CAJA, payload: { turnoId: "turno-suc-2", tipo: "INGRESO", monto: 100 } })],
+        viajera,
+      );
+      expect(resp.resultados[0].estado).toBe(SyncStatus.SYNCED);
+      expect(caja.registrarMovimiento).toHaveBeenCalled();
+    });
+
+    it("sirve como prueba haber subido antes eventos a esa sucursal", async () => {
+      const { push } = crearServicio();
+      const sesion = { ...SESION, dispositivoId: "dev-con-historial" };
+      const resp = await push([sobre({ sucursalId: "suc-2", dispositivoId: "dev-con-historial" })], sesion);
+      expect(resp.resultados[0].estado).toBe(SyncStatus.SYNCED);
+    });
+
+    it("no vale nombrar la huella de otra tablet: el dispositivo tiene que ser el del token", async () => {
+      const { push, pedidos } = crearServicio();
+      const resp = await push([sobre({ sucursalId: "suc-2", dispositivoId: "dev-viajera" })], { ...SESION, dispositivoId: "dev-otra" });
+      expect(resp.resultados[0].error).toMatch(/^No tienes acceso a esta sucursal/);
+      expect(pedidos.crear).not.toHaveBeenCalled();
+    });
+
+    it("sin dispositivo en el token no hay excepción", async () => {
+      const { push } = crearServicio();
+      const resp = await push([sobre({ sucursalId: "suc-2", dispositivoId: "dev-viajera" })]);
+      expect(resp.resultados[0].error).toMatch(/^No tienes acceso a esta sucursal/);
+    });
+
+    it("una tablet que nunca estuvo en esa sucursal sigue rechazada", async () => {
+      const { push } = crearServicio();
+      const resp = await push([sobre({ sucursalId: "suc-2", dispositivoId: "dev-nueva" })], { ...SESION, dispositivoId: "dev-nueva" });
+      expect(resp.resultados[0].error).toMatch(/^No tienes acceso a esta sucursal/);
+    });
+
+    it("nunca abre una sucursal de otra empresa", async () => {
+      const { push } = crearServicio();
+      const resp = await push([sobre({ sucursalId: "suc-ajena", dispositivoId: "dev-viajera" })], viajera);
+      expect(resp.resultados[0].estado).toBe(SyncStatus.ERROR);
+    });
   });
 
   it("no deja cobrar un pedido de otra sucursal nombrando su id", async () => {
