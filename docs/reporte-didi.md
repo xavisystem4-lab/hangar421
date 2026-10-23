@@ -5,25 +5,30 @@ ERP → **Reportes → 🛵 DiDi**. Muestra lo vendido en DiDi Food (ventas cobr
 al negocio después de la comisión. También aparece como tarjeta "🛵 Vendido en DiDi" en
 **Ventas** y en **Reportes → Ventas**.
 
-## Fórmula (`packages/shared/src/comisionPlataforma.ts`)
+## Regla (`packages/shared/src/comisionPlataforma.ts`)
+
+La comisión de DiDi es un porcentaje plano que se resta de la cuenta total, según cómo pagó el
+cliente:
+
+| Pago del cliente | Comisión DiDi | De $100 queda |
+|---|---|---|
+| Tarjeta / pagado en la app (`EN_LINEA`, `TARJETA`, transferencia…) | 43 % | $57 |
+| Efectivo (`EFECTIVO`, `EFECTIVO_USD`) | 35 % | $65 |
 
 ```
 base      = pagado por el cliente + subsidio de DiDi
-comisión  = base × comisión% × (1 + IVA de la comisión)          30 % + 16 % = 34.8 %
-retención = base ÷ (1 + IVA del precio) × retención%              solo pagos en la app/tarjeta
-ganancia  = base − comisión − retención
+comisión  = base × % del tipo de pago
+ganancia  = base − comisión
 ```
 
-Con los valores por omisión reproduce la hoja de precios de DiDi del negocio: $100 en efectivo
-dejan $65.20 y pagados en la app $56.15 (Latte Frío $110 → $72 / $62). Las pruebas
-(`comisionPlataforma.spec.ts`) fijan ocho renglones de esa hoja.
-
-- **Promociones**: las registra la tablet como descuento del ticket (precio de lista − pagado).
+- **Promociones**: las registra la tablet como descuento del ticket (precio de lista − pagado);
+  la comisión se calcula sobre lo que pagó el cliente.
 - **Subsidio de DiDi**: la venta no lo trae; se captura por producto en "Configurar comisión y
-  subsidios" (pesos por unidad, ej. Latte caliente a $49 → DiDi pone $50). Se aplica a todas las
-  ventas del producto en el rango, así que conviene quitarlo cuando termine la promoción.
-- **Pago mixto**: cada parte se calcula con su regla (efectivo sin retención).
+  subsidios" (pesos por unidad). Se aplica a todas las ventas del producto en el rango, así que
+  conviene quitarlo cuando termine la promoción.
+- **Pago mixto**: cada parte se calcula con su porcentaje.
 - La ganancia es lo que DiDi paga al negocio; no descuenta el costo de los insumos.
 
-Configuración: tabla `config_comision_plataforma` (una fila por empresa y plataforma). Solo
-ADMIN_CORPORATIVO la cambia (`PUT /reportes/didi/config`); el reporte es `GET /reportes/didi`.
+Configuración: tabla `config_comision_plataforma` (una fila por empresa y plataforma, columnas
+`comisionEnLineaPct` y `comisionEfectivoPct`). Solo ADMIN_CORPORATIVO la cambia
+(`PUT /reportes/didi/config`); el reporte es `GET /reportes/didi`.

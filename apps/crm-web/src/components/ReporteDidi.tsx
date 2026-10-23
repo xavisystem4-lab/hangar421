@@ -6,16 +6,16 @@ import { useAuthCrm } from "@/lib/authClient";
 import { StatTile } from "@/components/StatTile";
 import { BarChart } from "@/components/BarChart";
 import { BotonesExportar } from "@/components/BotonesExportar";
-import { ETIQUETA_TIPO_PAGO_DIDI, exportarDidiExcel, exportarDidiPdf, textoReglaDidi, type ReporteDidi as Reporte } from "@/lib/exportarVentas";
+import { ETIQUETA_TIPO_PAGO_DIDI, exportarDidiExcel, exportarDidiPdf, horaPico, masYMenosVendidos, metodoDidi, textoHora, textoReglaDidi, type ReporteDidi as Reporte } from "@/lib/exportarVentas";
 
 const dinero = (n: number) => `$${(n ?? 0).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const diaCorto = (d: string) => d.split("-").reverse().slice(0, 2).join("/");
 
 /**
- * Reportes → DiDi: lo vendido en DiDi Food y la GANANCIA REAL para el negocio, ya descontadas
- * la comisión de DiDi (con su IVA) y las retenciones de los pedidos pagados en la app. La
- * fórmula vive en @hangar421/shared (comisionPlataforma.ts) y reproduce la hoja de precios de
- * DiDi del negocio. La comisión y los subsidios de DiDi se configuran aquí mismo.
+ * Reportes → DiDi: lo vendido en DiDi Food y la GANANCIA REAL para el negocio, ya descontada
+ * la comisión de DiDi sobre el total: 43 % si el cliente pagó con tarjeta / en la app y 35 % si
+ * pagó en efectivo. La fórmula vive en @hangar421/shared (comisionPlataforma.ts). Los dos
+ * porcentajes y los subsidios de DiDi se configuran aquí mismo.
  */
 export function ReporteDidi({ sucursalId, sucursalNombre, desde, hasta }: { sucursalId: string; sucursalNombre?: string; desde: string; hasta: string }) {
   const { contexto } = useAuthCrm();
@@ -24,6 +24,9 @@ export function ReporteDidi({ sucursalId, sucursalNombre, desde, hasta }: { sucu
   const [error, setError] = useState<string | null>(null);
   const [verConfig, setVerConfig] = useState(false);
   const [verPedidos, setVerPedidos] = useState(false);
+  /** Método de pago elegido: filtra los pedidos y enseña qué productos se cobraron con él. */
+  const [metodoSel, setMetodoSel] = useState<string | null>(null);
+  const [abierto, setAbierto] = useState<string | null>(null);
   const [recarga, setRecarga] = useState(0);
 
   useEffect(() => {
@@ -40,6 +43,7 @@ export function ReporteDidi({ sucursalId, sucursalNombre, desde, hasta }: { sucu
   const s = datos?.resumen;
   const sucursal = sucursalNombre ?? "Todas las sucursales";
   const puedeConfigurar = contexto?.rol === "ADMIN_CORPORATIVO";
+  const pedidosVisibles = (datos?.tickets ?? []).filter((t) => !metodoSel || (t.metodos ?? []).includes(metodoSel));
 
   return (
     <div style={{ marginTop: 12 }}>
@@ -72,7 +76,7 @@ export function ReporteDidi({ sucursalId, sucursalNombre, desde, hasta }: { sucu
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 12 }}>
             <StatTile etiqueta="🛵 Vendido en DiDi (pagado por clientes)" valor={dinero(s.pagadoCliente)} acento="var(--h421-amber)" />
             <StatTile etiqueta="Pedidos" valor={String(s.tickets)} acento="var(--h421-blue)" />
-            <StatTile etiqueta="Comisión DiDi + retenciones" valor={`−${dinero(s.comision + s.retencion)}`} acento="var(--h421-red)" />
+            <StatTile etiqueta="Comisión DiDi" valor={`−${dinero(s.comision)}`} acento="var(--h421-red)" />
             <StatTile etiqueta="💰 Ganancia real para el negocio" valor={dinero(s.neto)} acento="var(--h421-green)" />
             <StatTile etiqueta="% que te queda" valor={`${s.porcentajeNeto.toFixed(1)}%`} acento="var(--h421-green)" />
           </div>
@@ -85,51 +89,55 @@ export function ReporteDidi({ sucursalId, sucursalNombre, desde, hasta }: { sucu
             <>
               <div className="h421-grid-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr", gap: 16, marginTop: 20 }}>
                 <div className="card">
-                  <h3 style={{ marginTop: 0 }}>Cómo se llega a la ganancia real</h3>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-                    <tbody>
-                      <Fila texto="Precio de lista en DiDi" valor={dinero(s.bruto)} />
-                      <Fila texto="− Promociones (las paga el negocio)" valor={`−${dinero(s.descuento)}`} gris />
-                      <Fila texto="= Pagado por los clientes" valor={dinero(s.pagadoCliente)} fuerte />
-                      <Fila texto="+ Subsidio de DiDi en promociones" valor={dinero(s.subsidio)} gris />
-                      <Fila texto={`− Comisión de DiDi (${datos!.config.comisionPct}% + IVA)`} valor={`−${dinero(s.comision)}`} rojo />
-                      <Fila texto={`− Retenciones (${datos!.config.retencionPct}%, solo pagos en la app)`} valor={`−${dinero(s.retencion)}`} rojo />
-                      <tr style={{ background: "rgba(22,163,74,0.12)" }}>
-                        <td style={{ padding: "10px 8px", fontWeight: 800 }}>= Ganancia real para el negocio</td>
-                        <td style={{ padding: "10px 8px", textAlign: "right", fontWeight: 800, fontSize: 18, color: "var(--h421-green)" }}>{dinero(s.neto)}</td>
-                      </tr>
-                    </tbody>
-                  </table>
+                  <h3 style={{ marginTop: 0 }}>Detalle como lo da DiDi</h3>
+                  <DetalleEstiloDidi
+                    sinPromocion={s.bruto}
+                    promocion={s.descuento}
+                    despuesDescuento={s.pagadoCliente}
+                    subsidio={s.subsidio}
+                    cargos={s.comision}
+                    tasa={`${datos!.config.comisionEnLineaPct}% tarjeta / ${datos!.config.comisionEfectivoPct}% efectivo`}
+                    ganancia={s.neto}
+                    grande
+                  />
                   <p style={{ fontSize: 12, color: "var(--h421-gray-400)", marginBottom: 0 }}>
                     La ganancia es lo que DiDi le paga al negocio por estos pedidos. No descuenta el costo de los insumos.
                   </p>
                 </div>
 
                 <div className="card">
-                  <h3 style={{ marginTop: 0 }}>Por tipo de pago</h3>
+                  <h3 style={{ marginTop: 0, marginBottom: 4 }}>Cómo pagaron los clientes</h3>
+                  <p style={{ fontSize: 12, color: "var(--h421-gray-400)", margin: "0 0 8px" }}>Toca un método para ver qué productos se cobraron con él.</p>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                     <thead>
                       <tr style={{ color: "var(--h421-gray-400)", fontSize: 12, textAlign: "right" }}>
-                        <th style={{ textAlign: "left", padding: 6 }}>Tipo</th><th style={{ padding: 6 }}>Pedidos</th><th style={{ padding: 6 }}>Pagado</th><th style={{ padding: 6 }}>Comisión</th><th style={{ padding: 6 }}>Ganancia</th><th style={{ padding: 6 }}>%</th>
+                        <th style={{ textAlign: "left", padding: 6 }}>Método</th><th style={{ padding: 6 }}>Transacciones</th><th style={{ padding: 6 }}>Cobrado</th><th style={{ padding: 6 }}>Comisión</th><th style={{ padding: 6 }}>Ganancia</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {datos!.porTipoPago.map((t) => (
-                        <tr key={t.tipo} style={{ borderTop: "1px solid var(--h421-gray-200)", textAlign: "right" }}>
-                          <td style={{ textAlign: "left", padding: 6 }}>{ETIQUETA_TIPO_PAGO_DIDI[t.tipo] ?? t.tipo}</td>
-                          <td style={{ padding: 6 }}>{t.tickets}</td>
-                          <td style={{ padding: 6 }}>{dinero(t.pagadoCliente)}</td>
-                          <td style={{ padding: 6, color: "var(--h421-red-texto)" }}>−{dinero(t.comision + t.retencion)}</td>
-                          <td style={{ padding: 6, fontWeight: 700 }}>{dinero(t.neto)}</td>
-                          <td style={{ padding: 6 }}>{t.porcentajeNeto.toFixed(1)}%</td>
-                        </tr>
-                      ))}
+                      {(datos!.porMetodo ?? []).map((m) => {
+                        const activo = metodoSel === m.metodo;
+                        return (
+                          <tr key={m.metodo} onClick={() => { setMetodoSel(activo ? null : m.metodo); setVerPedidos(true); }}
+                            style={{ borderTop: "1px solid var(--h421-gray-200)", textAlign: "right", cursor: "pointer", background: activo ? "rgba(255,106,19,0.14)" : undefined }}>
+                            <td style={{ textAlign: "left", padding: 6, fontWeight: 700 }}>{activo ? "▾" : "▸"} {metodoDidi(m.metodo)}</td>
+                            <td style={{ padding: 6 }}>{m.transacciones}</td>
+                            <td style={{ padding: 6, fontWeight: 700 }}>{dinero(m.pagadoCliente)}</td>
+                            <td style={{ padding: 6, color: "var(--h421-red-texto)" }}>−{dinero(m.comision)} <span style={{ fontSize: 11 }}>({m.comisionPct}%)</span></td>
+                            <td style={{ padding: 6, fontWeight: 700, color: "var(--h421-green)" }}>{dinero(m.neto)}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                   <h3 style={{ marginBottom: 6 }}>Ganancia real por día</h3>
                   <BarChart data={datos!.porDia.map((d) => ({ etiqueta: diaCorto(d.dia), valor: d.neto }))} alto={150} formatoValor={(v) => `$${v.toFixed(0)}`} />
                 </div>
               </div>
+
+              {metodoSel && <ProductosCobrados reporte={datos!} metodo={metodoSel} onCerrar={() => setMetodoSel(null)} />}
+
+              <HorasYProductos reporte={datos!} />
 
               <div className="card h421-tabla-wrap" style={{ marginTop: 16, overflowX: "auto" }}>
                 <h3 style={{ marginTop: 0 }}>Por producto <span style={{ fontSize: 13, color: "var(--h421-gray-400)", fontWeight: 400 }}>· de mayor a menor ganancia</span></h3>
@@ -157,8 +165,12 @@ export function ReporteDidi({ sucursalId, sucursalNombre, desde, hasta }: { sucu
 
               <div className="card h421-tabla-wrap" style={{ marginTop: 16, overflowX: "auto" }}>
                 <button onClick={() => setVerPedidos((v) => !v)} style={{ background: "transparent", border: 0, padding: 0, fontSize: 16, fontWeight: 700, color: "inherit" }}>
-                  {verPedidos ? "▾" : "▸"} Pedidos de DiDi ({datos!.tickets.length})
+                  {verPedidos ? "▾" : "▸"} Pedidos de DiDi ({pedidosVisibles.length}){metodoSel ? ` · cobrados con ${metodoDidi(metodoSel)}` : ""}
                 </button>
+                {metodoSel && (
+                  <button onClick={() => setMetodoSel(null)} style={{ marginLeft: 10, fontSize: 12, padding: "4px 10px", background: "transparent", border: "1px solid var(--h421-gray-200)" }}>Ver todos ✕</button>
+                )}
+                <p style={{ fontSize: 12, color: "var(--h421-gray-400)", margin: "4px 0 0" }}>Toca un pedido para ver sus productos.</p>
                 {verPedidos && (
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginTop: 10 }}>
                     <thead>
@@ -166,26 +178,61 @@ export function ReporteDidi({ sucursalId, sucursalNombre, desde, hasta }: { sucu
                         <th style={{ textAlign: "left", padding: 5 }}>Folio</th><th style={{ textAlign: "left", padding: 5 }}>Fecha</th>
                         {!sucursalId && <th style={{ textAlign: "left", padding: 5 }}>Sucursal</th>}
                         <th style={{ textAlign: "left", padding: 5 }}>Pago</th><th style={{ textAlign: "left", padding: 5 }}>Productos</th>
-                        <th style={{ padding: 5 }}>Lista</th><th style={{ padding: 5 }}>Promo</th><th style={{ padding: 5 }}>Cliente</th><th style={{ padding: 5 }}>Subsidio</th><th style={{ padding: 5 }}>Comisión</th><th style={{ padding: 5 }}>Retención</th><th style={{ padding: 5 }}>Ganancia</th>
+                        <th style={{ padding: 5 }}>Sin promoción</th><th style={{ padding: 5 }}>Promoción tienda</th><th style={{ padding: 5 }}>Después del desc.</th><th style={{ padding: 5 }}>Subsidio</th><th style={{ padding: 5 }}>Cargos DiDi</th><th style={{ padding: 5 }}>Ganancia por pedido</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {datos!.tickets.map((t) => (
+                      {pedidosVisibles.map((t) => (
                         <Fragment key={t.id}>
-                          <tr style={{ borderTop: "1px solid var(--h421-gray-200)", textAlign: "right" }}>
-                            <td style={{ textAlign: "left", padding: 5 }}>{t.folio}</td>
+                          <tr onClick={() => setAbierto(abierto === t.id ? null : t.id)} style={{ borderTop: "1px solid var(--h421-gray-200)", textAlign: "right", cursor: "pointer" }}>
+                            <td style={{ textAlign: "left", padding: 5 }}>{abierto === t.id ? "▾" : "▸"} {t.folio}</td>
                             <td style={{ textAlign: "left", padding: 5, whiteSpace: "nowrap" }}>{new Date(t.fecha).toLocaleString("es-MX", { timeZone: datos!.rango.zona, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
                             {!sucursalId && <td style={{ textAlign: "left", padding: 5 }}>{t.sucursal}</td>}
-                            <td style={{ textAlign: "left", padding: 5 }}>{ETIQUETA_TIPO_PAGO_DIDI[t.tipoPago] ?? t.tipoPago}</td>
+                            <td style={{ textAlign: "left", padding: 5 }}>{t.metodos?.length ? t.metodos.map(metodoDidi).join(" + ") : ETIQUETA_TIPO_PAGO_DIDI[t.tipoPago] ?? t.tipoPago}</td>
                             <td style={{ textAlign: "left", padding: 5 }}>{t.productos}</td>
                             <td style={{ padding: 5, color: "var(--h421-gray-400)" }}>{dinero(t.bruto)}</td>
                             <td style={{ padding: 5 }}>{t.descuento > 0 ? `−${dinero(t.descuento)}` : "—"}</td>
                             <td style={{ padding: 5 }}>{dinero(t.pagadoCliente)}</td>
                             <td style={{ padding: 5 }}>{t.subsidio > 0 ? dinero(t.subsidio) : "—"}</td>
                             <td style={{ padding: 5, color: "var(--h421-red-texto)" }}>−{dinero(t.comision)}</td>
-                            <td style={{ padding: 5, color: "var(--h421-red-texto)" }}>{t.retencion > 0 ? `−${dinero(t.retencion)}` : "—"}</td>
                             <td style={{ padding: 5, fontWeight: 700 }}>{dinero(t.neto)}</td>
                           </tr>
+                          {abierto === t.id && (
+                            <tr>
+                              <td colSpan={sucursalId ? 10 : 11} style={{ padding: "8px 12px 14px", background: "var(--h421-gray-50)" }}>
+                                <div style={{ display: "grid", gridTemplateColumns: "minmax(260px, 1fr) minmax(280px, 1fr)", gap: 20 }}>
+                                <div>
+                                <strong style={{ fontSize: 13 }}>Pedido {t.folio} · {new Date(t.fecha).toLocaleString("es-MX", { timeZone: datos!.rango.zona, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</strong>
+                                <table style={{ borderCollapse: "collapse", fontSize: 13, marginTop: 6, minWidth: 320 }}>
+                                  <tbody>
+                                    {(t.items ?? []).map((i, k) => (
+                                      <tr key={k}>
+                                        <td style={{ padding: "2px 10px 2px 0" }}>{i.cantidad}×</td>
+                                        <td style={{ padding: "2px 16px 2px 0" }}>{i.nombre}</td>
+                                        <td style={{ padding: "2px 0", textAlign: "right" }}>{dinero(i.importe)}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                                {(t.pagos?.length ?? 0) > 0 && (
+                                  <div style={{ fontSize: 12, marginTop: 6, color: "var(--h421-gray-400)" }}>
+                                    Pago: {t.pagos!.map((x) => `${metodoDidi(x.metodo)} ${dinero(x.monto)}`).join(" + ")}
+                                  </div>
+                                )}
+                                </div>
+                                <DetalleEstiloDidi
+                                  sinPromocion={t.bruto}
+                                  promocion={t.descuento}
+                                  despuesDescuento={t.pagadoCliente}
+                                  subsidio={t.subsidio}
+                                  cargos={t.comision}
+                                  tasa={t.tipoPago === "EFECTIVO" ? `${datos!.config.comisionEfectivoPct}%` : t.tipoPago === "EN_LINEA" ? `${datos!.config.comisionEnLineaPct}%` : "mixta"}
+                                  ganancia={t.neto}
+                                />
+                                </div>
+                              </td>
+                            </tr>
+                          )}
                         </Fragment>
                       ))}
                     </tbody>
@@ -259,13 +306,11 @@ function ConfigDidi({ reporte, editable, onGuardado }: { reporte: Reporte; edita
       <strong>Comisión de DiDi</strong>
       {!editable && <span style={{ fontSize: 12, color: "var(--h421-gray-400)" }}> · solo un administrador corporativo puede cambiarla</span>}
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 10 }}>
-        {campo("comisionPct", "Comisión %", "Sobre lo pagado + subsidio")}
-        {campo("ivaComisionPct", "IVA de la comisión %", "DiDi cobra IVA sobre su comisión")}
-        {campo("retencionPct", "Retenciones %", "ISR + IVA, solo pagos en la app, sobre el precio sin IVA")}
-        {campo("ivaVentaPct", "IVA del precio %", "Para sacar el precio sin IVA")}
+        {campo("comisionEnLineaPct", "Comisión con tarjeta / app %", "El cliente pagó con tarjeta o en la app")}
+        {campo("comisionEfectivoPct", "Comisión en efectivo %", "El cliente pagó en efectivo")}
       </div>
       <p style={{ fontSize: 12, color: "var(--h421-gray-400)" }}>
-        Con 30% + IVA 16% y 10.5% de retención salen los mismos montos de la hoja de precios: $100 en efectivo dejan $65.20 y pagados en la app $56.15.
+        Se resta de la cuenta total. Con 43% y 35%: un pedido de $100 con tarjeta deja $57 y en efectivo $65.
       </p>
 
       <strong>Subsidio de DiDi por producto</strong>
@@ -297,5 +342,136 @@ function ConfigDidi({ reporte, editable, onGuardado }: { reporte: Reporte; edita
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * A qué hora se vende más en DiDi (gráfica por hora, la hora pico resaltada) y qué productos se
+ * venden más y menos, por unidades.
+ */
+function HorasYProductos({ reporte }: { reporte: Reporte }) {
+  const horas = reporte.porHora ?? [];
+  const pico = horaPico(reporte);
+  const { mas, menos } = masYMenosVendidos(reporte);
+  const maxMas = Math.max(1, ...mas.map((p) => p.unidades));
+  const lista = (titulo: string, color: string, filas: Reporte["porProducto"]) => (
+    <div className="card" style={{ margin: 0 }}>
+      <h3 style={{ marginTop: 0, color }}>{titulo}</h3>
+      {filas.length === 0 ? (
+        <p style={{ fontSize: 13, color: "var(--h421-gray-400)", margin: 0 }}>Hacen falta más productos vendidos para comparar.</p>
+      ) : (
+        filas.map((p, i) => (
+          <div key={p.productoId} style={{ marginBottom: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, gap: 8 }}>
+              <span><span style={{ color: "var(--h421-gray-400)" }}>{i + 1}.</span> <strong>{p.nombre}</strong></span>
+              <span style={{ whiteSpace: "nowrap" }}>{p.unidades} u · {dinero(p.neto)}</span>
+            </div>
+            <div style={{ height: 6, borderRadius: 3, background: "var(--h421-gray-200)", marginTop: 3, overflow: "hidden" }}>
+              <div style={{ height: 6, width: `${Math.max(4, (p.unidades / maxMas) * 100)}%`, background: color }} />
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+  return (
+    <div className="h421-grid-2col" style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr 1fr", gap: 16, marginTop: 16 }}>
+      <div className="card" style={{ margin: 0 }}>
+        <h3 style={{ marginTop: 0, marginBottom: 4 }}>Ventas por hora</h3>
+        {pico && (
+          <p style={{ margin: "0 0 8px", fontSize: 13 }}>
+            ⏰ Hora pico: <strong style={{ color: "#FF6A13" }}>{textoHora(pico.hora)}</strong> · {pico.tickets} pedido{pico.tickets === 1 ? "" : "s"} · {dinero(pico.pagadoCliente)}
+          </p>
+        )}
+        <BarChart data={horas.map((h) => ({ etiqueta: `${h.hora} h`, valor: h.pagadoCliente }))} alto={170} formatoValor={(v) => `$${v.toFixed(0)}`} />
+        <p style={{ fontSize: 11, color: "var(--h421-gray-400)", margin: "6px 0 0" }}>Lo que pagaron los clientes en cada hora (hora de la sucursal).</p>
+      </div>
+      {lista("🔥 Más vendidos", "var(--h421-green)", mas)}
+      {lista("🐢 Menos vendidos", "var(--h421-red)", menos)}
+    </div>
+  );
+}
+
+/** Qué productos se cobraron con un método de pago (pedidos que llevan ese método). */
+function ProductosCobrados({ reporte, metodo, onCerrar }: { reporte: Reporte; metodo: string; onCerrar: () => void }) {
+  const pedidos = reporte.tickets.filter((t) => (t.metodos ?? []).includes(metodo));
+  const productos = new Map<string, { nombre: string; unidades: number; importe: number }>();
+  for (const t of pedidos) {
+    for (const i of t.items ?? []) {
+      const g = productos.get(i.productoId) ?? { nombre: i.nombre, unidades: 0, importe: 0 };
+      g.unidades += i.cantidad;
+      g.importe += i.importe;
+      productos.set(i.productoId, g);
+    }
+  }
+  const filas = [...productos.values()].sort((a, b) => b.unidades - a.unidades);
+  const m = reporte.porMetodo?.find((x) => x.metodo === metodo);
+  return (
+    <div className="card" style={{ marginTop: 16, borderLeft: "4px solid #FF6A13" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+        <h3 style={{ margin: 0 }}>Cobrado con {metodoDidi(metodo)}: qué se vendió</h3>
+        <button onClick={onCerrar} style={{ fontSize: 12, padding: "4px 10px", background: "transparent", border: "1px solid var(--h421-gray-200)" }}>Cerrar ✕</button>
+      </div>
+      {m && (
+        <p style={{ fontSize: 13, margin: "6px 0 10px" }}>
+          {pedidos.length} pedido{pedidos.length === 1 ? "" : "s"} · cobrado <strong>{dinero(m.pagadoCliente)}</strong> · comisión {m.comisionPct}% −{dinero(m.comision)} · ganancia <strong style={{ color: "var(--h421-green)" }}>{dinero(m.neto)}</strong>
+        </p>
+      )}
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <thead>
+          <tr style={{ color: "var(--h421-gray-400)", fontSize: 12, textAlign: "right" }}>
+            <th style={{ textAlign: "left", padding: 6 }}>Producto</th><th style={{ padding: 6 }}>Unidades</th><th style={{ padding: 6 }}>Importe (precio de lista)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filas.map((f) => (
+            <tr key={f.nombre} style={{ borderTop: "1px solid var(--h421-gray-200)", textAlign: "right" }}>
+              <td style={{ textAlign: "left", padding: 6, fontWeight: 600 }}>{f.nombre}</td>
+              <td style={{ padding: 6 }}>{f.unidades}</td>
+              <td style={{ padding: 6 }}>{dinero(f.importe)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p style={{ fontSize: 11, color: "var(--h421-gray-400)", margin: "6px 0 0" }}>Un pedido pagado mitad y mitad aparece en los dos métodos. Abajo están los pedidos uno por uno.</p>
+    </div>
+  );
+}
+
+/**
+ * Desglose con los mismos conceptos que el "Detalle del pedido" de DiDi: precio sin promoción →
+ * costo de promoción de la tienda → ganancias después del descuento → cargos de DiDi (comisión y
+ * distribución) → ganancias por pedido / monto del recibo.
+ */
+function DetalleEstiloDidi({ sinPromocion, promocion, despuesDescuento, subsidio, cargos, tasa, ganancia, grande }: {
+  sinPromocion: number; promocion: number; despuesDescuento: number; subsidio: number; cargos: number; tasa: string; ganancia: number; grande?: boolean;
+}) {
+  const fs = grande ? 14 : 13;
+  const fila = (texto: string, valor: string, o: { fuerte?: boolean; sub?: boolean; rojo?: boolean } = {}) => (
+    <tr>
+      <td style={{ padding: o.sub ? "2px 8px 6px 22px" : "7px 8px", fontSize: o.sub ? fs - 1 : fs, fontWeight: o.fuerte ? 800 : 400, color: o.sub ? "var(--h421-gray-400)" : "inherit" }}>{texto}</td>
+      <td style={{ padding: o.sub ? "2px 8px 6px" : "7px 8px", textAlign: "right", fontSize: o.sub ? fs - 1 : fs, fontWeight: o.fuerte ? 800 : 600, color: o.rojo ? "var(--h421-red-texto)" : o.sub ? "var(--h421-gray-400)" : "inherit", whiteSpace: "nowrap" }}>{valor}</td>
+    </tr>
+  );
+  const sep = <tr><td colSpan={2} style={{ borderTop: "1px solid var(--h421-gray-200)", padding: 0 }} /></tr>;
+  return (
+    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      <tbody>
+        {fila("Precio total del producto sin promoción", `MX${dinero(sinPromocion)}`, { fuerte: true })}
+        {fila("Costo de promoción de productos de la tienda", `-MX${dinero(promocion)}`, { fuerte: true, rojo: promocion > 0 })}
+        {promocion > 0 && fila("Inversión de promoción de productos de la tienda", `-MX${dinero(promocion)}`, { sub: true })}
+        {fila("Ganancias totales después del descuento", `MX${dinero(despuesDescuento)}`, { fuerte: true })}
+        {subsidio > 0 && fila("Subsidio de DiDi en la promoción", `MX${dinero(subsidio)}`, { sub: true })}
+        {sep}
+        {fila("Cargos de DiDi", `-MX${dinero(cargos)}`, { fuerte: true, rojo: true })}
+        {fila(`Comisión y distribución (Tasa del servicio ${tasa})`, `-MX${dinero(cargos)}`, { sub: true })}
+        {sep}
+        <tr style={{ background: "rgba(22,163,74,0.12)" }}>
+          <td style={{ padding: "9px 8px", fontWeight: 800, fontSize: grande ? 15 : fs }}>Ganancias por pedido</td>
+          <td style={{ padding: "9px 8px", textAlign: "right", fontWeight: 800, fontSize: grande ? 18 : fs + 1, color: "var(--h421-green)" }}>MX{dinero(ganancia)}</td>
+        </tr>
+        {fila("Monto del recibo", `MX${dinero(ganancia)}`, { fuerte: true })}
+      </tbody>
+    </table>
   );
 }

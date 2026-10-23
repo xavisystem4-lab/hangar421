@@ -1669,10 +1669,9 @@ model MarcaCambioErp {
 model ConfigComisionPlataforma {
   empresaId      String
   plataforma     String   // "DIDI"
-  comisionPct    Decimal  @default(30) @db.Decimal(6, 2)
-  ivaComisionPct Decimal  @default(16) @db.Decimal(6, 2)
-  retencionPct   Decimal  @default(10.5) @db.Decimal(6, 2)
-  ivaVentaPct    Decimal  @default(16) @db.Decimal(6, 2)
+  // Comisión plana sobre el total: con tarjeta / en la app, y en efectivo.
+  comisionEnLineaPct  Decimal  @default(43) @db.Decimal(6, 2)
+  comisionEfectivoPct Decimal  @default(35) @db.Decimal(6, 2)
   subsidios      Json     @default("{}")
   updatedAt      DateTime @updatedAt
 
