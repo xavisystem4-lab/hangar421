@@ -29,8 +29,9 @@ export class ReportesController {
     @Query("desde") desde: string,
     @Query("hasta") hasta: string,
     @Query("sucursalId") sucursalId?: string,
+    @Query("turnoId") turnoId?: string,
   ) {
-    return this.reportes.ventasPorProducto(empresaId, new Date(desde), new Date(hasta), sucursalId);
+    return this.reportes.ventasPorProducto(empresaId, new Date(desde), new Date(hasta), sucursalId, turnoId || undefined);
   }
 
   @Get("ventas-por-metodo-pago")

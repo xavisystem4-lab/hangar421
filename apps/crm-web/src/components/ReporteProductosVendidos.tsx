@@ -21,6 +21,29 @@ interface Respuesta {
 
 type Orden = "unidades" | "importe" | "nombre";
 
+interface TurnoCaja {
+  id: string;
+  estado: "ABIERTO" | "CERRADO";
+  fechaApertura: string;
+  fechaCierre: string | null;
+  sucursal: { id: string; nombre: string };
+  caja: { id: string; nombre: string };
+  usuario: { id: string; nombre: string };
+}
+
+const hora = (iso: string) => new Date(iso).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
+/** "de la mañana / tarde / noche" según la hora en que abrió. */
+function momento(iso: string): string {
+  const h = new Date(iso).getHours();
+  return h < 12 ? "de la mañana" : h < 18 ? "de la tarde" : "de la noche";
+}
+function etiquetaTurno(t: TurnoCaja, conSucursal: boolean, conFecha: boolean): string {
+  const fecha = conFecha ? `${new Date(t.fechaApertura).toLocaleDateString("es-MX", { day: "2-digit", month: "2-digit" })} ` : "";
+  const rango = `${hora(t.fechaApertura)}–${t.fechaCierre ? hora(t.fechaCierre) : "ahora"}`;
+  const estado = t.estado === "ABIERTO" ? "🟢 En curso" : `Turno ${momento(t.fechaApertura)}`;
+  return `${estado} · ${fecha}${rango} · ${t.usuario?.nombre ?? "—"}${conSucursal ? ` · ${t.sucursal?.nombre ?? ""}` : ""}`;
+}
+
 const dinero = (n: number) => `$${(n ?? 0).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const SIN_CATEGORIA = "Sin categoría";
 /** Quita acentos y mayúsculas para que "cafe" encuentre "Café". */
@@ -40,6 +63,24 @@ export function ReporteProductosVendidos({ sucursalId, sucursalNombre, desde, ha
   const [categoria, setCategoria] = useState("");
   const [orden, setOrden] = useState<Orden>("unidades");
   const [abierto, setAbierto] = useState<string | null>(null);
+  const [turnos, setTurnos] = useState<TurnoCaja[]>([]);
+  const [turnoId, setTurnoId] = useState("");
+
+  // Turnos de caja del rango (y los que siguen abiertos desde antes), para el filtro de turno.
+  useEffect(() => {
+    if (!contexto) return;
+    const q = new URLSearchParams({ desde, hasta });
+    if (sucursalId) q.set("sucursalId", sucursalId);
+    apiFetch<{ items: TurnoCaja[]; pendientes: TurnoCaja[] }>(`/caja/turnos?${q}`)
+      .then((r) => {
+        const todos = new Map<string, TurnoCaja>();
+        for (const t of [...(r.pendientes ?? []), ...(r.items ?? [])]) todos.set(t.id, t);
+        const lista = [...todos.values()].sort((a, b) => a.fechaApertura.localeCompare(b.fechaApertura));
+        setTurnos(lista);
+        setTurnoId((actual) => (actual && !todos.has(actual) ? "" : actual));
+      })
+      .catch(() => setTurnos([]));
+  }, [contexto, sucursalId, desde, hasta]);
 
   useEffect(() => {
     if (!contexto) return;
@@ -51,6 +92,7 @@ export function ReporteProductosVendidos({ sucursalId, sucursalNombre, desde, ha
       hasta: new Date(`${hasta}T23:59:59`).toISOString(),
     });
     if (sucursalId) q.set("sucursalId", sucursalId);
+    if (turnoId) q.set("turnoId", turnoId);
     apiFetch<Respuesta[]>(`/reportes/ventas-por-producto?${q}`)
       .then((r) =>
         setFilas(
@@ -68,7 +110,11 @@ export function ReporteProductosVendidos({ sucursalId, sucursalNombre, desde, ha
       )
       .catch((e) => setError(e?.message ?? "No se pudo cargar el reporte."))
       .finally(() => setCargando(false));
-  }, [contexto, sucursalId, desde, hasta]);
+  }, [contexto, sucursalId, desde, hasta, turnoId]);
+
+  const varios = desde !== hasta;
+  const turnoElegido = turnos.find((t) => t.id === turnoId);
+  const enCurso = turnos.filter((t) => t.estado === "ABIERTO");
 
   // Categorías con cuántos productos y unidades tiene cada una, para el selector.
   const categorias = useMemo(() => {
@@ -97,7 +143,11 @@ export function ReporteProductosVendidos({ sucursalId, sucursalNombre, desde, ha
   const unidades = visibles.reduce((s, f) => s + f.unidades, 0);
   const importe = visibles.reduce((s, f) => s + f.importe, 0);
   const totalUnidades = filas.reduce((s, f) => s + f.unidades, 0);
-  const filtros = [categoria && `Categoría: ${categoria}`, busqueda.trim() && `Búsqueda: "${busqueda.trim()}"`].filter(Boolean) as string[];
+  const filtros = [
+    turnoElegido && etiquetaTurno(turnoElegido, !sucursalId, true).replace("🟢 ", ""),
+    categoria && `Categoría: ${categoria}`,
+    busqueda.trim() && `Búsqueda: "${busqueda.trim()}"`,
+  ].filter(Boolean) as string[];
   const datosExport = { sucursal: sucursalNombre ?? "Todas las sucursales", desde, hasta, filtros, filas: visibles };
 
   return (
@@ -106,6 +156,15 @@ export function ReporteProductosVendidos({ sucursalId, sucursalNombre, desde, ha
         <label style={campo}>
           <span style={etiqueta}>Buscar producto</span>
           <input value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Ej. Latte, avena, matcha…" style={{ ...entrada, minWidth: 240 }} autoFocus />
+        </label>
+        <label style={campo}>
+          <span style={etiqueta}>Turno</span>
+          <select value={turnoId} onChange={(e) => setTurnoId(e.target.value)} style={{ ...entrada, minWidth: 260 }}>
+            <option value="">Todos los turnos {varios ? "del rango" : "del día"}</option>
+            {turnos.map((t) => (
+              <option key={t.id} value={t.id}>{etiquetaTurno(t, !sucursalId, varios || t.fechaApertura.slice(0, 10) !== desde)}</option>
+            ))}
+          </select>
         </label>
         <label style={campo}>
           <span style={etiqueta}>Categoría</span>
@@ -124,8 +183,13 @@ export function ReporteProductosVendidos({ sucursalId, sucursalNombre, desde, ha
             <option value="nombre">Nombre (A-Z)</option>
           </select>
         </label>
-        {(busqueda || categoria) && (
-          <button onClick={() => { setBusqueda(""); setCategoria(""); }} style={{ padding: "9px 12px", background: "transparent", textDecoration: "underline" }}>
+        {enCurso.length > 0 && !turnoId && (
+          <button onClick={() => setTurnoId(enCurso[enCurso.length - 1].id)} style={{ padding: "9px 12px", background: "rgba(22,163,74,0.12)", border: "1px solid var(--h421-green)", color: "var(--h421-green)", fontWeight: 700 }}>
+            🟢 Ver turno en curso
+          </button>
+        )}
+        {(busqueda || categoria || turnoId) && (
+          <button onClick={() => { setBusqueda(""); setCategoria(""); setTurnoId(""); }} style={{ padding: "9px 12px", background: "transparent", textDecoration: "underline" }}>
             Quitar filtros
           </button>
         )}
@@ -138,6 +202,15 @@ export function ReporteProductosVendidos({ sucursalId, sucursalNombre, desde, ha
         </span>
       </div>
 
+      {turnoElegido && (
+        <p style={{ margin: "10px 0 0", fontSize: 14 }}>
+          Mostrando lo vendido en el <strong>{etiquetaTurno(turnoElegido, !sucursalId, true).replace("🟢 En curso", "turno en curso")}</strong>
+          {" "}(caja {turnoElegido.caja?.nombre ?? "—"}).
+        </p>
+      )}
+      {!sucursalId && turnos.length > 0 && !turnoId && (
+        <p style={{ margin: "10px 0 0", fontSize: 12, color: "var(--h421-gray-400)" }}>Elige una sucursal arriba para ver solo sus turnos.</p>
+      )}
       {error && <p style={{ color: "var(--h421-red)" }}>{error}</p>}
       {cargando && <p style={{ color: "var(--h421-gray-400)" }}>Cargando…</p>}
 
