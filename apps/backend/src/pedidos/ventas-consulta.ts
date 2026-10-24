@@ -55,7 +55,7 @@ export interface FilaDesglose {
   usuario: { id: string; nombre: string } | null;
   dispositivo: { id: string; nombre: string; tipo: string } | null;
   /** Pagos del ticket; opcional para no romper a quien no los manda. */
-  pagos?: { metodo: string; monto: number }[];
+  pagos?: { metodo: string; monto: number; montoUsd?: number | null; tipoCambio?: number | null }[];
 }
 
 export interface GrupoDesglose {
@@ -71,7 +71,10 @@ export interface GrupoMetodoPago {
   /** Pagos con este método. Un ticket pagado mitad efectivo y mitad tarjeta cuenta una
    *  transacción en cada uno. */
   numTransacciones: number;
+  /** En pesos (MXN): lo que cubrió de la venta. */
   total: number;
+  /** Solo EFECTIVO_USD: los dólares recibidos. */
+  totalUsd?: number;
 }
 
 export interface DesgloseVentas {
@@ -125,6 +128,11 @@ function agruparPorMetodo(cerradas: FilaDesglose[]): GrupoMetodoPago[] {
       const g = grupos.get(p.metodo) ?? { metodo: p.metodo, numTransacciones: 0, total: 0 };
       g.numTransacciones += 1;
       g.total = redondear(g.total + (Number(p.monto) || 0));
+      if (p.metodo === "EFECTIVO_USD") {
+        // Dólares entregados; en ventas viejas sin `montoUsd`, se deduce del tipo de cambio.
+        const usd = p.montoUsd != null ? Number(p.montoUsd) : p.tipoCambio ? (Number(p.monto) || 0) / Number(p.tipoCambio) : 0;
+        g.totalUsd = redondear((g.totalUsd ?? 0) + (Number.isFinite(usd) ? usd : 0));
+      }
       grupos.set(p.metodo, g);
     }
   }

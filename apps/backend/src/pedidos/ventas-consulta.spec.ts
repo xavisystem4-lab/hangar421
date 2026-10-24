@@ -185,6 +185,14 @@ describe("armarDesglose", () => {
     ]);
   });
 
+  it("en dólares suma los dólares recibidos además de los pesos", () => {
+    const d = armarDesglose([
+      { estado: "COBRADO", total: 334, canalOrigen: "APP_POS_MOVIL", usuario: ana, dispositivo: tablet, pagos: [{ metodo: "EFECTIVO_USD", monto: 334, montoUsd: 20, tipoCambio: 17.5 }] },
+      { estado: "COBRADO", total: 175, canalOrigen: "APP_POS_MOVIL", usuario: ana, dispositivo: tablet, pagos: [{ metodo: "EFECTIVO_USD", monto: 175, montoUsd: null, tipoCambio: 17.5 }] },
+    ]);
+    expect(d.porMetodo).toEqual([{ metodo: "EFECTIVO_USD", numTransacciones: 2, total: 509, totalUsd: 30 }]);
+  });
+
   it("sin pagos el resumen por método queda vacío", () => {
     expect(armarDesglose([{ estado: "COBRADO", total: 40, canalOrigen: "APP_MESERO", usuario: null, dispositivo: null }]).porMetodo).toEqual([]);
   });

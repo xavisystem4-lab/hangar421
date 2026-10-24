@@ -55,7 +55,7 @@ interface RespuestaVentas {
     porUsuario: GrupoDesglose[];
     porDispositivo: GrupoDesglose[];
     /** Transacciones y total por método de pago (ERP 0.1.2+; un servidor anterior no lo manda). */
-    porMetodo?: { metodo: string; numTransacciones: number; total: number }[];
+    porMetodo?: { metodo: string; numTransacciones: number; total: number; totalUsd?: number }[];
   };
   paginacion: { total: number; limite: number; offset: number };
   items: Venta[];
@@ -488,7 +488,14 @@ export default function VentasPage() {
                     background: activo ? "var(--h421-navy)" : "var(--h421-gray-50)", color: activo ? "#fff" : "inherit",
                     border: `1px solid ${activo ? "var(--h421-navy)" : "var(--h421-gray-200)"}` }}>
                   <div style={{ fontSize: 12, fontWeight: 700, opacity: 0.8 }}>{ICONO_METODO[m.metodo] ?? "💳"} {etiquetaMetodo(m.metodo)}{credito ? " (no es venta)" : ""}</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, marginTop: 2 }}>${m.total.toFixed(2)}</div>
+                  {m.metodo === "EFECTIVO_USD" && m.totalUsd != null ? (
+                    <>
+                      <div style={{ fontSize: 20, fontWeight: 800, marginTop: 2 }}>US${m.totalUsd.toFixed(2)} <span style={{ fontSize: 12, fontWeight: 700 }}>USD</span></div>
+                      <div style={{ fontSize: 13, fontWeight: 700, opacity: 0.9 }}>${m.total.toFixed(2)} MXN</div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 20, fontWeight: 800, marginTop: 2 }}>${m.total.toFixed(2)} <span style={{ fontSize: 12, fontWeight: 700 }}>MXN</span></div>
+                  )}
                   <div style={{ fontSize: 12, opacity: 0.8 }}>{m.numTransacciones} transacci{m.numTransacciones === 1 ? "ón" : "ones"}</div>
                 </button>
               );
