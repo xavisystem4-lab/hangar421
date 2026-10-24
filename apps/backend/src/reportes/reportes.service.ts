@@ -19,6 +19,10 @@ export interface DetalleProductoVendido {
   subcategoria: string | null;
   /** Desglose por modificadores elegidos, de mayor a menor; vacío si el producto no lleva. */
   variantes: VarianteVendida[];
+  /** Importe vendido (cantidad × precio unitario de la línea, sin modificadores con precio). */
+  importe: number;
+  /** En cuántos tickets distintos aparece. */
+  tickets: number;
 }
 
 const SIN_MODIFICADORES = "Sin modificadores";
@@ -41,13 +45,19 @@ export class ReportesService {
       this.prisma.pedidoItem.findMany({
         where: { productoId: { in: productoIds }, pedido: wherePedido },
         select: {
-          productoId: true, cantidad: true,
+          productoId: true, cantidad: true, precioUnitario: true, pedidoId: true,
           modificadores: { select: { opcionModificador: { select: { nombre: true, orden: true, modificador: { select: { nombre: true } } } } } },
         },
       }),
     ]);
     const variantes = new Map<string, Map<string, number>>();
+    const importes = new Map<string, number>();
+    const tickets = new Map<string, Set<string>>();
     for (const it of items) {
+      importes.set(it.productoId, (importes.get(it.productoId) ?? 0) + it.cantidad * Number(it.precioUnitario));
+      const t = tickets.get(it.productoId) ?? new Set<string>();
+      t.add(it.pedidoId);
+      tickets.set(it.productoId, t);
       const opciones = it.modificadores
         .map((m) => m.opcionModificador)
         .sort((a, b) => a.modificador.nombre.localeCompare(b.modificador.nombre, "es") || a.orden - b.orden)
@@ -63,7 +73,10 @@ export class ReportesService {
         .sort((a, b) => b.cantidad - a.cantidad || a.descripcion.localeCompare(b.descripcion, "es"));
       // Si la única variante es "sin modificadores", no hay nada que desglosar.
       const soloSinMods = porVariante.length === 1 && porVariante[0].descripcion === SIN_MODIFICADORES;
-      detalle.set(p.id, { nombre: p.nombre, categoria: p.categoria?.nombre ?? null, subcategoria: p.subcategoria ?? null, variantes: soloSinMods ? [] : porVariante });
+      detalle.set(p.id, { nombre: p.nombre, categoria: p.categoria?.nombre ?? null, subcategoria: p.subcategoria ?? null, variantes: soloSinMods ? [] : porVariante,
+        importe: Math.round((importes.get(p.id) ?? 0) * 100) / 100,
+        tickets: tickets.get(p.id)?.size ?? 0,
+      });
     }
     return detalle;
   }
@@ -193,6 +206,8 @@ export class ReportesService {
         subcategoria: d?.subcategoria ?? null,
         cantidad: g._sum.cantidad ?? 0,
         variantes: d?.variantes ?? [],
+        importe: d?.importe ?? 0,
+        tickets: d?.tickets ?? 0,
       };
     });
   }
