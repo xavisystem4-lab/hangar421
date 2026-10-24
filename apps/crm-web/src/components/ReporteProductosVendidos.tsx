@@ -46,6 +46,10 @@ function etiquetaTurno(t: TurnoCaja, conSucursal: boolean, conFecha: boolean): s
 
 const dinero = (n: number) => `$${(n ?? 0).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const SIN_CATEGORIA = "Sin categoría";
+/** Las categorías del grupo DiDi (los productos que se venden por DiDi Food: "DIDI", "DiDi Temporada"…). */
+const esDidi = (categoria: string) => /didi/i.test(categoria);
+type Grupo = "" | "TIENDA" | "DIDI";
+const ETIQUETA_GRUPO: Record<Exclude<Grupo, "">, string> = { TIENDA: "Tienda (sin DiDi)", DIDI: "Solo DiDi" };
 /** Quita acentos y mayúsculas para que "cafe" encuentre "Café". */
 const normalizar = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
@@ -61,6 +65,17 @@ export function ReporteProductosVendidos({ sucursalId, sucursalNombre, desde, ha
   const [error, setError] = useState<string | null>(null);
   const [busqueda, setBusqueda] = useState("");
   const [categoria, setCategoria] = useState("");
+  const [grupo, setGrupo] = useState<Grupo>("");
+  const [subcategoria, setSubcategoria] = useState("");
+  /** Todas las categorías del catálogo, para poder elegir también las que hoy no vendieron. */
+  const [catalogo, setCatalogo] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!contexto) return;
+    apiFetch<{ nombre: string }[]>(`/catalogo/categorias?empresaId=${contexto.usuario.empresaId}`)
+      .then((c) => setCatalogo(c.map((x) => x.nombre).filter(Boolean)))
+      .catch(() => setCatalogo([]));
+  }, [contexto]);
   const [orden, setOrden] = useState<Orden>("unidades");
   const [abierto, setAbierto] = useState<string | null>(null);
   const [turnos, setTurnos] = useState<TurnoCaja[]>([]);
@@ -119,6 +134,7 @@ export function ReporteProductosVendidos({ sucursalId, sucursalNombre, desde, ha
   // Categorías con cuántos productos y unidades tiene cada una, para el selector.
   const categorias = useMemo(() => {
     const m = new Map<string, { productos: number; unidades: number }>();
+    for (const c of catalogo) m.set(c, { productos: 0, unidades: 0 });
     for (const f of filas) {
       const g = m.get(f.categoria) ?? { productos: 0, unidades: 0 };
       g.productos += 1;
@@ -126,26 +142,47 @@ export function ReporteProductosVendidos({ sucursalId, sucursalNombre, desde, ha
       m.set(f.categoria, g);
     }
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], "es"));
-  }, [filas]);
+  }, [filas, catalogo]);
+  const catsDidi = categorias.filter(([c]) => esDidi(c));
+  const catsTienda = categorias.filter(([c]) => !esDidi(c));
+  const unidadesGrupo = (g: Exclude<Grupo, "">) => filas.filter((f) => (g === "DIDI") === esDidi(f.categoria)).reduce((s, f) => s + f.unidades, 0);
+
+  function elegirGrupo(g: Grupo) {
+    setGrupo(g);
+    // Si la categoría elegida no es del grupo, se quita para no dejar la tabla vacía sin motivo.
+    if (categoria && g && (g === "DIDI") !== esDidi(categoria)) { setCategoria(""); setSubcategoria(""); }
+  }
 
   const visibles = useMemo(() => {
     const texto = normalizar(busqueda.trim());
     const r = filas.filter(
       (f) =>
+        (!grupo || (grupo === "DIDI") === esDidi(f.categoria)) &&
         (!categoria || f.categoria === categoria) &&
+        (!subcategoria || (f.subcategoria ?? "") === subcategoria) &&
         (!texto || normalizar(`${f.nombre} ${f.subcategoria ?? ""} ${f.variantes.map((v) => v.descripcion).join(" ")}`).includes(texto)),
     );
     return r.sort((a, b) =>
       orden === "nombre" ? a.nombre.localeCompare(b.nombre, "es") : orden === "importe" ? b.importe - a.importe || b.unidades - a.unidades : b.unidades - a.unidades || b.importe - a.importe,
     );
-  }, [filas, busqueda, categoria, orden]);
+  }, [filas, busqueda, categoria, orden, grupo, subcategoria]);
+
+  // Subcategorías de la categoría elegida (p. ej. dentro de DIDI), con sus unidades.
+  const subcategorias = useMemo(() => {
+    if (!categoria) return [];
+    const m = new Map<string, number>();
+    for (const f of filas) if (f.categoria === categoria && f.subcategoria) m.set(f.subcategoria, (m.get(f.subcategoria) ?? 0) + f.unidades);
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], "es"));
+  }, [filas, categoria]);
 
   const unidades = visibles.reduce((s, f) => s + f.unidades, 0);
   const importe = visibles.reduce((s, f) => s + f.importe, 0);
   const totalUnidades = filas.reduce((s, f) => s + f.unidades, 0);
   const filtros = [
     turnoElegido && etiquetaTurno(turnoElegido, !sucursalId, true).replace("🟢 ", ""),
+    grupo && ETIQUETA_GRUPO[grupo],
     categoria && `Categoría: ${categoria}`,
+    subcategoria && `Subcategoría: ${subcategoria}`,
     busqueda.trim() && `Búsqueda: "${busqueda.trim()}"`,
   ].filter(Boolean) as string[];
   const datosExport = { sucursal: sucursalNombre ?? "Todas las sucursales", desde, hasta, filtros, filas: visibles };
@@ -157,6 +194,19 @@ export function ReporteProductosVendidos({ sucursalId, sucursalNombre, desde, ha
           <span style={etiqueta}>Buscar producto</span>
           <input value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Ej. Latte, avena, matcha…" style={{ ...entrada, minWidth: 240 }} autoFocus />
         </label>
+        <div style={campo}>
+          <span style={etiqueta}>Grupo</span>
+          <div style={{ display: "flex", gap: 6 }}>
+            {([["", "Todo", filas.reduce((s, f) => s + f.unidades, 0)], ["TIENDA", "🏪 Tienda", unidadesGrupo("TIENDA")], ["DIDI", "🛵 Solo DiDi", unidadesGrupo("DIDI")]] as const).map(([g, texto, u]) => (
+              <button key={g || "todo"} onClick={() => elegirGrupo(g)}
+                style={{ padding: "8px 12px", fontSize: 13, fontWeight: 700, borderRadius: 999,
+                  background: grupo === g ? (g === "DIDI" ? "#FF6A13" : "var(--h421-navy)") : "transparent",
+                  color: grupo === g ? "#fff" : "inherit", border: `1px solid ${grupo === g ? "transparent" : "var(--h421-gray-200)"}` }}>
+                {texto} <span style={{ opacity: 0.8, fontWeight: 400 }}>· {u} u</span>
+              </button>
+            ))}
+          </div>
+        </div>
         <label style={campo}>
           <span style={etiqueta}>Turno</span>
           <select value={turnoId} onChange={(e) => setTurnoId(e.target.value)} style={{ ...entrada, minWidth: 260 }}>
@@ -168,13 +218,35 @@ export function ReporteProductosVendidos({ sucursalId, sucursalNombre, desde, ha
         </label>
         <label style={campo}>
           <span style={etiqueta}>Categoría</span>
-          <select value={categoria} onChange={(e) => setCategoria(e.target.value)} style={{ ...entrada, minWidth: 200 }}>
-            <option value="">Todas ({filas.length} productos)</option>
-            {categorias.map(([c, g]) => (
-              <option key={c} value={c}>{c} ({g.productos} · {g.unidades} u)</option>
-            ))}
+          <select value={categoria} onChange={(e) => { const c = e.target.value; setCategoria(c); setSubcategoria(""); if (c && grupo && (grupo === "DIDI") !== esDidi(c)) setGrupo(""); }} style={{ ...entrada, minWidth: 220 }}>
+            <option value="">Todas las categorías</option>
+            {grupo !== "DIDI" && catsTienda.length > 0 && (
+              <optgroup label="🏪 Tienda">
+                {catsTienda.map(([c, g]) => (
+                  <option key={c} value={c}>{c} {g.unidades > 0 ? `(${g.productos} · ${g.unidades} u)` : "(sin ventas)"}</option>
+                ))}
+              </optgroup>
+            )}
+            {grupo !== "TIENDA" && catsDidi.length > 0 && (
+              <optgroup label="🛵 DiDi">
+                {catsDidi.map(([c, g]) => (
+                  <option key={c} value={c}>{c} {g.unidades > 0 ? `(${g.productos} · ${g.unidades} u)` : "(sin ventas)"}</option>
+                ))}
+              </optgroup>
+            )}
           </select>
         </label>
+        {subcategorias.length > 0 && (
+          <label style={campo}>
+            <span style={etiqueta}>Subcategoría</span>
+            <select value={subcategoria} onChange={(e) => setSubcategoria(e.target.value)} style={{ ...entrada, minWidth: 170 }}>
+              <option value="">Todas</option>
+              {subcategorias.map(([sc, u]) => (
+                <option key={sc} value={sc}>{sc} ({u} u)</option>
+              ))}
+            </select>
+          </label>
+        )}
         <label style={campo}>
           <span style={etiqueta}>Ordenar por</span>
           <select value={orden} onChange={(e) => setOrden(e.target.value as Orden)} style={entrada}>
@@ -188,8 +260,8 @@ export function ReporteProductosVendidos({ sucursalId, sucursalNombre, desde, ha
             🟢 Ver turno en curso
           </button>
         )}
-        {(busqueda || categoria || turnoId) && (
-          <button onClick={() => { setBusqueda(""); setCategoria(""); setTurnoId(""); }} style={{ padding: "9px 12px", background: "transparent", textDecoration: "underline" }}>
+        {(busqueda || categoria || turnoId || grupo) && (
+          <button onClick={() => { setBusqueda(""); setCategoria(""); setSubcategoria(""); setTurnoId(""); setGrupo(""); }} style={{ padding: "9px 12px", background: "transparent", textDecoration: "underline" }}>
             Quitar filtros
           </button>
         )}
