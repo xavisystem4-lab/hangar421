@@ -188,8 +188,15 @@ export class ReportesService {
    *  pedirlo por sucursal, así que el reporte de una sucursal mostraba lo de todas). */
   /** Unidades por producto en el rango, con nombre, categoría y desglose por modificadores (se
    *  conservan `_sum`/`_count` por compatibilidad con los clientes que ya los leen). */
-  async ventasPorProducto(empresaId: string, desde: Date, hasta: Date, sucursalId?: string) {
-    const wherePedido = { empresaId, ...(sucursalId ? { sucursalId } : {}), estado: EstadoPedido.COBRADO, createdAt: { gte: desde, lte: hasta } };
+  /** Con `turnoId`: solo lo vendido en ese turno de caja, sin recortar por fechas (un turno puede
+   *  cruzar la medianoche o seguir abierto desde ayer). */
+  async ventasPorProducto(empresaId: string, desde: Date, hasta: Date, sucursalId?: string, turnoId?: string) {
+    const wherePedido = {
+      empresaId,
+      ...(sucursalId ? { sucursalId } : {}),
+      estado: EstadoPedido.COBRADO,
+      ...(turnoId ? { turnoId } : { createdAt: { gte: desde, lte: hasta } }),
+    };
     const grupos = await this.prisma.pedidoItem.groupBy({
       by: ["productoId"],
       where: { pedido: wherePedido },
