@@ -207,7 +207,7 @@ export interface DatosVentasExport {
   resumen: { totalVendido: number; creditoEmpleados: number; numTickets: number; ticketPromedio: number; porEstado: { estado: string; cantidad: number; total: number }[] };
   desglose: { titulo: string; grupos: { nombre: string; numTickets: number; total: number }[] }[];
   /** Transacciones y total por método de pago. El crédito de empleado se marca: no es venta. */
-  porMetodo: { metodo: string; nombre: string; numTransacciones: number; total: number; esCredito: boolean }[];
+  porMetodo: { metodo: string; nombre: string; numTransacciones: number; total: number; totalUsd?: number; esCredito: boolean }[];
   tickets: TicketExportable[];
   etiquetaMetodo: (m: string) => string;
 }
@@ -236,7 +236,11 @@ export async function exportarVentasPdf(d: DatosVentasExport) {
     autoTable(doc, {
       startY: y,
       head: [["Método", "Transacciones", "Total"]],
-      body: d.porMetodo.map((m) => [m.esCredito ? `${m.nombre} (no es venta)` : m.nombre, String(m.numTransacciones), dinero(m.total)]),
+      body: d.porMetodo.map((m) => [
+        (m.esCredito ? `${m.nombre} (no es venta)` : m.nombre) + (m.totalUsd != null ? ` · US$${m.totalUsd.toFixed(2)} USD` : ""),
+        String(m.numTransacciones),
+        `${dinero(m.total)} MXN`,
+      ]),
       foot: [["Total cobrado", String(ventas.reduce((s, m) => s + m.numTransacciones, 0)), dinero(ventas.reduce((s, m) => s + m.total, 0))]],
       headStyles: { fillColor: NAVY }, footStyles: { fillColor: [243, 244, 246], textColor: NAVY },
       columnStyles: { 1: { halign: "right" }, 2: { halign: "right", fontStyle: "bold" } },
@@ -311,9 +315,9 @@ export async function exportarVentasExcel(d: DatosVentasExport) {
   ];
   const ventasMetodo = d.porMetodo.filter((m) => !m.esCredito);
   const metodos: (string | number)[][] = [
-    ["Método", "Transacciones", "Total"],
-    ...d.porMetodo.map((m) => [m.esCredito ? `${m.nombre} (no es venta)` : m.nombre, m.numTransacciones, redondo(m.total)]),
-    ["Total cobrado", ventasMetodo.reduce((s, m) => s + m.numTransacciones, 0), redondo(ventasMetodo.reduce((s, m) => s + m.total, 0))],
+    ["Método", "Transacciones", "Total MXN", "Dólares USD"],
+    ...d.porMetodo.map((m) => [m.esCredito ? `${m.nombre} (no es venta)` : m.nombre, m.numTransacciones, redondo(m.total), m.totalUsd != null ? redondo(m.totalUsd) : ""]),
+    ["Total cobrado", ventasMetodo.reduce((s, m) => s + m.numTransacciones, 0), redondo(ventasMetodo.reduce((s, m) => s + m.total, 0)), ""],
   ];
   const desglose: (string | number)[][] = d.desglose.flatMap((g) => [
     [g.titulo, "Tickets", "Total"],
@@ -335,7 +339,7 @@ export async function exportarVentasExcel(d: DatosVentasExport) {
   await guardarExcel(
     [
       { nombre: "Resumen", filas: resumen, anchos: [32, 30, 14] },
-      { nombre: "Métodos de pago", filas: metodos, anchos: [32, 14, 14] },
+      { nombre: "Métodos de pago", filas: metodos, anchos: [32, 14, 14, 14] },
       { nombre: "Desglose", filas: desglose, anchos: [30, 10, 14] },
       { nombre: "Tickets", filas: tickets, anchos: [10, 18, 12, 18, 16, 20, 18, 12, 30, 11, 11, 11, 11] },
       { nombre: "Productos", filas: productos, anchos: [10, 18, 12, 40, 10, 12] },

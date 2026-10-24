@@ -132,8 +132,8 @@ export class PedidosService {
           canalOrigen: true,
           // Lo cargado a crédito de empleado no es venta real: se resta del total vendido.
           // Todos los pagos: el crédito de empleado se resta del total vendido y el resto
-          // arma el resumen por método de pago.
-          pagos: { select: { metodo: true, monto: true } },
+          // arma el resumen por método de pago (con los dólares recibidos en EFECTIVO_USD).
+          pagos: { select: { metodo: true, monto: true, montoUsd: true, tipoCambio: true } },
           mesero: { select: { id: true, nombre: true } },
           cajero: { select: { id: true, nombre: true } },
           dispositivo: { select: { id: true, nombre: true, tipo: true } },
@@ -157,7 +157,12 @@ export class PedidosService {
           canalOrigen: p.canalOrigen,
           usuario: p.cajero ?? p.mesero,
           dispositivo: p.dispositivo,
-          pagos: (p.pagos ?? []).map((x) => ({ metodo: x.metodo, monto: Number(x.monto) })),
+          pagos: (p.pagos ?? []).map((x) => ({
+            metodo: x.metodo,
+            monto: Number(x.monto),
+            montoUsd: x.montoUsd != null ? Number(x.montoUsd) : null,
+            tipoCambio: x.tipoCambio != null ? Number(x.tipoCambio) : null,
+          })),
         })),
       ),
       paginacion: { total: totalFilas, limite: take, offset: skip },
