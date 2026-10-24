@@ -578,3 +578,92 @@ export async function exportarDidiExcel(r: ReporteDidi, sucursal: string) {
     `didi-ganancia_${r.rango.desde}_a_${r.rango.hasta}`,
   );
 }
+
+// ---------------------------------------------------------------------------------------------
+// Reportes → Productos vendidos
+// ---------------------------------------------------------------------------------------------
+
+export interface FilaProductoVendido {
+  productoId: string;
+  nombre: string;
+  categoria: string;
+  subcategoria: string | null;
+  unidades: number;
+  importe: number;
+  tickets: number;
+  variantes: { descripcion: string; cantidad: number }[];
+}
+
+export interface DatosProductosVendidos {
+  sucursal: string;
+  desde: string;
+  hasta: string;
+  filtros: string[];
+  filas: FilaProductoVendido[];
+}
+
+const archivoProductos = (d: DatosProductosVendidos) => `productos-vendidos_${d.desde}_a_${d.hasta}`;
+
+export async function exportarProductosVendidosPdf(d: DatosProductosVendidos) {
+  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  const unidades = d.filas.reduce((s, f) => s + f.unidades, 0);
+  const importe = d.filas.reduce((s, f) => s + f.importe, 0);
+  let y = encabezado(doc, "Productos vendidos", `${d.sucursal} · ${periodoTexto(d.desde, d.hasta)}${d.filtros.length ? ` · ${d.filtros.join(" · ")}` : ""}`);
+  y = totales(doc, y, [["Productos", String(d.filas.length)], ["Unidades", String(unidades)], ["Importe", dinero(importe)]]);
+  autoTable(doc, {
+    startY: y,
+    head: [["#", "Producto", "Categoría", "Unidades", "Tickets", "Importe"]],
+    body: d.filas.map((f, i) => [
+      String(i + 1),
+      f.variantes.length ? `${f.nombre}\n${f.variantes.map((v) => `${v.descripcion} ×${v.cantidad}`).join(" · ")}` : f.nombre,
+      f.subcategoria ? `${f.categoria} › ${f.subcategoria}` : f.categoria,
+      String(f.unidades),
+      String(f.tickets),
+      dinero(f.importe),
+    ]),
+    foot: [["", "Total", "", String(unidades), "", dinero(importe)]],
+    headStyles: { fillColor: NARANJA }, footStyles: { fillColor: [243, 244, 246], textColor: NAVY },
+    styles: { fontSize: 8.5, cellPadding: 4, valign: "top" },
+    columnStyles: { 0: { cellWidth: 24 }, 1: { cellWidth: 230 }, 3: { halign: "right", fontStyle: "bold" }, 4: { halign: "right" }, 5: { halign: "right" } },
+    didParseCell: derecha(3, 4, 5) as never,
+    margin: { left: 40, right: 40 },
+  });
+  await guardarPdf(doc, archivoProductos(d));
+}
+
+export async function exportarProductosVendidosExcel(d: DatosProductosVendidos) {
+  const unidades = d.filas.reduce((s, f) => s + f.unidades, 0);
+  const importe = d.filas.reduce((s, f) => s + f.importe, 0);
+  const productos: (string | number)[][] = [
+    ["HANGAR 421 · Productos vendidos"],
+    ["Sucursal", d.sucursal],
+    ["Periodo", periodoTexto(d.desde, d.hasta)],
+    ...d.filtros.map((f) => ["Filtro", f]),
+    [],
+    ["Producto", "Categoría", "Subcategoría", "Unidades", "Tickets", "Importe"],
+    ...d.filas.map((f) => [f.nombre, f.categoria, f.subcategoria ?? "", f.unidades, f.tickets, redondo(f.importe)]),
+    ["Total", "", "", unidades, "", redondo(importe)],
+  ];
+  const variantes: (string | number)[][] = [
+    ["Producto", "Categoría", "Modificadores", "Unidades"],
+    ...d.filas.flatMap((f) => (f.variantes.length ? f.variantes : [{ descripcion: "Sin modificadores", cantidad: f.unidades }]).map((v) => [f.nombre, f.categoria, v.descripcion, v.cantidad])),
+  ];
+  const porCategoria = new Map<string, { productos: number; unidades: number; importe: number }>();
+  for (const f of d.filas) {
+    const g = porCategoria.get(f.categoria) ?? { productos: 0, unidades: 0, importe: 0 };
+    g.productos += 1; g.unidades += f.unidades; g.importe += f.importe;
+    porCategoria.set(f.categoria, g);
+  }
+  const categorias: (string | number)[][] = [
+    ["Categoría", "Productos", "Unidades", "Importe"],
+    ...[...porCategoria.entries()].sort((a, b) => b[1].unidades - a[1].unidades).map(([c, g]) => [c, g.productos, g.unidades, redondo(g.importe)]),
+  ];
+  await guardarExcel(
+    [
+      { nombre: "Productos", filas: productos, anchos: [40, 22, 20, 10, 9, 13] },
+      { nombre: "Por categoría", filas: categorias, anchos: [28, 10, 10, 13] },
+      { nombre: "Por modificadores", filas: variantes, anchos: [36, 22, 44, 10] },
+    ],
+    archivoProductos(d),
+  );
+}

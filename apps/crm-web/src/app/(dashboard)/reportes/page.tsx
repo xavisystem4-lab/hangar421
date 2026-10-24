@@ -11,6 +11,7 @@ import { BarChart } from "@/components/BarChart";
 import { ReporteCreditoEmpleados } from "@/components/ReporteCreditoEmpleados";
 import { BotonesExportar } from "@/components/BotonesExportar";
 import { ReporteDidi } from "@/components/ReporteDidi";
+import { ReporteProductosVendidos } from "@/components/ReporteProductosVendidos";
 import { TarjetaDidi } from "@/components/TarjetaDidi";
 import { useResumenDidi } from "@/lib/resumenDidi";
 import { exportarReporteVentasExcel, exportarReporteVentasPdf, type DatosReporteVentas } from "@/lib/exportarVentas";
@@ -30,8 +31,10 @@ const ETIQUETA_METODO: Record<string, string> = {
   EFECTIVO: "Efectivo", EFECTIVO_USD: "Dólares", TARJETA: "Tarjeta", TRANSFERENCIA: "Transferencia", QR: "QR", OTRO: "Otro", EN_LINEA: "Pagado en línea", MONEDERO_EMPLEADO: "Crédito empleado",
 };
 
+/** "AAAA-MM-DD" en la hora LOCAL del navegador. Con toISOString() salía en UTC: después de las
+ *  6 pm en México "hoy" ya era mañana y el reporte del día salía vacío. */
 function fechaISO(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 export default function ReportesPage() {
@@ -51,11 +54,21 @@ export default function ReportesPage() {
   const [cargando, setCargando] = useState(false);
   /** "ventas" = el reporte de siempre; "credito" = consumo del crédito de cada empleada;
    *  "didi" = ventas de DiDi y ganancia real. `?vista=didi` abre directo esa pestaña. */
-  const [vista, setVista] = useState<"ventas" | "credito" | "didi">(() => {
+  const [vista, setVista] = useState<"ventas" | "productos" | "credito" | "didi">(() => {
     if (typeof window === "undefined") return "ventas";
     const v = new URLSearchParams(window.location.search).get("vista");
-    return v === "didi" || v === "credito" ? v : "ventas";
+    return v === "didi" || v === "credito" || v === "productos" ? v : "ventas";
   });
+
+  /** "Productos vendidos" abre con el día de hoy (se puede cambiar arriba con Desde/Hasta). */
+  function cambiarVista(v: typeof vista) {
+    if (v === "productos" && vista !== "productos") {
+      const h = fechaISO(new Date());
+      setDesde(h);
+      setHasta(h);
+    }
+    setVista(v);
+  }
   const resumenDidi = useResumenDidi(sucursalId, desde, hasta);
 
   // La sucursal la fija el contexto global (cabecera). Antes esta página elegía siempre la
@@ -129,8 +142,8 @@ export default function ReportesPage() {
       </div>
 
       <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-        {([["ventas", "Ventas"], ["didi", "🛵 DiDi"], ["credito", "👛 Crédito de empleados"]] as const).map(([id, etiqueta]) => (
-          <button key={id} onClick={() => setVista(id)}
+        {([["ventas", "Ventas"], ["productos", "📦 Productos vendidos"], ["didi", "🛵 DiDi"], ["credito", "👛 Crédito de empleados"]] as const).map(([id, etiqueta]) => (
+          <button key={id} onClick={() => cambiarVista(id)}
             style={{ padding: "8px 14px", fontSize: 13, fontWeight: 700, borderRadius: 999,
               background: vista === id ? "var(--h421-navy)" : "transparent", color: vista === id ? "#fff" : "var(--h421-navy-texto)",
               border: `1px solid ${vista === id ? "var(--h421-navy)" : "var(--h421-gray-200)"}` }}>
@@ -141,6 +154,8 @@ export default function ReportesPage() {
 
       {vista === "credito" ? (
         <ReporteCreditoEmpleados sucursalId={sucursalId} sucursalNombre={seleccion?.nombre ?? undefined} desde={desde} hasta={hasta} />
+      ) : vista === "productos" ? (
+        <ReporteProductosVendidos sucursalId={sucursalId} sucursalNombre={seleccion?.nombre ?? undefined} desde={desde} hasta={hasta} />
       ) : vista === "didi" ? (
         <ReporteDidi sucursalId={sucursalId} sucursalNombre={seleccion?.nombre ?? undefined} desde={desde} hasta={hasta} />
       ) : (<>
