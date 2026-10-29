@@ -58,17 +58,53 @@ export function gramosDeLeche(leche: LecheDeProducto, extras: { coldFoam: boolea
   return base;
 }
 
+/** Ajuste de leche de un renglón (lo que recibe consumoDeVenta). */
+export interface AjusteLeche {
+  gramos: number;
+  /** Opciones elegidas que son la leche; vacío si no eligieron ninguna. */
+  opcionIds: string[];
+  /** Sin leche elegida: insumo que se descuenta por omisión (la leche entera). */
+  insumoPorOmision?: string;
+}
+
 /**
  * Ajuste de leche de un renglón: los gramos y qué opciones elegidas son la leche. null = no hay
- * nada que ajustar (la bebida no define leche o el cliente no eligió una).
+ * nada que ajustar (la bebida no define leche).
+ *
+ * Si la bebida lleva leche pero NO eligieron ninguna (pedidos de DiDi que llegan sin opciones, o
+ * un Latte al que solo le pusieron el tamaño), antes no se descontaba nada y la leche "se
+ * perdía" del inventario. Con `insumoPorOmision` (la leche entera, ver lechePorOmision) se
+ * descuentan los gramos de la bebida de esa leche.
  */
 export function ajusteDeLeche(
   leche: LecheDeProducto | null | undefined,
   opciones: OpcionElegida[],
-): { gramos: number; opcionIds: string[] } | null {
+  insumoPorOmision?: string | null,
+): AjusteLeche | null {
   if (!leche) return null;
   const opcionIds = opciones.filter((o) => esGrupoDeLeche(o.grupo)).map((o) => o.opcionModificadorId);
-  if (opcionIds.length === 0) return null;
+  if (opcionIds.length === 0 && !insumoPorOmision) return null;
   const gramos = gramosDeLeche(leche, { coldFoam: opciones.some(esColdFoam), shot: opciones.some(esShot) });
-  return gramos === null ? null : { gramos, opcionIds };
+  if (gramos === null) return null;
+  return opcionIds.length > 0 ? { gramos, opcionIds } : { gramos, opcionIds: [], insumoPorOmision: insumoPorOmision! };
+}
+
+/**
+ * Leche que se descuenta cuando una bebida con leche se vende sin elegir una: la opción "Entera"
+ * de un grupo de leche, y de su receta la línea principal (la de más cantidad: la leche).
+ * null si el catálogo no tiene una leche entera con receta.
+ */
+export function lechePorOmision(
+  opcionesConReceta: { grupo: string; opcion: string; receta: { insumoId: string; cantidad: number }[] }[],
+): string | null {
+  const candidatas = opcionesConReceta.filter((o) => esGrupoDeLeche(o.grupo) && /entera/i.test(o.opcion) && o.receta.length > 0);
+  // La más común entre los grupos de leche (Tipo de leche, Tipo de leche (DiDi)…).
+  const votos = new Map<string, number>();
+  for (const o of candidatas) {
+    const principal = o.receta.reduce((a, b) => (Number(b.cantidad) > Number(a.cantidad) ? b : a));
+    votos.set(principal.insumoId, (votos.get(principal.insumoId) ?? 0) + 1);
+  }
+  let mejor: string | null = null;
+  for (const [id, n] of votos) if (!mejor || n > (votos.get(mejor) ?? 0)) mejor = id;
+  return mejor;
 }

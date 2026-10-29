@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from "expo-sqlite";
-import { uuid7, SyncEntidad, SyncOperacion } from "@hangar421/shared";
+import { uuid7, SyncEntidad, SyncOperacion, lechePorOmision } from "@hangar421/shared";
 import { encolarSync } from "./outboxRepo";
 import { insumosConCambiosPendientes } from "./insumosLocalesRepo";
 import { obtenerOCrearDispositivoId, obtenerOCrearSucursalIdLocal } from "./dispositivoLocal";
@@ -352,9 +352,13 @@ export async function lecheParaConsumo(
 ): Promise<{
   porProducto: Record<string, { base: number | null; conColdFoam: number | null; conShot: number | null; conAmbos: number | null }>;
   opciones: Record<string, { grupo: string; opcion: string }>;
+  /** Leche entera que se descuenta si la bebida lleva leche y no eligieron una (ver lechePorOmision). */
+  porOmision?: string | null;
 }> {
-  const vacio = { porProducto: {}, opciones: {} };
-  if (productoIds.length === 0 || opcionIds.length === 0) return vacio;
+  const vacio = { porProducto: {}, opciones: {}, porOmision: null };
+  // Antes salía si no había opciones: una bebida con leche vendida sin elegir leche (pedido de
+  // DiDi) no descontaba leche. Ahora se carga igual para aplicar la leche por omisión.
+  if (productoIds.length === 0) return vacio;
   const marcas = (n: number) => Array.from({ length: n }, () => "?").join(",");
   try {
     const productos = await db.getAllAsync<{ id: string; leche_base: number | null; leche_con_cold_foam: number | null; leche_con_shot: number | null; leche_con_ambos: number | null }>(
@@ -362,17 +366,32 @@ export async function lecheParaConsumo(
       ...productoIds,
     );
     if (productos.length === 0) return vacio;
-    const opciones = await db.getAllAsync<{ id: string; opcion: string; grupo: string }>(
-      `SELECT o.id AS id, o.nombre AS opcion, m.nombre AS grupo FROM opciones_modificador o JOIN modificadores m ON m.id = o.modificador_id WHERE o.id IN (${marcas(opcionIds.length)})`,
-      ...opcionIds,
+    const opciones = opcionIds.length
+      ? await db.getAllAsync<{ id: string; opcion: string; grupo: string }>(
+          `SELECT o.id AS id, o.nombre AS opcion, m.nombre AS grupo FROM opciones_modificador o JOIN modificadores m ON m.id = o.modificador_id WHERE o.id IN (${marcas(opcionIds.length)})`,
+          ...opcionIds,
+        )
+      : [];
+    const enteras = await db.getAllAsync<{ id: string; opcion: string; grupo: string; insumo_id: string | null; cantidad: number | null }>(
+      `SELECT o.id AS id, o.nombre AS opcion, m.nombre AS grupo, r.insumo_id AS insumo_id, r.cantidad AS cantidad
+         FROM opciones_modificador o JOIN modificadores m ON m.id = o.modificador_id
+         LEFT JOIN recetas_opcion r ON r.opcion_modificador_id = o.id
+        WHERE LOWER(o.nombre) LIKE '%entera%' AND LOWER(m.nombre) LIKE '%leche%'`,
     );
+    const porOpcionEntera = new Map<string, { grupo: string; opcion: string; receta: { insumoId: string; cantidad: number }[] }>();
+    for (const e of enteras) {
+      const g = porOpcionEntera.get(e.id) ?? { grupo: e.grupo, opcion: e.opcion, receta: [] };
+      if (e.insumo_id) g.receta.push({ insumoId: e.insumo_id, cantidad: Number(e.cantidad) || 0 });
+      porOpcionEntera.set(e.id, g);
+    }
+    const porOmision = lechePorOmision([...porOpcionEntera.values()]);
     const porProducto: Record<string, { base: number | null; conColdFoam: number | null; conShot: number | null; conAmbos: number | null }> = {};
     for (const p of productos) {
       porProducto[p.id] = { base: p.leche_base, conColdFoam: p.leche_con_cold_foam, conShot: p.leche_con_shot, conAmbos: p.leche_con_ambos };
     }
     const porOpcion: Record<string, { grupo: string; opcion: string }> = {};
     for (const o of opciones) porOpcion[o.id] = { grupo: o.grupo, opcion: o.opcion };
-    return { porProducto, opciones: porOpcion };
+    return { porProducto, opciones: porOpcion, porOmision };
   } catch {
     return vacio;
   }

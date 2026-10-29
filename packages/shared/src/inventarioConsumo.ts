@@ -23,7 +23,7 @@ export interface ItemParaConsumo {
    * elegida) su línea principal —la de más cantidad: la leche; una proteína u otro extra se queda
    * igual— se cambia por `gramos` en vez de los 240 g fijos de la receta de la opción.
    */
-  leche?: { gramos: number; opcionIds: string[] } | null;
+  leche?: { gramos: number; opcionIds: string[]; insumoPorOmision?: string } | null;
 }
 
 export interface RecetasDisponibles {
@@ -115,6 +115,10 @@ export function consumoDeVenta(items: ItemParaConsumo[], recetas: RecetasDisponi
   const abrir = (lineas: LineaReceta[]) => expandirPreparaciones(lineas, recetas.porPreparacion);
   for (const item of items) {
     for (const r of abrir(recetas.porProducto[item.productoId] ?? [])) sumar(r.insumoId, r.cantidad, item.cantidad);
+    // Bebida con leche vendida sin elegir leche: la leche por omisión con los gramos de la bebida.
+    if (item.leche && item.leche.opcionIds.length === 0 && item.leche.insumoPorOmision) {
+      for (const r of abrir([{ insumoId: item.leche.insumoPorOmision, cantidad: item.leche.gramos }])) sumar(r.insumoId, r.cantidad, item.cantidad);
+    }
     for (const m of item.modificadores ?? []) {
       let lineas = recetas.porOpcion[m.opcionModificadorId] ?? [];
       if (item.leche && item.leche.opcionIds.includes(m.opcionModificadorId)) lineas = conLeche(lineas, item.leche.gramos);

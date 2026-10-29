@@ -1,4 +1,4 @@
-import { ajusteDeLeche, esColdFoam, esShot, gramosDeLeche } from "./lechePorBebida";
+import { ajusteDeLeche, esColdFoam, esShot, gramosDeLeche, lechePorOmision } from "./lechePorBebida";
 import { consumoDeVenta } from "./inventarioConsumo";
 
 const icedLatte = { base: 240, conColdFoam: 190, conShot: 240, conAmbos: 150 };
@@ -77,5 +77,43 @@ describe("ajusteDeLeche + consumoDeVenta", () => {
     expect(ajusteDeLeche(null, opciones)).toBeNull();
     const consumo = consumoDeVenta([{ productoId: "x", cantidad: 1, modificadores: opciones }], recetas);
     expect(consumo).toEqual([{ insumoId: "leche", cantidad: 240 }]);
+  });
+});
+
+describe("leche por omisión (bebida con leche vendida sin elegir leche)", () => {
+  const recetas = { porProducto: { spooky: [{ insumoId: "vasoPlastico", cantidad: 1 }] }, porOpcion: {} };
+
+  it("descuenta los gramos de la bebida de la leche entera", () => {
+    const leche = ajusteDeLeche({ base: 190 }, [], "lecheEntera");
+    expect(leche).toEqual({ gramos: 190, opcionIds: [], insumoPorOmision: "lecheEntera" });
+    expect(consumoDeVenta([{ productoId: "spooky", cantidad: 2, modificadores: [], leche }], recetas)).toEqual([
+      { insumoId: "lecheEntera", cantidad: 380 },
+      { insumoId: "vasoPlastico", cantidad: 2 },
+    ]);
+  });
+
+  it("con solo el tamaño elegido también aplica (no hay opción de leche)", () => {
+    const leche = ajusteDeLeche({ base: 240, conShot: 200 }, [{ opcionModificadorId: "chico", grupo: "Tamaño", opcion: "Chico" }], "lecheEntera");
+    expect(leche).toEqual({ gramos: 240, opcionIds: [], insumoPorOmision: "lecheEntera" });
+  });
+
+  it("si eligieron una leche, se usa esa y no la de omisión", () => {
+    const leche = ajusteDeLeche({ base: 240 }, [{ opcionModificadorId: "avena", grupo: "Tipo de leche", opcion: "Avena" }], "lecheEntera");
+    expect(leche).toEqual({ gramos: 240, opcionIds: ["avena"] });
+  });
+
+  it("sin leche por bebida o sin leche entera en el catálogo no inventa nada", () => {
+    expect(ajusteDeLeche(null, [], "lecheEntera")).toBeNull();
+    expect(ajusteDeLeche({ base: 240 }, [], null)).toBeNull();
+  });
+
+  it("lechePorOmision toma la línea principal de la opción Entera de un grupo de leche", () => {
+    expect(lechePorOmision([
+      { grupo: "Tipo de leche", opcion: "Entera", receta: [{ insumoId: "lecheEntera", cantidad: 240 }] },
+      { grupo: "Tipo de leche (DiDi)", opcion: "Leche entera", receta: [{ insumoId: "lecheEntera", cantidad: 240 }] },
+      { grupo: "Tipo de leche", opcion: "Avena", receta: [{ insumoId: "lecheAvena", cantidad: 240 }] },
+      { grupo: "Extras", opcion: "Entera", receta: [{ insumoId: "otro", cantidad: 1 }] },
+    ])).toBe("lecheEntera");
+    expect(lechePorOmision([{ grupo: "Tipo de leche", opcion: "Avena", receta: [{ insumoId: "a", cantidad: 240 }] }])).toBeNull();
   });
 });
