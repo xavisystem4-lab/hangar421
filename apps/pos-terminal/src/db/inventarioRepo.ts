@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from "expo-sqlite";
-import { uuid7, SyncEntidad, SyncOperacion, lechePorOmision } from "@hangar421/shared";
+import { uuid7, SyncEntidad, SyncOperacion, lechePorOmision, type GrupoParaOmision } from "@hangar421/shared";
 import { encolarSync } from "./outboxRepo";
 import { insumosConCambiosPendientes } from "./insumosLocalesRepo";
 import { obtenerOCrearDispositivoId, obtenerOCrearSucursalIdLocal } from "./dispositivoLocal";
@@ -394,6 +394,37 @@ export async function lecheParaConsumo(
     return { porProducto, opciones: porOpcion, porOmision };
   } catch {
     return vacio;
+  }
+}
+
+/** Grupos obligatorios de cada producto (con sus opciones), para la opción por omisión del
+ *  inventario (ver opcionesObligatoriasPorOmision en shared). Vacío si algo falla. */
+export async function gruposObligatoriosLocales(db: SQLiteDatabase, productoIds: string[]): Promise<Record<string, GrupoParaOmision[]>> {
+  if (productoIds.length === 0) return {};
+  const marcas = productoIds.map(() => "?").join(",");
+  try {
+    const filas = await db.getAllAsync<{ producto_id: string; modificador_id: string; nombre: string; tipo: string; opcion_id: string | null; orden: number | null }>(
+      `SELECT pm.producto_id, m.id AS modificador_id, m.nombre, m.tipo, o.id AS opcion_id, o.orden
+         FROM producto_modificadores pm JOIN modificadores m ON m.id = pm.modificador_id
+         LEFT JOIN opciones_modificador o ON o.modificador_id = m.id
+        WHERE m.obligatorio = 1 AND pm.producto_id IN (${marcas})`,
+      ...productoIds,
+    );
+    const salida: Record<string, GrupoParaOmision[]> = {};
+    const indice = new Map<string, GrupoParaOmision>();
+    for (const f of filas) {
+      const clave = `${f.producto_id}|${f.modificador_id}`;
+      let g = indice.get(clave);
+      if (!g) {
+        g = { nombre: f.nombre, obligatorio: true, tipo: f.tipo, opciones: [] };
+        indice.set(clave, g);
+        (salida[f.producto_id] ??= []).push(g);
+      }
+      if (f.opcion_id) g.opciones.push({ id: f.opcion_id, orden: Number(f.orden) || 0 });
+    }
+    return salida;
+  } catch {
+    return {};
   }
 }
 

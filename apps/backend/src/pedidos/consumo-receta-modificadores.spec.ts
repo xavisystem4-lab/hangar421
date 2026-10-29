@@ -12,7 +12,11 @@ function crearServicio(
   recetaProducto: { insumoId: string; cantidad: number }[],
   recetasOpcion: { opcionModificadorId: string; insumoId: string; cantidad: number }[],
   recetasPreparacion: { preparacionId: string; insumoId: string; cantidad: number }[] = [],
-  extra: { leche?: Record<string, number | null>; opciones?: { id: string; nombre: string; grupo: string }[] } = {},
+  extra: {
+    leche?: Record<string, number | null>;
+    opciones?: { id: string; nombre: string; grupo: string }[];
+    gruposObligatorios?: { nombre: string; tipo: string; opciones: { id: string; orden: number }[] }[];
+  } = {},
 ) {
   const prisma = {
     producto: {
@@ -37,6 +41,9 @@ function crearServicio(
                 })),
         ),
       ),
+    },
+    productoModificador: {
+      findMany: jest.fn(() => Promise.resolve((extra.gruposObligatorios ?? []).map((g) => ({ modificador: { ...g, obligatorio: true } })))),
     },
     recetaItem: { findMany: jest.fn(() => Promise.resolve(recetaProducto)) },
     recetaOpcion: {
@@ -144,6 +151,25 @@ describe("consumo de un renglón de venta", () => {
     expect(consumo).toEqual([
       { insumoId: "leche-entera", cantidad: 380 },
       { insumoId: "vaso", cantidad: 2 },
+    ]);
+  });
+
+  it("pedido de DiDi sin temperatura descuenta el vaso y la tapa de la primera opción (Caliente)", async () => {
+    const CALIENTE_VASO = { opcionModificadorId: "op-caliente", insumoId: "vaso-carton", cantidad: 1 };
+    const CALIENTE_TAPA = { opcionModificadorId: "op-caliente", insumoId: "tapa-carton", cantidad: 1 };
+    const FRIA_TAPA = { opcionModificadorId: "op-fria", insumoId: "tapa-plastico", cantidad: 1 };
+    const { service } = crearServicio([CAFE], [CALIENTE_VASO, CALIENTE_TAPA, FRIA_TAPA], [], {
+      gruposObligatorios: [{ nombre: "Temperatura", tipo: "SELECCION_UNICA", opciones: [{ id: "op-fria", orden: 2 }, { id: "op-caliente", orden: 1 }] }],
+    });
+    expect(await (service as any).consumoDeItem({ productoId: "psl-didi", cantidad: 1 })).toEqual([
+      { insumoId: "cafe", cantidad: 20 },
+      { insumoId: "tapa-carton", cantidad: 1 },
+      { insumoId: "vaso-carton", cantidad: 1 },
+    ]);
+    // Si eligieron Fría, se usa esa.
+    expect(await (service as any).consumoDeItem({ productoId: "psl", cantidad: 1, modificadores: [{ opcionModificadorId: "op-fria" }] })).toEqual([
+      { insumoId: "cafe", cantidad: 20 },
+      { insumoId: "tapa-plastico", cantidad: 1 },
     ]);
   });
 

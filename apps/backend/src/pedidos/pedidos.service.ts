@@ -17,6 +17,7 @@ import {
   agruparRecetas,
   ajusteDeLeche,
   lechePorOmision,
+  opcionesObligatoriasPorOmision,
   validarPagoSuficiente,
 } from "@hangar421/shared";
 import { Prisma } from "@prisma/client";
@@ -1074,7 +1075,11 @@ export class PedidosService {
    * del renglón.
    */
   private async consumoDeItem(item: { productoId: string; cantidad: number; modificadores?: { opcionModificadorId: string }[] }) {
-    const opcionIds = (item.modificadores ?? []).map((m) => m.opcionModificadorId);
+    const elegidas = (item.modificadores ?? []).map((m) => m.opcionModificadorId);
+    // Opción obligatoria sin elegir (pedido de DiDi sin "Caliente / Fría"): para el inventario se
+    // usa la primera del grupo, así se descuentan el vaso y la tapa que salen de esa opción.
+    const porOmisionIds = await this.opcionesObligatoriasFaltantes(item.productoId, elegidas);
+    const opcionIds = [...elegidas, ...porOmisionIds];
     const hayOpciones = opcionIds.length > 0;
     const [recetaProducto, recetaOpciones, producto, opciones] = await Promise.all([
       this.prisma.recetaItem.findMany({ where: { productoId: item.productoId } }),
@@ -1125,13 +1130,22 @@ export class PedidosService {
     // La regla vive en shared (consumoDeVenta): la tablet descuenta exactamente lo mismo cuando
     // cobra sin conexión, y una sola prueba cubre a los dos.
     return consumoDeVenta(
-      [{ ...item, leche }],
+      [{ ...item, modificadores: [...(item.modificadores ?? []), ...porOmisionIds.map((opcionModificadorId) => ({ opcionModificadorId }))], leche }],
       agruparRecetas(
         recetaProducto.map((r) => ({ productoId: item.productoId, insumoId: r.insumoId, cantidad: Number(r.cantidad) })),
         recetaOpciones.map((r) => ({ opcionModificadorId: r.opcionModificadorId, insumoId: r.insumoId, cantidad: Number(r.cantidad) })),
         recetaPreparaciones.map((r) => ({ preparacionId: r.preparacionId, insumoId: r.insumoId, cantidad: Number(r.cantidad) })),
       ),
     );
+  }
+
+  private async opcionesObligatoriasFaltantes(productoId: string, elegidas: string[]): Promise<string[]> {
+    const grupos = await this.prisma.productoModificador.findMany({
+      where: { productoId, modificador: { obligatorio: true } },
+      select: { modificador: { select: { nombre: true, obligatorio: true, tipo: true, opciones: { select: { id: true, orden: true, activo: true } } } } },
+    });
+    if (!Array.isArray(grupos) || grupos.length === 0) return [];
+    return opcionesObligatoriasPorOmision(grupos.map((g) => g.modificador), elegidas);
   }
 
   private readonly cacheLecheOmision = new Map<string, { insumoId: string | null; expira: number }>();
