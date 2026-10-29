@@ -280,9 +280,10 @@ export async function descontarInventarioDeVenta(
   const productoIds = [...new Set(items.map((i) => i.productoId))];
   const opcionIds = [...new Set(items.flatMap((i) => (i.modificadores ?? []).map((m) => m.opcionModificadorId)))];
   const recetas = await recetasParaConsumo(db, productoIds, opcionIds);
-  if (recetas.porProducto.length === 0 && recetas.porOpcion.length === 0) return;
-  // Leche por bebida: cada hoja de receta dice cuánta leche lleva (menos con cold foam o shot).
+  // Leche por bebida: cada hoja de receta dice cuánta leche lleva (menos con cold foam o shot), y
+  // si no eligieron leche se descuenta la entera por omisión.
   const leche = await lecheParaConsumo(db, productoIds, opcionIds);
+  if (recetas.porProducto.length === 0 && recetas.porOpcion.length === 0 && Object.keys(leche.porProducto).length === 0) return;
   const consumo = consumoDeVenta(
     items.map((i) => {
       const elegidas = (i.modificadores ?? []).map((m) => ({ opcionModificadorId: m.opcionModificadorId }));
@@ -296,6 +297,7 @@ export async function descontarInventarioDeVenta(
             const o = leche.opciones[m.opcionModificadorId];
             return o ? [{ opcionModificadorId: m.opcionModificadorId, grupo: o.grupo, opcion: o.opcion }] : [];
           }),
+          leche.porOmision ?? null,
         ),
       };
     }),

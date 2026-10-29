@@ -23,9 +23,18 @@ function crearServicio(
     opcionModificador: {
       findMany: jest.fn(({ where }: any) =>
         Promise.resolve(
-          (extra.opciones ?? [])
-            .filter((o) => where.id.in.includes(o.id))
-            .map((o) => ({ id: o.id, nombre: o.nombre, modificador: { nombre: o.grupo } })),
+          where.id?.in
+            ? (extra.opciones ?? [])
+                .filter((o) => where.id.in.includes(o.id))
+                .map((o) => ({ id: o.id, nombre: o.nombre, modificador: { nombre: o.grupo } }))
+            : // Búsqueda de la leche entera por omisión: opciones "entera" de grupos de leche, con receta.
+              (extra.opciones ?? [])
+                .filter((o) => /entera/i.test(o.nombre) && /leche/i.test(o.grupo))
+                .map((o) => ({
+                  nombre: o.nombre,
+                  modificador: { nombre: o.grupo },
+                  recetas: recetasOpcion.filter((r) => r.opcionModificadorId === o.id).map((r) => ({ insumoId: r.insumoId, cantidad: r.cantidad })),
+                })),
         ),
       ),
     },
@@ -121,6 +130,26 @@ describe("consumo de un renglón de venta", () => {
       { insumoId: "crema", cantidad: 70 },
       { insumoId: "matcha", cantidad: 4 },
     ]);
+  });
+
+  it("bebida con leche vendida SIN elegir leche (pedido de DiDi) descuenta la leche entera por omisión", async () => {
+    const { service } = crearServicio([VASO], [LECHE_AVENA, LECHE_ENTERA], [], {
+      leche: { lecheBase: 190 },
+      opciones: [
+        { id: "op-entera", nombre: "Entera", grupo: "Tipo de leche" },
+        { id: "op-avena", nombre: "Avena", grupo: "Tipo de leche" },
+      ],
+    });
+    const consumo = await (service as any).consumoDeItem({ productoId: "spooky-latte", cantidad: 2 });
+    expect(consumo).toEqual([
+      { insumoId: "leche-entera", cantidad: 380 },
+      { insumoId: "vaso", cantidad: 2 },
+    ]);
+  });
+
+  it("un producto sin leche por bebida no descuenta leche aunque no elijan opciones", async () => {
+    const { service } = crearServicio([VASO], [LECHE_ENTERA], [], { opciones: [{ id: "op-entera", nombre: "Entera", grupo: "Tipo de leche" }] });
+    expect(await (service as any).consumoDeItem({ productoId: "americano", cantidad: 1 })).toEqual([{ insumoId: "vaso", cantidad: 1 }]);
   });
 
   it("Iced Latte con cold foam y shot baja la leche de la hoja (150 g), no 240", async () => {

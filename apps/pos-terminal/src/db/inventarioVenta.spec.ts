@@ -81,23 +81,40 @@ describe("descontarConsumoLocal", () => {
 });
 
 describe("lecheParaConsumo", () => {
-  it("trae los gramos del producto y el grupo de cada opción elegida", async () => {
+  const enteraConReceta = [{ id: "op-entera", opcion: "Entera", grupo: "Tipo de leche", insumo_id: "leche-entera", cantidad: 240 }];
+
+  it("trae los gramos del producto, el grupo de cada opción elegida y la leche por omisión", async () => {
     const db = {
       getAllAsync: jest.fn(async (sql: string) =>
         sql.includes("FROM productos")
           ? [{ id: "iced-latte", leche_base: 240, leche_con_cold_foam: 190, leche_con_shot: 240, leche_con_ambos: 150 }]
-          : [{ id: "op-entera", opcion: "Entera", grupo: "Tipo de leche" }]),
+          : sql.includes("LIKE '%entera%'")
+            ? enteraConReceta
+            : [{ id: "op-entera", opcion: "Entera", grupo: "Tipo de leche" }]),
     } as any;
     await expect(lecheParaConsumo(db, ["iced-latte"], ["op-entera"])).resolves.toEqual({
       porProducto: { "iced-latte": { base: 240, conColdFoam: 190, conShot: 240, conAmbos: 150 } },
       opciones: { "op-entera": { grupo: "Tipo de leche", opcion: "Entera" } },
+      porOmision: "leche-entera",
     });
   });
 
-  it("sin opciones, sin leche definida o con error de base regresa vacío", async () => {
-    const vacio = { porProducto: {}, opciones: {} };
+  it("sin opciones elegidas igual trae la leche de la bebida y la de omisión (pedido de DiDi)", async () => {
+    const db = {
+      getAllAsync: jest.fn(async (sql: string) =>
+        sql.includes("FROM productos") ? [{ id: "spooky", leche_base: 190, leche_con_cold_foam: null, leche_con_shot: null, leche_con_ambos: null }] : enteraConReceta),
+    } as any;
+    await expect(lecheParaConsumo(db, ["spooky"], [])).resolves.toEqual({
+      porProducto: { spooky: { base: 190, conColdFoam: null, conShot: null, conAmbos: null } },
+      opciones: {},
+      porOmision: "leche-entera",
+    });
+  });
+
+  it("sin productos, sin leche definida o con error de base regresa vacío", async () => {
+    const vacio = { porProducto: {}, opciones: {}, porOmision: null };
     const sinFilas = { getAllAsync: jest.fn(async () => []) } as any;
-    await expect(lecheParaConsumo(sinFilas, ["x"], [])).resolves.toEqual(vacio);
+    await expect(lecheParaConsumo(sinFilas, [], [])).resolves.toEqual(vacio);
     expect(sinFilas.getAllAsync).not.toHaveBeenCalled();
     await expect(lecheParaConsumo(sinFilas, ["x"], ["o"])).resolves.toEqual(vacio);
     const rota = { getAllAsync: jest.fn(async () => { throw new Error("no such column: leche_base"); }) } as any;

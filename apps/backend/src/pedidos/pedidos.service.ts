@@ -16,6 +16,7 @@ import {
   consumoDeVenta,
   agruparRecetas,
   ajusteDeLeche,
+  lechePorOmision,
   validarPagoSuficiente,
 } from "@hangar421/shared";
 import { Prisma } from "@prisma/client";
@@ -1080,13 +1081,12 @@ export class PedidosService {
       hayOpciones
         ? this.prisma.recetaOpcion.findMany({ where: { opcionModificadorId: { in: opcionIds } } })
         : Promise.resolve([] as { insumoId: string; cantidad: any; opcionModificadorId: string }[]),
-      // Leche por bebida: solo importa si eligieron opciones (la leche es una de ellas).
-      hayOpciones
-        ? this.prisma.producto.findUnique({
-            where: { id: item.productoId },
-            select: { lecheBase: true, lecheConColdFoam: true, lecheConShot: true, lecheConAmbos: true },
-          })
-        : Promise.resolve(null),
+      // Leche por bebida. Se carga aunque no haya opciones: una bebida con leche vendida sin
+      // elegir leche descuenta la leche por omisión (pedidos de DiDi que llegan sin opciones).
+      this.prisma.producto.findUnique({
+        where: { id: item.productoId },
+        select: { empresaId: true, lecheBase: true, lecheConColdFoam: true, lecheConShot: true, lecheConAmbos: true },
+      }),
       hayOpciones
         ? this.prisma.opcionModificador.findMany({
             where: { id: { in: opcionIds } },
@@ -1095,6 +1095,7 @@ export class PedidosService {
         : Promise.resolve([] as { id: string; nombre: string; modificador: { nombre: string } }[]),
     ]);
     const nombres = new Map(opciones.map((o) => [o.id, o]));
+    const porOmision = producto && producto.lecheBase !== null ? await this.lecheEnteraPorOmision(producto.empresaId) : null;
     const leche = ajusteDeLeche(
       producto && producto.lecheBase !== null
         ? {
@@ -1108,6 +1109,7 @@ export class PedidosService {
         const o = nombres.get(id);
         return o ? [{ opcionModificadorId: id, grupo: o.modificador.nombre, opcion: o.nombre }] : [];
       }),
+      porOmision,
     );
     // Preparaciones de la casa (cold foam) que aparezcan en esas recetas: se descuentan sus
     // ingredientes. Se cargan por niveles solo las que hacen falta.
@@ -1130,6 +1132,27 @@ export class PedidosService {
         recetaPreparaciones.map((r) => ({ preparacionId: r.preparacionId, insumoId: r.insumoId, cantidad: Number(r.cantidad) })),
       ),
     );
+  }
+
+  private readonly cacheLecheOmision = new Map<string, { insumoId: string | null; expira: number }>();
+
+  /**
+   * Insumo de la leche entera de la empresa (la opción "Entera" de sus grupos de leche), para las
+   * bebidas con leche que se venden sin elegir una. Se guarda 5 minutos: no cambia en el día y se
+   * consulta en cada renglón de cada venta.
+   */
+  private async lecheEnteraPorOmision(empresaId: string): Promise<string | null> {
+    const guardado = this.cacheLecheOmision.get(empresaId);
+    if (guardado && guardado.expira > Date.now()) return guardado.insumoId;
+    const opciones = await this.prisma.opcionModificador.findMany({
+      where: { activo: true, nombre: { contains: "entera", mode: "insensitive" }, modificador: { empresaId, nombre: { contains: "leche", mode: "insensitive" } } },
+      select: { nombre: true, modificador: { select: { nombre: true } }, recetas: { select: { insumoId: true, cantidad: true } } },
+    });
+    const insumoId = lechePorOmision(
+      opciones.map((o) => ({ grupo: o.modificador.nombre, opcion: o.nombre, receta: o.recetas.map((r) => ({ insumoId: r.insumoId, cantidad: Number(r.cantidad) })) })),
+    );
+    this.cacheLecheOmision.set(empresaId, { insumoId, expira: Date.now() + 5 * 60_000 });
+    return insumoId;
   }
 
   private async reponerInventarioPorReceta(
