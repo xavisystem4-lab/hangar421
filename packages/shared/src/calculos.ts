@@ -160,6 +160,27 @@ export function deltaExistenciaInventario(tipo: TipoMovimientoInventario, cantid
   }
 }
 
+/**
+ * Existencia que queda después de un movimiento.
+ *
+ * Hay DOS formas de capturar un conteo físico y el servidor recibe las dos:
+ *  - El ERP web y el POS de Windows mandan la DIFERENCIA (contado − existencia): se suma.
+ *  - La tablet (APK) manda la CANTIDAD CONTADA: hay que FIJAR la existencia a ese valor.
+ *
+ * Antes el servidor sumaba siempre, así que cada conteo hecho en la tablet le sumaba al ERP todo
+ * lo contado (contar 10 200 g de leche dejaba el ERP en 24 260 g) y el inventario parecía no
+ * descontar nada. `fijar` dice cuál de las dos es.
+ */
+export function existenciaTrasMovimiento(
+  existenciaActual: number,
+  tipo: TipoMovimientoInventario,
+  cantidad: number,
+  opciones: { fijar?: boolean } = {},
+): number {
+  if (tipo === TipoMovimientoInventario.CONTEO && opciones.fijar) return Number(cantidad) || 0;
+  return (Number(existenciaActual) || 0) + deltaExistenciaInventario(tipo, cantidad);
+}
+
 export type NivelInventario = "CRITICO" | "BAJO" | "OPTIMO";
 
 export interface ResultadoNivelInventario {

@@ -185,6 +185,19 @@ describe("SyncService.push — idempotencia", () => {
     expect(segundo.resultados[0].estado).toBe(SyncStatus.SYNCED);
   });
 
+  it("un CONTEO de la tablet llega a inventario para FIJAR la existencia (manda lo contado, no la diferencia)", async () => {
+    const { push, inventario } = crearServicio();
+    await push([{
+      id: "mov-1", entidad: SyncEntidad.MOVIMIENTO_INVENTARIO, operacion: SyncOperacion.CREATE, idempotencyKey: "k-conteo",
+      dispositivoId: "dev-1", sucursalId: "suc-1", usuarioId: "user-1", createdAtLocal: new Date().toISOString(),
+      payload: { insumoId: "leche", tipo: "CONTEO", cantidad: 10200, motivo: "Conteo físico desde el Punto de Venta" },
+    }]);
+    expect(inventario.registrarMovimiento).toHaveBeenCalledWith(
+      expect.objectContaining({ insumoId: "leche", tipo: "CONTEO", cantidad: 10200 }),
+      { fijarConteo: true },
+    );
+  });
+
   it("MOVIMIENTO_CAJA enruta a caja.registrarMovimiento (no a inventario, no a turno)", async () => {
     const { push, caja } = crearServicio();
     await push([{

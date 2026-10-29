@@ -337,6 +337,9 @@ export class SyncService {
           usuarioId: item.usuarioId,
           dispositivoId: item.dispositivoId,
           idempotencyKey: item.idempotencyKey,
+        }, {
+          // La tablet manda en un CONTEO la cantidad contada, no la diferencia: fija la existencia.
+          fijarConteo: true,
         });
         break;
 
