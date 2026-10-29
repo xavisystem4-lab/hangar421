@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { TipoMovimientoInventario, WS_EVENTS, agruparRecetas, calcularPorcionesDisponibles, creaCicloDePreparacion, deltaExistenciaInventario, expandirPreparaciones, factorConversionUnidad } from "@hangar421/shared";
+import { TipoMovimientoInventario, WS_EVENTS, agruparRecetas, calcularPorcionesDisponibles, creaCicloDePreparacion, existenciaTrasMovimiento, expandirPreparaciones, factorConversionUnidad } from "@hangar421/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { RealtimeGateway } from "../realtime/realtime.gateway";
 import { CorreoService } from "../correo/correo.service";
@@ -435,7 +435,7 @@ export class InventarioService {
     usuarioId?: string;
     dispositivoId?: string;
     idempotencyKey?: string;
-  }) {
+  }, opciones: { fijarConteo?: boolean } = {}) {
     if (data.idempotencyKey) {
       const existente = await this.prisma.movimientoInventario.findUnique({
         where: { idempotencyKey: data.idempotencyKey },
@@ -443,16 +443,28 @@ export class InventarioService {
       if (existente) return existente;
     }
 
-    const delta = deltaExistenciaInventario(data.tipo, data.cantidad);
+    // Conteo de la tablet: `cantidad` es lo CONTADO y fija la existencia (ver
+    // existenciaTrasMovimiento en shared). El movimiento guarda el valor contado y, en el motivo,
+    // cuánto había y la diferencia, para que el historial explique el ajuste.
+    const fijar = !!opciones.fijarConteo && data.tipo === TipoMovimientoInventario.CONTEO;
 
-    const [movimiento, inventario] = await this.prisma.$transaction([
-      this.prisma.movimientoInventario.create({ data }),
-      this.prisma.inventarioSucursal.upsert({
-        where: { sucursalId_insumoId: { sucursalId: data.sucursalId, insumoId: data.insumoId } },
-        update: { existencia: { increment: delta } },
-        create: { sucursalId: data.sucursalId, insumoId: data.insumoId, existencia: Math.max(delta, 0), minimo: 0 },
-      }),
-    ]);
+    const { movimiento, inventario } = await this.prisma.$transaction(async (tx) => {
+      const llave = { sucursalId_insumoId: { sucursalId: data.sucursalId, insumoId: data.insumoId } };
+      const actual = await tx.inventarioSucursal.findUnique({ where: llave, select: { existencia: true } });
+      const antes = Number(actual?.existencia ?? 0);
+      const despues = existenciaTrasMovimiento(antes, data.tipo, data.cantidad, { fijar });
+      const diferencia = Math.round((despues - antes) * 10_000) / 10_000;
+      const motivo = fijar
+        ? `${data.motivo ?? "Conteo físico"} (había ${antes}, diferencia ${diferencia >= 0 ? "+" : ""}${diferencia})`
+        : data.motivo;
+      const movimiento = await tx.movimientoInventario.create({ data: { ...data, motivo } });
+      const inventario = await tx.inventarioSucursal.upsert({
+        where: llave,
+        update: { existencia: fijar ? despues : { increment: diferencia } },
+        create: { sucursalId: data.sucursalId, insumoId: data.insumoId, existencia: Math.max(despues, 0), minimo: 0 },
+      });
+      return { movimiento, inventario };
+    });
 
     if (Number(inventario.existencia) <= Number(inventario.minimo)) {
       this.realtime.emitirASucursal(data.sucursalId, WS_EVENTS.INVENTARIO_ALERTA, inventario);

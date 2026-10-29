@@ -16,6 +16,7 @@ import {
   calcularSubtotal,
   calcularTotalesPedido,
   deltaExistenciaInventario,
+  existenciaTrasMovimiento,
   resumenSemaforoInventario,
   round2,
   validarPagoSuficiente,
@@ -383,5 +384,21 @@ describe("diferenciaTotalEnPesos", () => {
   it("sin tipo de cambio o sin dólares queda la diferencia en pesos", () => {
     expect(diferenciaTotalEnPesos(-21, 0, 18)).toBe(-21);
     expect(diferenciaTotalEnPesos(-21, 5, null)).toBe(-21);
+  });
+});
+
+describe("existenciaTrasMovimiento", () => {
+  it("un conteo de la tablet FIJA la existencia al valor contado (no lo suma)", () => {
+    expect(existenciaTrasMovimiento(14060, TipoMovimientoInventario.CONTEO, 10200, { fijar: true })).toBe(10200);
+    expect(existenciaTrasMovimiento(-300, TipoMovimientoInventario.CONTEO, 0, { fijar: true })).toBe(0);
+  });
+
+  it("un conteo del ERP web manda la diferencia y se suma", () => {
+    expect(existenciaTrasMovimiento(14060, TipoMovimientoInventario.CONTEO, -3860)).toBe(10200);
+  });
+
+  it("los demás movimientos suman o restan igual que siempre", () => {
+    expect(existenciaTrasMovimiento(10200, TipoMovimientoInventario.SALIDA, 240)).toBe(9960);
+    expect(existenciaTrasMovimiento(10200, TipoMovimientoInventario.ENTRADA, 1000, { fijar: true })).toBe(11200);
   });
 });
