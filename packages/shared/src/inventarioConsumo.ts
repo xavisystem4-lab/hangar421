@@ -131,6 +131,33 @@ export function consumoDeVenta(items: ItemParaConsumo[], recetas: RecetasDisponi
     .sort((a, b) => a.insumoId.localeCompare(b.insumoId));
 }
 
+export interface GrupoParaOmision {
+  nombre: string;
+  obligatorio: boolean;
+  tipo: string;
+  opciones: { id: string; orden: number; activo?: boolean }[];
+}
+
+/**
+ * Opciones que se usan para el INVENTARIO cuando a un renglón le falta una opción obligatoria:
+ * la primera (menor orden) de cada grupo obligatorio de selección única sin nada elegido.
+ *
+ * Pasaba con los pedidos de DiDi, que llegan sin opciones: un Pumpkin Spice Latte no elegía
+ * "Caliente / Fría" y no se descontaba ni el vaso ni la tapa (salen de esa opción). Los grupos
+ * de leche se dejan fuera: esos los cubre la leche por omisión con los gramos de la bebida.
+ */
+export function opcionesObligatoriasPorOmision(grupos: GrupoParaOmision[], elegidas: string[]): string[] {
+  const yaElegidas = new Set(elegidas);
+  const salida: string[] = [];
+  for (const g of grupos) {
+    if (!g.obligatorio || g.tipo !== "SELECCION_UNICA" || /leche/i.test(g.nombre)) continue;
+    const activas = g.opciones.filter((o) => o.activo !== false);
+    if (activas.length === 0 || activas.some((o) => yaElegidas.has(o.id))) continue;
+    salida.push([...activas].sort((a, b) => a.orden - b.orden)[0].id);
+  }
+  return salida;
+}
+
 /** Agrupa filas planas (como vienen de la base) en el mapa que espera `consumoDeVenta`. */
 export function agruparRecetas(
   filasProducto: { productoId: string; insumoId: string; cantidad: number }[],

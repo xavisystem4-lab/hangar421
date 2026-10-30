@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from "expo-sqlite";
-import { uuid7, round2, validarPagoSuficiente, agruparRecetas, consumoDeVenta, ajusteDeLeche, CanalOrigen, SyncEntidad, SyncOperacion, TipoPedido, type TotalesPedido } from "@hangar421/shared";
+import { uuid7, round2, validarPagoSuficiente, agruparRecetas, consumoDeVenta, ajusteDeLeche, opcionesObligatoriasPorOmision, CanalOrigen, SyncEntidad, SyncOperacion, TipoPedido, type TotalesPedido } from "@hangar421/shared";
 import { motivoDescuentoGeneral, motivoDescuentoProducto, totalesConDescuentos, type DescuentosVenta } from "../caja/descuentoVenta";
 import { registrarConsumoMonedero, revertirConsumoMonedero } from "./monederoRepo";
 import type { ItemCarrito } from "../store/carritoStore";
@@ -7,7 +7,7 @@ import type { CodigoOrigen } from "../caja/origenVenta";
 import { normalizarNombreCliente, notasConNombreCliente } from "../caja/nombreCliente";
 import { encolarSync } from "./outboxRepo";
 import { obtenerOCrearDispositivoId, obtenerOCrearSucursalIdLocal, obtenerOCrearEmpresaIdLocal } from "./dispositivoLocal";
-import { descontarConsumoLocal, recetasParaConsumo, lecheParaConsumo } from "./inventarioRepo";
+import { descontarConsumoLocal, recetasParaConsumo, lecheParaConsumo, gruposObligatoriosLocales } from "./inventarioRepo";
 
 export interface PagoVenta {
   metodo: string;
@@ -278,19 +278,23 @@ export async function descontarInventarioDeVenta(
   ventaId?: string,
 ): Promise<void> {
   const productoIds = [...new Set(items.map((i) => i.productoId))];
-  const opcionIds = [...new Set(items.flatMap((i) => (i.modificadores ?? []).map((m) => m.opcionModificadorId)))];
+  // Opción obligatoria sin elegir (pedido de DiDi sin "Caliente / Fría"): la primera del grupo,
+  // para que se descuenten el vaso y la tapa (igual que el ERP, ver opcionesObligatoriasPorOmision).
+  const grupos = await gruposObligatoriosLocales(db, productoIds);
+  const porOmision = new Map(items.map((i, idx) => [idx, opcionesObligatoriasPorOmision(grupos[i.productoId] ?? [], (i.modificadores ?? []).map((m) => m.opcionModificadorId))]));
+  const opcionIds = [...new Set(items.flatMap((i, idx) => [...(i.modificadores ?? []).map((m) => m.opcionModificadorId), ...(porOmision.get(idx) ?? [])]))];
   const recetas = await recetasParaConsumo(db, productoIds, opcionIds);
   // Leche por bebida: cada hoja de receta dice cuánta leche lleva (menos con cold foam o shot), y
   // si no eligieron leche se descuenta la entera por omisión.
   const leche = await lecheParaConsumo(db, productoIds, opcionIds);
   if (recetas.porProducto.length === 0 && recetas.porOpcion.length === 0 && Object.keys(leche.porProducto).length === 0) return;
   const consumo = consumoDeVenta(
-    items.map((i) => {
+    items.map((i, idx) => {
       const elegidas = (i.modificadores ?? []).map((m) => ({ opcionModificadorId: m.opcionModificadorId }));
       return {
         productoId: i.productoId,
         cantidad: i.cantidad,
-        modificadores: elegidas,
+        modificadores: [...elegidas, ...(porOmision.get(idx) ?? []).map((opcionModificadorId) => ({ opcionModificadorId }))],
         leche: ajusteDeLeche(
           leche.porProducto[i.productoId],
           elegidas.flatMap((m) => {

@@ -112,3 +112,25 @@ describe("preparaciones de la casa (cold foam)", () => {
     expect(r.porPreparacion).toEqual({ "cold-foam": [{ insumoId: "crema", cantidad: 35 }] });
   });
 });
+
+import { opcionesObligatoriasPorOmision } from "./inventarioConsumo";
+
+describe("opcionesObligatoriasPorOmision", () => {
+  const temperatura = { nombre: "Temperatura", obligatorio: true, tipo: "SELECCION_UNICA", opciones: [{ id: "fria", orden: 2 }, { id: "caliente", orden: 1 }] };
+  const leche = { nombre: "Tipo de leche", obligatorio: true, tipo: "SELECCION_UNICA", opciones: [{ id: "entera", orden: 1 }] };
+  const extras = { nombre: "Extras", obligatorio: false, tipo: "MULTIPLE", opciones: [{ id: "shot", orden: 1 }] };
+
+  it("un pedido de DiDi sin temperatura usa la primera opción (Caliente) para el inventario", () => {
+    expect(opcionesObligatoriasPorOmision([temperatura, leche, extras], [])).toEqual(["caliente"]);
+  });
+
+  it("si ya eligieron una opción del grupo no agrega nada", () => {
+    expect(opcionesObligatoriasPorOmision([temperatura], ["fria"])).toEqual([]);
+  });
+
+  it("deja fuera los grupos de leche, los opcionales y las opciones apagadas", () => {
+    expect(opcionesObligatoriasPorOmision([leche, extras], [])).toEqual([]);
+    const conApagada = { ...temperatura, opciones: [{ id: "caliente", orden: 1, activo: false }, { id: "fria", orden: 2 }] };
+    expect(opcionesObligatoriasPorOmision([conApagada], [])).toEqual(["fria"]);
+  });
+});
