@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useAuthLocalStore } from "../store/authLocalStore";
 import { usarColores } from "../store/temaStore";
@@ -32,7 +32,7 @@ export function PosCajaScreen() {
   const { usuario } = useAuthLocalStore();
   const { exigir, modalPermiso } = useExigirPermiso();
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const [turno, setTurno] = useState<TurnoLocal | null | undefined>(undefined);
   const [cajeros, setCajeros] = useState<UsuarioLocal[]>([]);
   const [asignando, setAsignando] = useState(false);

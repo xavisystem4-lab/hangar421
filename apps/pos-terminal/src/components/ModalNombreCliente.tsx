@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { KeyboardAvoidingView, Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
 import { MAX_NOMBRE_CLIENTE, normalizarNombreCliente } from "../caja/nombreCliente";
@@ -27,7 +27,7 @@ export function ModalNombreCliente({
   onOmitir: () => void;
 }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const [texto, setTexto] = useState(inicial ?? "");
   const hayNombre = normalizarNombreCliente(texto) != null;
 

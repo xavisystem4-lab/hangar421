@@ -51,7 +51,8 @@ describe("confirmarVenta — descuentos", () => {
 
     expect(venta.total).toBe(189);
     const insertVenta = de("INSERT INTO ventas")[0];
-    expect(insertVenta.params.slice(3, 7)).toEqual([250, 61, 0, 189]); // subtotal, descuento, impuestos, total
+    expect(insertVenta.params[3]).toBe(1); // folio del día: primera venta de hoy
+    expect(insertVenta.params.slice(4, 8)).toEqual([250, 61, 0, 189]); // subtotal, descuento, impuestos, total
   });
 
   it("guarda una fila de descuento por línea y una general, y el descuento de cada línea", async () => {

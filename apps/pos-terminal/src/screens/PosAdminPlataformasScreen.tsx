@@ -125,7 +125,7 @@ export function PosAdminPlataformasScreen({ onCerrar, didi }: {
   didi?: { detectados: PedidoDetectado[]; atender: (id: string) => void; recargar: () => void; registrar: (p: PedidoDetectado) => void };
 }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const { usuario } = useAuthLocalStore();
 
   const [seccion, setSeccion] = useState<"pedidos" | "config">("pedidos");
@@ -646,7 +646,7 @@ function RevisionPedido({ pedido, productos, usuarioId, onCerrar }: {
   onCerrar: (huboCambio: boolean) => void;
 }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   // Arranca con la sugerencia por nombre: en la mayoría de los pedidos el cajero solo confirma.
   // Las opciones elegidas en la plataforma (leche, extras) pasan a la nota de cocina del item.
   const [mapeo, setMapeo] = useState<MapeoItem[]>(() =>
@@ -690,7 +690,7 @@ function RevisionPedido({ pedido, productos, usuarioId, onCerrar }: {
       const venta = await aceptarPedidoPlataforma(db, pedido, mapeo, usuarioId, nombres, confirmarManual);
       Alert.alert(
         "Pedido aceptado",
-        `${pedido.simulado ? "(SIMULACIÓN) " : ""}${confirmarManual ? "Registrado con tu confirmación manual. " : pedido.simulado ? "" : `${pedido.nombreVisible} confirmó la aceptación. `}Se mandó a cocina y quedó como venta #${venta.folioLocal} (${dinero(venta.total)}), pagada por ${pedido.nombreVisible}.`,
+        `${pedido.simulado ? "(SIMULACIÓN) " : ""}${confirmarManual ? "Registrado con tu confirmación manual. " : pedido.simulado ? "" : `${pedido.nombreVisible} confirmó la aceptación. `}Se mandó a cocina y quedó como venta #${venta.folioDia ?? venta.folioLocal} (${dinero(venta.total)}), pagada por ${pedido.nombreVisible}.`,
       );
       onCerrar(true);
     } catch (e) {

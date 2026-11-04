@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
@@ -12,7 +12,7 @@ import type { TicketPayload } from "../printing/PrinterAdapter";
  *  impresora USB (usbPrinterAdapter.ts) — p. ej. después de reconectar el cable o poner papel. */
 export function ReciboEnPantallaScreen({ ventaId, onCerrar }: { ventaId: string; onCerrar: () => void }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const [ticket, setTicket] = useState<TicketPayload | null>(null);
   const [reintentando, setReintentando] = useState(false);
 

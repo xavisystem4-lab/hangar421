@@ -794,6 +794,20 @@ export const MIGRACIONES: Migracion[] = [
       `);
     },
   },
+  {
+    version: 25,
+    nombre: "folio_del_dia",
+    up: async (db) => {
+      // Folio que se reinicia cada día (#1, #2…) para que el cajero sepa cuántas ventas lleva
+      // hoy. Es solo para mostrar e imprimir: `folio_local` sigue siendo el consecutivo único
+      // de la sucursal con el que la venta se identifica en el ERP. Las ventas viejas quedan en
+      // NULL y se muestran con su folio_local.
+      await db.execAsync(`
+        ALTER TABLE ventas ADD COLUMN folio_dia INTEGER;
+        CREATE INDEX IF NOT EXISTS idx_ventas_sucursal_creada ON ventas(sucursal_id, created_at);
+      `);
+    },
+  },
 ];
 
 /** Corre, en orden, toda migración con `version` mayor a la ya aplicada — cada una dentro de su

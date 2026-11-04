@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Alert, Modal, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
 import { notificacionesApp, type AppInstalada } from "../../modules/hangar-notificaciones";
@@ -21,7 +21,7 @@ export function TarjetaNotificacionesDidi({ detectados, onRegistrar, onAtender, 
   onRecargar: () => void;
 }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const disponible = notificacionesApp.moduloDisponible;
   const [permiso, setPermiso] = useState(false);
   const [activo, setActivo] = useState(true);

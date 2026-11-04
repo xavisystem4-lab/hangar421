@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { ActivityIndicator, Linking, Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { APP_VERSION, buscarActualizacion, descargarApk, instalarApk, type InfoActualizacion } from "../updates";
 import { progresoDescarga } from "../releases";
@@ -19,7 +19,7 @@ type Estado = "buscando" | "disponible" | "al-dia" | "error";
 export function BarraActualizacion() {
   const colores = usarColores();
   const tema = useTemaStore();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const [estado, setEstado] = useState<Estado>("buscando");
   const [info, setInfo] = useState<InfoActualizacion | null>(null);
   const [ventana, setVentana] = useState(false);
@@ -91,7 +91,7 @@ type Paso = "descargando" | "lista" | "instalando" | "error";
 /** Ventana de actualización: descarga con barra de progreso → "Instalar ahora". */
 function VentanaActualizacion({ info, onCerrar }: { info: InfoActualizacion; onCerrar: () => void }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const [paso, setPaso] = useState<Paso>("descargando");
   const [avance, setAvance] = useState({ escritos: 0, total: 0 });
   const [rutaApk, setRutaApk] = useState<string | null>(null);

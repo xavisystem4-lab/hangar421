@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
 import type { PedidoDidiLocal } from "../db/pedidosDidiRepo";
@@ -18,7 +19,7 @@ export function ListaPedidosDidi({ pedidos, onCobrar, onCancelar }: {
   onCancelar: (p: PedidoDidiLocal) => void;
 }) {
   const colores = usarColores();
-  const e = crearEstilos(colores);
+  const e = useMemo(() => crearEstilos(colores), [colores]);
   if (pedidos.length === 0) return null;
   return (
     <View style={e.barra}>

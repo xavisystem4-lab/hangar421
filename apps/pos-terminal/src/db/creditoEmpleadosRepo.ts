@@ -10,7 +10,7 @@ export async function consumosCreditoLocales(db: SQLiteDatabase, desdeIso: strin
   const pagos = await db.getAllAsync<{
     venta_id: string; empleado_id: string | null; monto: number; folio_local: number | null; total: number; created_at: string; nombre: string | null;
   }>(
-    `SELECT p.venta_id, p.empleado_id, SUM(p.monto) AS monto, v.folio_local, v.total, v.created_at,
+    `SELECT p.venta_id, p.empleado_id, SUM(p.monto) AS monto, COALESCE(v.folio_dia, v.folio_local) AS folio_local, v.total, v.created_at,
             COALESCE(me.nombre, ul.nombre) AS nombre
        FROM pagos p
        JOIN ventas v ON v.id = p.venta_id

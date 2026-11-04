@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
 import type { ModificadorLocal, ProductoLocal } from "../db/catalogoRepo";
@@ -22,7 +22,7 @@ export function ModalModificadores({
   onConfirmar: (cantidad: number, seleccion: SeleccionModificador[], notas: string) => void;
 }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
 
   const [cantidad, setCantidad] = useState(1);
   const [notas, setNotas] = useState("");

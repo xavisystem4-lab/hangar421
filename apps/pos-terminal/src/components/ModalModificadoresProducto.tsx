@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
 import type { ModificadorLocal } from "../db/catalogoRepo";
@@ -29,7 +29,7 @@ export function ModalModificadoresProducto({
   onEditarModificador: (id: string, modificador: ModificadorNuevo) => Promise<void>;
 }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const [seleccion, setSeleccion] = useState<string[]>(seleccionInicial.filter((id) => modificadores.some((m) => m.id === id)));
 
   const [creando, setCreando] = useState(false);
