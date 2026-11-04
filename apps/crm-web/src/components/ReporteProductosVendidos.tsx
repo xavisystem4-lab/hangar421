@@ -5,6 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { useAuthCrm } from "@/lib/authClient";
 import { StatTile } from "@/components/StatTile";
 import { BotonesExportar } from "@/components/BotonesExportar";
+import { etiquetaTurno, useTurnosDelRango } from "@/lib/turnos";
 import { exportarProductosVendidosExcel, exportarProductosVendidosPdf, type FilaProductoVendido } from "@/lib/exportarVentas";
 
 interface Respuesta {
@@ -20,29 +21,6 @@ interface Respuesta {
 }
 
 type Orden = "unidades" | "importe" | "nombre";
-
-interface TurnoCaja {
-  id: string;
-  estado: "ABIERTO" | "CERRADO";
-  fechaApertura: string;
-  fechaCierre: string | null;
-  sucursal: { id: string; nombre: string };
-  caja: { id: string; nombre: string };
-  usuario: { id: string; nombre: string };
-}
-
-const hora = (iso: string) => new Date(iso).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
-/** "de la mañana / tarde / noche" según la hora en que abrió. */
-function momento(iso: string): string {
-  const h = new Date(iso).getHours();
-  return h < 12 ? "de la mañana" : h < 18 ? "de la tarde" : "de la noche";
-}
-function etiquetaTurno(t: TurnoCaja, conSucursal: boolean, conFecha: boolean): string {
-  const fecha = conFecha ? `${new Date(t.fechaApertura).toLocaleDateString("es-MX", { day: "2-digit", month: "2-digit" })} ` : "";
-  const rango = `${hora(t.fechaApertura)}–${t.fechaCierre ? hora(t.fechaCierre) : "ahora"}`;
-  const estado = t.estado === "ABIERTO" ? "🟢 En curso" : `Turno ${momento(t.fechaApertura)}`;
-  return `${estado} · ${fecha}${rango} · ${t.usuario?.nombre ?? "—"}${conSucursal ? ` · ${t.sucursal?.nombre ?? ""}` : ""}`;
-}
 
 const dinero = (n: number) => `$${(n ?? 0).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const SIN_CATEGORIA = "Sin categoría";
@@ -78,24 +56,13 @@ export function ReporteProductosVendidos({ sucursalId, sucursalNombre, desde, ha
   }, [contexto]);
   const [orden, setOrden] = useState<Orden>("unidades");
   const [abierto, setAbierto] = useState<string | null>(null);
-  const [turnos, setTurnos] = useState<TurnoCaja[]>([]);
   const [turnoId, setTurnoId] = useState("");
 
   // Turnos de caja del rango (y los que siguen abiertos desde antes), para el filtro de turno.
+  const turnos = useTurnosDelRango(!!contexto, sucursalId, desde, hasta);
   useEffect(() => {
-    if (!contexto) return;
-    const q = new URLSearchParams({ desde, hasta });
-    if (sucursalId) q.set("sucursalId", sucursalId);
-    apiFetch<{ items: TurnoCaja[]; pendientes: TurnoCaja[] }>(`/caja/turnos?${q}`)
-      .then((r) => {
-        const todos = new Map<string, TurnoCaja>();
-        for (const t of [...(r.pendientes ?? []), ...(r.items ?? [])]) todos.set(t.id, t);
-        const lista = [...todos.values()].sort((a, b) => a.fechaApertura.localeCompare(b.fechaApertura));
-        setTurnos(lista);
-        setTurnoId((actual) => (actual && !todos.has(actual) ? "" : actual));
-      })
-      .catch(() => setTurnos([]));
-  }, [contexto, sucursalId, desde, hasta]);
+    if (turnoId && turnos.length && !turnos.some((t) => t.id === turnoId)) setTurnoId("");
+  }, [turnos, turnoId]);
 
   useEffect(() => {
     if (!contexto) return;

@@ -222,6 +222,25 @@ export function describirProductoConsumido(p: ProductoConsumido): string {
   return [p.nombre, ...mods].join(" · ");
 }
 
+/**
+ * Qué productos consumió una empleada con su crédito, sumados: "3 × Latte Frío · Avena", "1 ×
+ * Sándwich". El mismo producto con distintos modificadores va por separado. De más a menos.
+ * `importe` es precio × cantidad (con extras), para ver en qué se fue el crédito.
+ */
+export function productosConsumidos(consumos: ConsumoCredito[]): { descripcion: string; cantidad: number; importe: number }[] {
+  const porDescripcion = new Map<string, { descripcion: string; cantidad: number; importe: number }>();
+  for (const c of consumos) {
+    for (const p of c.productos) {
+      const descripcion = describirProductoConsumido({ ...p, modificadores: p.modificadores.map((m) => ({ ...m, precioExtra: 0 })) });
+      const g = porDescripcion.get(descripcion) ?? { descripcion, cantidad: 0, importe: 0 };
+      g.cantidad += p.cantidad;
+      g.importe = round2(g.importe + p.cantidad * (p.precioUnitario + p.modificadores.reduce((s, m) => s + (m.precioExtra || 0), 0)));
+      porDescripcion.set(descripcion, g);
+    }
+  }
+  return [...porDescripcion.values()].sort((a, b) => b.cantidad - a.cantidad || b.importe - a.importe || a.descripcion.localeCompare(b.descripcion, "es"));
+}
+
 /** Hoja "Resumen": una fila por empleada y el total. */
 export function filasResumenCredito(grupos: ConsumoPorEmpleada[]): (string | number)[][] {
   const filas: (string | number)[][] = [["Empleada", "Consumos", "Productos", "Total a crédito"]];

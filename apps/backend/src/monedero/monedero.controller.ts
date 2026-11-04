@@ -30,8 +30,14 @@ export class MonederoController {
   /** Reporte: consumo del crédito por empleada con el detalle de productos, fecha y hora. */
   @Get("consumos")
   @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
-  consumos(@Req() req: any, @Query("desde") desde?: string, @Query("hasta") hasta?: string, @Query("sucursalId") sucursalId?: string) {
-    return this.monedero.reporteConsumos(req.user.empresaId, { desde, hasta, sucursalId: sucursalId || undefined });
+  consumos(
+    @Req() req: any,
+    @Query("desde") desde?: string,
+    @Query("hasta") hasta?: string,
+    @Query("sucursalId") sucursalId?: string,
+    @Query("turnoId") turnoId?: string,
+  ) {
+    return this.monedero.reporteConsumos(req.user.empresaId, { desde, hasta, sucursalId: sucursalId || undefined, turnoId: turnoId || undefined });
   }
 
   /** Manda el reporte de crédito por correo (PDF y Excel adjuntos). */
