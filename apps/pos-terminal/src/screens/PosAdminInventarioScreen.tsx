@@ -36,6 +36,8 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
   const [items, setItems] = useState<ExistenciaInsumo[]>([]);
   const [movimientos, setMovimientos] = useState<MovimientoInventarioLocal[]>([]);
   const [busqueda, setBusqueda] = useState("");
+  // Nivel elegido tocando un cuadro del semáforo (Agotado, Crítico…); null = todos.
+  const [filtroNivel, setFiltroNivel] = useState<NivelStock | null>(null);
   const [sucursal, setSucursal] = useState("HANGAR 421");
   const [cargando, setCargando] = useState(true);
   const [sincronizando, setSincronizando] = useState(false);
@@ -168,8 +170,11 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
   }
 
   const visibles = useMemo(
-    () => ordenarPorUrgencia(items).filter((i) => coincideBusqueda(`${i.nombre} ${i.proveedorNombre ?? ""}`, busqueda)),
-    [items, busqueda],
+    () =>
+      ordenarPorUrgencia(items).filter(
+        (i) => (!filtroNivel || nivelDe(i) === filtroNivel) && coincideBusqueda(`${i.nombre} ${i.proveedorNombre ?? ""}`, busqueda),
+      ),
+    [items, busqueda, filtroNivel],
   );
   const compras = useMemo(() => generarListaCompras(items), [items]);
   const porProveedor = useMemo(() => agruparPorProveedor(compras), [compras]);
@@ -381,13 +386,33 @@ export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void })
         <>
           {/* Semáforo del almacén: un vistazo dice si hay que actuar hoy. */}
           <View style={estilos.semaforo}>
-            {(["agotado", "critico", "bajo", "ok"] as NivelStock[]).map((n) => (
-              <View key={n} style={[estilos.pastilla, { borderColor: COLOR_NIVEL[n] }]}>
-                <Text style={[estilos.pastillaValor, { color: COLOR_NIVEL[n] }]}>{resumenNiveles[n]}</Text>
-                <Text style={estilos.pastillaEtiqueta} numberOfLines={1}>{ETIQUETA_NIVEL[n]}</Text>
-              </View>
-            ))}
+            {/* Tocar un cuadro muestra solo esos insumos; tocarlo otra vez vuelve a todos. */}
+            {(["agotado", "critico", "bajo", "ok"] as NivelStock[]).map((n) => {
+              const activo = filtroNivel === n;
+              return (
+                <TouchableOpacity
+                  key={n}
+                  onPress={() => {
+                    setFiltroNivel(activo ? null : n);
+                    if (pestana !== "existencias" && pestana !== "conteo") { setAltaPedida(false); setPestana("existencias"); }
+                  }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: activo }}
+                  style={[estilos.pastilla, { borderColor: COLOR_NIVEL[n] }, activo && { backgroundColor: `${COLOR_NIVEL[n]}22`, borderWidth: 2 }]}
+                >
+                  <Text style={[estilos.pastillaValor, { color: COLOR_NIVEL[n] }]}>{resumenNiveles[n]}</Text>
+                  <Text style={[estilos.pastillaEtiqueta, activo && { fontWeight: "800", color: COLOR_NIVEL[n] }]} numberOfLines={1}>{ETIQUETA_NIVEL[n]}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
+          {filtroNivel && (pestana === "existencias" || pestana === "conteo") && (
+            <TouchableOpacity onPress={() => setFiltroNivel(null)} style={{ marginBottom: 8 }} accessibilityRole="button">
+              <Text style={[estilos.ayuda, { fontWeight: "700", color: COLOR_NIVEL[filtroNivel] }]}>
+                Mostrando solo: {ETIQUETA_NIVEL[filtroNivel]} ({resumenNiveles[filtroNivel]}) · ✕ Ver todos
+              </Text>
+            </TouchableOpacity>
+          )}
 
           <View style={estilos.pestanas}>
             {([["existencias", "Existencias"], ["conteo", "Conteo"], ["compras", `Compras (${compras.length})`], ["insumos", "Insumos"]] as [Pestana, string][]).map(([id, etiqueta]) => (
