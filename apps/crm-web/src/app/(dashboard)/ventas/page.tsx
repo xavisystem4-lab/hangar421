@@ -637,9 +637,12 @@ export default function VentasPage() {
                     <tr key={`${v.id}-detalle`}>
                       <td colSpan={seleccion?.sucursalId ? 9 : 10} style={{ padding: "10px 12px 18px", background: "var(--h421-gray-50)" }}>
                         <strong style={{ fontSize: 13 }}>Ticket {v.folio}</strong>
-                        <ul style={{ margin: "8px 0", paddingLeft: 18 }}>
+                        {/* Los productos, más grandes y resaltados: es lo primero que se busca al abrir el ticket. */}
+                        <ul style={{ margin: "10px 0", paddingLeft: 20 }}>
                           {v.items.map((l) => (
-                            <li key={l.id}>{l.cantidad}× {l.nombre} — ${l.subtotal.toFixed(2)}</li>
+                            <li key={l.id} style={{ fontSize: 17, fontWeight: 700, color: "var(--h421-black)", lineHeight: 1.6 }}>
+                              {l.cantidad}× {l.nombre} — ${l.subtotal.toFixed(2)}
+                            </li>
                           ))}
                         </ul>
                         <div style={{ fontSize: 13, display: "flex", gap: 20, flexWrap: "wrap" }}>
