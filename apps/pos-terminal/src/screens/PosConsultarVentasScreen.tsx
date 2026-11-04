@@ -46,7 +46,7 @@ const METODOS_CAMBIABLES: MetodoPago[] = [MetodoPago.EFECTIVO, MetodoPago.TARJET
 
 export function PosConsultarVentasScreen({ onCerrar, onReabierta }: { onCerrar: () => void; onReabierta?: () => void }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const { usuario } = useAuthLocalStore();
   const carrito = useCarritoStore();
 

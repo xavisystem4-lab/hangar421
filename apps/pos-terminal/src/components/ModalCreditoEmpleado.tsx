@@ -26,7 +26,7 @@ export function ModalCreditoEmpleado({
   onCerrar: () => void;
 }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const [texto, setTexto] = useState("");
   const visibles = useMemo(() => filtrarEmpleadas(empleadas, texto, null), [empleadas, texto]);
   const ahora = new Date();

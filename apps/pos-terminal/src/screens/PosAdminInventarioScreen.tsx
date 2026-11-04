@@ -27,7 +27,7 @@ const SIN_SECCION = "__sin_seccion__";
 
 export function PosAdminInventarioScreen({ onCerrar }: { onCerrar: () => void }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const { usuario } = useAuthLocalStore();
 
   const [pestana, setPestana] = useState<Pestana>("existencias");

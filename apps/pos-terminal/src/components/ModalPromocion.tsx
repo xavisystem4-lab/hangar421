@@ -30,7 +30,7 @@ export function ModalPromocion({
   onCancelar: () => void;
 }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const editando = !!inicial;
   const [nombre, setNombre] = useState(inicial?.nombre ?? "");
   const [tipo, setTipo] = useState<TipoPromocion>(inicial?.tipo ?? "PRECIO");

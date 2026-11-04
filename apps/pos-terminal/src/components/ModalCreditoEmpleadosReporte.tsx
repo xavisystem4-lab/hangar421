@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { agruparConsumosPorEmpleada, describirProductoConsumido, type ConsumoPorEmpleada } from "@hangar421/shared";
 import { usarColores } from "../store/temaStore";
@@ -27,7 +27,7 @@ export function ModalCreditoEmpleadosReporte({ desdeIso, hastaIso, etiquetaPerio
   onCerrar: () => void;
 }) {
   const colores = usarColores();
-  const e = crearEstilos(colores);
+  const e = useMemo(() => crearEstilos(colores), [colores]);
   const [grupos, setGrupos] = useState<ConsumoPorEmpleada[] | null>(null);
   const [abierta, setAbierta] = useState<string | null>(null);
   const [exportando, setExportando] = useState<"pdf" | "excel" | null>(null);

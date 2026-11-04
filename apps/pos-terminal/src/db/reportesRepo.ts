@@ -70,7 +70,7 @@ export interface DescuentoDelTurno {
  *  corte. Las cortesías llevan su propio motivo y autorización, y también aparecen aquí. */
 export async function descuentosDelTurno(db: SQLiteDatabase, turnoId: string): Promise<DescuentoDelTurno[]> {
   const filas = await db.getAllAsync<{ folio: number; tipo: string; valor: number; motivo: string | null }>(
-    `SELECT v.folio_local as folio, d.tipo as tipo, d.valor as valor, d.motivo as motivo
+    `SELECT COALESCE(v.folio_dia, v.folio_local) as folio, d.tipo as tipo, d.valor as valor, d.motivo as motivo
      FROM descuentos d JOIN ventas v ON v.id = d.venta_id
      WHERE v.turno_id = ? AND v.estado = 'COBRADA'
      ORDER BY v.folio_local, d.created_at, d.id`,
@@ -289,7 +289,7 @@ export async function detalleVentas(db: SQLiteDatabase, filtro: FiltroReporte, l
   const sucursalId = await obtenerOCrearSucursalIdLocal(db);
   const { sql, params } = condiciones(sucursalId, filtro);
   const filas = await db.getAllAsync<any>(
-    `SELECT v.id, v.folio_local, v.created_at, v.total,
+    `SELECT v.id, COALESCE(v.folio_dia, v.folio_local) AS folio_local, v.created_at, v.total,
             COALESCE(u.nombre, '—') as cajero,
             (SELECT GROUP_CONCAT(p.metodo, ' + ') FROM pagos p WHERE p.venta_id = v.id) as metodos,
             (SELECT GROUP_CONCAT(vi.cantidad || 'x ' || vi.nombre_snapshot, ', ') FROM venta_items vi WHERE vi.venta_id = v.id) as productos

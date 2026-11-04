@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useCarritoStore } from "../store/carritoStore";
 import { useAuthLocalStore } from "../store/authLocalStore";
@@ -36,7 +36,7 @@ export function PosVentaScreen({ onCobrar, categoriaSugerida }: { onCobrar: () =
     return () => clearInterval(t);
   }, [enEspera.length]);
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const [categorias, setCategorias] = useState<CategoriaLocal[]>([]);
   const [productos, setProductos] = useState<ProductoLocal[]>([]);
   const [categoriaActiva, setCategoriaActiva] = useState<string | null>(null);
@@ -173,6 +173,52 @@ export function PosVentaScreen({ onCobrar, categoriaSugerida }: { onCobrar: () =
     return categorias.filter((c) => conProductos.has(c.id));
   }, [categorias, productos]);
 
+  // La grilla de productos NO se vuelve a dibujar cada vez que cambia el carrito (agregar,
+  // quitar, cambiar cantidad): con 100+ tarjetas eso era lo que hacía sentir lenta la tablet
+  // al tocar productos seguidos. Solo se redibuja al cambiar lo que muestra; el reloj de
+  // `minuto` refresca los precios de promociones por horario.
+  const tocarRef = useRef(tocarProducto);
+  tocarRef.current = tocarProducto;
+  const [minuto, setMinuto] = useState(0);
+  useEffect(() => {
+    if (promociones.length === 0) return;
+    const t = setInterval(() => setMinuto((n) => n + 1), 60000);
+    return () => clearInterval(t);
+  }, [promociones.length]);
+  const grilla = useMemo(
+    () => (
+              <View style={estilos.grillaProductos}>
+                {productosVisibles.map((p) => {
+                  const contexto = etiquetaContexto(p);
+                  const promo = precioDeVenta(promociones, p, new Date(), sucursalLocalId);
+                  // La tarjeta lleva el color de su categoría con texto blanco: en "Todas" y en la
+                  // búsqueda se distingue de un vistazo a qué familia pertenece cada producto.
+                  const color = colorPorCategoria.get(p.categoriaId);
+                  const fondo = color?.fondo ?? colores.navy;
+                  return (
+                    <TouchableOpacity
+                      key={p.id}
+                      style={[estilos.tarjetaProducto, { backgroundColor: fondo, borderColor: fondo }]}
+                      onPress={() => tocarRef.current(p)}
+                    >
+                      <Text style={estilos.nombreProducto} numberOfLines={2}>{p.nombre}</Text>
+                      {contexto && <Text style={estilos.contextoProducto} numberOfLines={1}>{contexto}</Text>}
+                      {promo.promocionId && <Text style={estilos.etiquetaPromo} numberOfLines={1}>🏷 {promo.nombrePromocion}</Text>}
+                      <Text style={estilos.precioProducto}>
+                        ${promo.precioUnitario.toFixed(2)}
+                        {promo.promocionId ? <Text style={estilos.precioAnterior}>  ${p.precioBase.toFixed(2)}</Text> : null}
+                        {/* Avisa de que el precio puede subir con lo que se elija en el modal. */}
+                        {p.requierePersonalizacion ? <Text style={estilos.marcaPersonaliza}>  ⚙</Text> : null}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+    ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [productosVisibles, promociones, sucursalLocalId, colorPorCategoria, estilos, colores.navy, buscando, categoriaActiva, nombrePorCategoria, minuto],
+  );
+
   const sinCatalogo = categorias.length === 0 && productos.length === 0;
 
   return (
@@ -247,33 +293,7 @@ export function PosVentaScreen({ onCobrar, categoriaSugerida }: { onCobrar: () =
                 </TouchableOpacity>
               </View>
             )}
-            <View style={estilos.grillaProductos}>
-              {productosVisibles.map((p) => {
-                const contexto = etiquetaContexto(p);
-                const promo = precioDeVenta(promociones, p, new Date(), sucursalLocalId);
-                // La tarjeta lleva el color de su categoría con texto blanco: en "Todas" y en la
-                // búsqueda se distingue de un vistazo a qué familia pertenece cada producto.
-                const color = colorPorCategoria.get(p.categoriaId);
-                const fondo = color?.fondo ?? colores.navy;
-                return (
-                  <TouchableOpacity
-                    key={p.id}
-                    style={[estilos.tarjetaProducto, { backgroundColor: fondo, borderColor: fondo }]}
-                    onPress={() => tocarProducto(p)}
-                  >
-                    <Text style={estilos.nombreProducto} numberOfLines={2}>{p.nombre}</Text>
-                    {contexto && <Text style={estilos.contextoProducto} numberOfLines={1}>{contexto}</Text>}
-                    {promo.promocionId && <Text style={estilos.etiquetaPromo} numberOfLines={1}>🏷 {promo.nombrePromocion}</Text>}
-                    <Text style={estilos.precioProducto}>
-                      ${promo.precioUnitario.toFixed(2)}
-                      {promo.promocionId ? <Text style={estilos.precioAnterior}>  ${p.precioBase.toFixed(2)}</Text> : null}
-                      {/* Avisa de que el precio puede subir con lo que se elija en el modal. */}
-                      {p.requierePersonalizacion ? <Text style={estilos.marcaPersonaliza}>  ⚙</Text> : null}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            {grilla}
             {productosVisibles.length === 0 && !buscando && <Text style={estilos.ayuda}>Sin productos en esta categoría.</Text>}
           </>
         )}

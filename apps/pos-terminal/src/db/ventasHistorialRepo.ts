@@ -14,7 +14,7 @@ export interface VentaResumen {
 export async function listarVentasRecientes(db: SQLiteDatabase, limite = 50): Promise<VentaResumen[]> {
   const sucursalId = await obtenerOCrearSucursalIdLocal(db);
   const filas = await db.getAllAsync<any>(
-    "SELECT id, folio_local, total, estado, created_at FROM ventas WHERE sucursal_id = ? ORDER BY created_at DESC LIMIT ?",
+    "SELECT id, COALESCE(folio_dia, folio_local) AS folio_local, total, estado, created_at FROM ventas WHERE sucursal_id = ? ORDER BY created_at DESC LIMIT ?",
     sucursalId, limite,
   );
   return filas.map((f) => ({ id: f.id, folioLocal: f.folio_local, total: f.total, estado: f.estado, createdAt: f.created_at }));
@@ -69,12 +69,12 @@ export async function consultarVentas(db: SQLiteDatabase, filtro: FiltroConsulta
     params.push(filtro.estado);
   }
   if (filtro.folio?.trim()) {
-    partes.push("CAST(v.folio_local AS TEXT) LIKE ?");
+    partes.push("CAST(COALESCE(v.folio_dia, v.folio_local) AS TEXT) LIKE ?");
     params.push(`%${filtro.folio.trim()}%`);
   }
 
   const filas = await db.getAllAsync<any>(
-    `SELECT v.id, v.folio_local, v.created_at, v.total, v.estado,
+    `SELECT v.id, COALESCE(v.folio_dia, v.folio_local) AS folio_local, v.created_at, v.total, v.estado,
             v.cancelada_motivo, v.cancelada_autorizada_por_nombre, v.cancelada_at,
             COALESCE(u.nombre, '—') AS cajero,
             (SELECT COALESCE(SUM(vi.cantidad), 0) FROM venta_items vi WHERE vi.venta_id = v.id) AS articulos,

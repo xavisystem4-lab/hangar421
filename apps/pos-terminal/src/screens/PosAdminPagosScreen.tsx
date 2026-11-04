@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
 import { MetodoPago } from "@hangar421/shared";
 import { usarColores } from "../store/temaStore";
@@ -34,7 +34,7 @@ const DESCRIPCION: Record<MetodoPago, string> = {
  *  configuración local del dispositivo, no viene del ERP. */
 export function PosAdminPagosScreen({ onCerrar }: { onCerrar: () => void }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const [metodos, setMetodos] = useState<MetodoPagoConfig[]>([]);
   const [aviso, setAviso] = useState<string | null>(null);
 

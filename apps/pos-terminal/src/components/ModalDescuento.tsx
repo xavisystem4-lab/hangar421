@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { TipoDescuento, round2 } from "@hangar421/shared";
 import { usarColores } from "../store/temaStore";
@@ -24,7 +24,7 @@ export function ModalDescuento({
   onCerrar: () => void;
 }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const [paso, setPaso] = useState<Paso>("alcance");
   const [borrador, setBorrador] = useState<DescuentosVenta>(inicial);
   const [lineaId, setLineaId] = useState<string | null>(null);

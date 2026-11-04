@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { ActivityIndicator, Alert, BackHandler, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { diasDeTurnoAbierto } from "@hangar421/shared";
 import { useAuthLocalStore } from "../store/authLocalStore";
@@ -77,7 +77,7 @@ export function PosNavigator() {
   const fijarNombreCliente = useCarritoStore((s) => s.fijarNombreCliente);
   const sync = useSyncStatusStore();
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const { exigir, modalPermiso, puede } = useExigirPermiso();
   // Las secciones de Admin se ocultan (no piden PIN): son navegación, no una acción puntual.
   const seccionesAdmin = SECCIONES_ADMIN.filter((s) => (s.permiso ? puede(s.permiso) || (!!s.tambien && puede(s.tambien)) : esRolAdmin(usuario?.rol)));

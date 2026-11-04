@@ -57,7 +57,7 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
   const { items, totales, limpiar, nombreCliente, pedidoDidiId } = useCarritoStore();
   const { usuario } = useAuthLocalStore();
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const totalesCarrito = totales();
 
   // Cortesía: la casa regala los productos; el cajero decide qué extras sí se cobran. Requiere el
@@ -347,7 +347,7 @@ export function PosCobroScreen({ onCerrar, onCobrado }: { onCerrar: () => void; 
       // DE INMEDIATO, sin diálogo de por medio: el siguiente cliente no espera. La comanda de
       // preparación y (si el interruptor está encendido) el ticket salen en segundo plano; si
       // algo falla se avisa y se reimprime desde la pestaña Ventas.
-      onCobrado(venta.id, venta.folioLocal, venta.total);
+      onCobrado(venta.id, venta.folioDia ?? venta.folioLocal, venta.total);
       comandaActiva(db)
         .then((activa) => (activa ? imprimirComanda(db, venta.id) : null))
         .then((r) => { if (r && !r.impreso) Alert.alert("No se imprimió la comanda", r.motivo ?? "Revisa la impresora en Admin → Impresora."); })

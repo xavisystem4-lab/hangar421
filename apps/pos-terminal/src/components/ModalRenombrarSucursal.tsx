@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
@@ -35,7 +35,7 @@ export function ModalRenombrarSucursal({
   onRenombrada: (nuevoNombre: string) => void;
 }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const [nombre, setNombre] = useState(nombreActual);
   const [admins, setAdmins] = useState<UsuarioErp[] | null>(null);
   const [adminId, setAdminId] = useState<string | null>(null);

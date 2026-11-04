@@ -27,7 +27,7 @@ export function ModalPagoMixto({
   onCerrar: () => void;
 }) {
   const colores = usarColores();
-  const e = crearEstilos(colores);
+  const e = useMemo(() => crearEstilos(colores), [colores]);
   const [montos, setMontos] = useState<Record<string, string>>(() =>
     Object.fromEntries((inicial ?? []).map((x) => [x.metodo, String(x.cantidad)])),
   );

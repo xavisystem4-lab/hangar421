@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
 import type { ModificadorLocal } from "../db/catalogoRepo";
@@ -21,7 +21,7 @@ export function ModalModificador({
   onCancelar: () => void;
 }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const editando = !!inicial;
   const [nombre, setNombre] = useState(inicial?.nombre ?? "");
   const [tipo, setTipo] = useState<TipoModificador>(inicial?.tipo ?? "SELECCION_UNICA");

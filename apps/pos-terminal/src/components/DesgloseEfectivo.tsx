@@ -31,7 +31,7 @@ export function ColumnaDenominaciones({
   onUltimo?: () => void;
 }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const total = totalConteo(conteo);
 
   return (

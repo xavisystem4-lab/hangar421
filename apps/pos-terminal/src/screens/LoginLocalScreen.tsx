@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { RolUsuario } from "@hangar421/shared";
 import { useAuthLocalStore } from "../store/authLocalStore";
@@ -15,7 +15,7 @@ import { SelectorSucursal } from "../components/SelectorSucursal";
 export function LoginLocalScreen() {
   const { usuariosDisponibles, cargando, error, cargarUsuarios, entrar, eligiendoSucursal, elegirSucursal, salir } = useAuthLocalStore();
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const [seleccionado, setSeleccionado] = useState<string | null>(null);
   const [pin, setPin] = useState("");
   const [entrando, setEntrando] = useState(false);

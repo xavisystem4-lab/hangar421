@@ -45,9 +45,13 @@ export interface OpcionesVenta {
   descuentos?: DescuentosVenta;
 }
 
+import { inicioDelDiaLocal } from "../caja/folioDia";
+
 export interface VentaConfirmada {
   id: string;
   folioLocal: number;
+  /** Folio del día (se reinicia a #1 cada día): el que ve el cajero y sale en el ticket. */
+  folioDia?: number;
   total: number;
 }
 
@@ -101,6 +105,7 @@ export async function confirmarVenta(
   ]);
 
   let folioLocal = 0;
+  let folioDia = 1;
 
   await db.withTransactionAsync(async () => {
     // Consecutivo POR SUCURSAL (migración 3): cada sucursal numera sus tickets desde 1, sin
@@ -110,12 +115,19 @@ export async function confirmarVenta(
       sucursalId,
     )) ?? { siguiente: 1 };
     folioLocal = siguiente;
+    // Folio del día: el siguiente entre las ventas de HOY (medianoche de la tablet) de la sucursal.
+    const delDia = await db.getFirstAsync<{ siguienteDia: number }>(
+      "SELECT COALESCE(MAX(folio_dia), 0) + 1 AS siguienteDia FROM ventas WHERE sucursal_id = ? AND created_at >= ?",
+      sucursalId,
+      inicioDelDiaLocal(new Date(ahora)),
+    );
+    folioDia = Number(delDia?.siguienteDia) || 1;
 
     await db.runAsync(
       `INSERT INTO ventas
-         (id, sucursal_id, folio_local, mesa_id, cliente_id, estado, subtotal, descuento_monto, impuestos, total, canal_origen, turno_id, usuario_id, notas, created_at, updated_at, idempotency_key, nombre_cliente, plataforma)
-       VALUES (?, ?, ?, NULL, NULL, 'COBRADA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ventaId, sucursalId, folioLocal, totales.subtotal, totales.descuentoTotal, totales.impuesto, totales.total,
+         (id, sucursal_id, folio_local, folio_dia, mesa_id, cliente_id, estado, subtotal, descuento_monto, impuestos, total, canal_origen, turno_id, usuario_id, notas, created_at, updated_at, idempotency_key, nombre_cliente, plataforma)
+       VALUES (?, ?, ?, ?, NULL, NULL, 'COBRADA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ventaId, sucursalId, folioLocal, folioDia, totales.subtotal, totales.descuentoTotal, totales.impuesto, totales.total,
       canalOrigen, datos.turnoId, datos.usuarioId, opciones.notas ?? null, ahora, ahora, idempotencyKeyVenta, nombreCliente, opciones.plataforma ?? null,
     );
 
@@ -267,7 +279,7 @@ export async function confirmarVenta(
     /* el inventario local se corrige en el siguiente pull */
   }
 
-  return { id: ventaId, folioLocal, total: totales.total };
+  return { id: ventaId, folioLocal, folioDia, total: totales.total };
 }
 
 /** Consumo de una venta aplicado al almacén local. Expuesta para poder probarla. */

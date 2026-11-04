@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
@@ -29,7 +29,7 @@ const NOMBRE_CLASE: Record<number, string> = { 0: "compuesto", 3: "HID", 7: "imp
  */
 export function PosAdminImpresoraScreen({ onCerrar }: { onCerrar: () => void }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const [dispositivos, setDispositivos] = useState<DispositivoUsb[]>([]);
   const [config, setConfig] = useState<ConfigImpresoraUsb | null>(null);
   const [anchoMM, setAnchoMM] = useState<58 | 80>(80);

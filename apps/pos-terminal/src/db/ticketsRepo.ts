@@ -19,7 +19,7 @@ export interface VentaPendienteTicket { id: string; folioLocal: number; total: n
 export async function listarTicketsPendientes(db: SQLiteDatabase): Promise<VentaPendienteTicket[]> {
   const sucursalId = await obtenerOCrearSucursalIdLocal(db);
   const filas = await db.getAllAsync<any>(
-    "SELECT id, folio_local, total, created_at FROM ventas WHERE sucursal_id = ? AND ticket_pendiente_impresion = 1 ORDER BY created_at DESC",
+    "SELECT id, COALESCE(folio_dia, folio_local) AS folio_local, total, created_at FROM ventas WHERE sucursal_id = ? AND ticket_pendiente_impresion = 1 ORDER BY created_at DESC",
     sucursalId,
   );
   return filas.map((f) => ({ id: f.id, folioLocal: f.folio_local, total: f.total, createdAt: f.created_at }));
@@ -71,7 +71,7 @@ export async function construirTicketPayload(db: SQLiteDatabase, ventaId: string
   const tasa = datosFiscales.tasaImpuesto;
 
   return {
-    folio: venta.folio_local,
+    folio: venta.folio_dia ?? venta.folio_local,
     fecha: venta.created_at,
     items: items.map((i) => {
       const suyos = modificadores.filter((m) => m.venta_item_id === i.id);
@@ -122,7 +122,7 @@ export async function construirComandaPayload(db: SQLiteDatabase, ventaId: strin
     : [];
   const datosFiscales = await obtenerDatosFiscales(db);
   return {
-    folio: venta.folio_local,
+    folio: venta.folio_dia ?? venta.folio_local,
     fecha: venta.created_at,
     items: items.map((i) => {
       const suyos = modificadores.filter((m) => m.venta_item_id === i.id).map((m) => m.nombre_snapshot as string);

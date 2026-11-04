@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { describirVigencia, promocionVigente, type Promocion } from "@hangar421/shared";
 import { usarColores } from "../store/temaStore";
@@ -14,7 +14,7 @@ import type { DatosPromocion } from "../caja/promocion";
  *  especiales. Cualquiera con el permiso de Promociones puede usarla (por defecto, todos los roles). */
 export function PromocionesAdmin({ productos, usuarioId }: { productos: ProductoLocal[]; usuarioId?: string }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const [promociones, setPromociones] = useState<Promocion[]>([]);
   const [sucursalId, setSucursalId] = useState<string | null>(null);
   // undefined = cerrado, null = nueva, Promocion = editando.

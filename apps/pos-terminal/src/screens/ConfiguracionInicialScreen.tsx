@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
@@ -11,7 +11,7 @@ import { sembrarMetodosPagoPorDefecto, listarMetodosPago, alternarMetodoPago, et
  *  terminar este wizard y vender de inmediato sin haber tocado ConexionErpScreen nunca. */
 export function ConfiguracionInicialScreen({ onListo }: { onListo: () => void }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const [datos, setDatos] = useState<DatosFiscales | null>(null);
   const [metodos, setMetodos] = useState<MetodoPagoConfig[]>([]);
   const [guardando, setGuardando] = useState(false);

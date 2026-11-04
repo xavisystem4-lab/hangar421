@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { RolUsuario, TipoDispositivo, type AccesoSucursal, type JwtPayload, type LoginResponse } from "@hangar421/shared";
 import { ErrorErp, erpFetch, guardarTokensErp, obtenerErpBaseUrl } from "../api/erpHttp";
@@ -40,7 +40,7 @@ interface SesionErp {
  *  ADMIN_CORPORATIVO), que es lo que registra este Punto de Venta como su propia sucursal. */
 export function ConexionErpScreen({ onConectado, onCerrar }: { onConectado: () => void; onCerrar: () => void }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [conectando, setConectando] = useState(false);

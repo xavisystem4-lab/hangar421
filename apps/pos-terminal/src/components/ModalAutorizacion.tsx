@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
@@ -30,7 +30,7 @@ export function ModalAutorizacion({
   onAutorizado: (autorizador: Autorizador) => void;
 }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const [autorizadores, setAutorizadores] = useState<Autorizador[] | null>(null);
   const [elegido, setElegido] = useState<string | null>(null);
   const [pin, setPin] = useState("");

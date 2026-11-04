@@ -28,7 +28,7 @@ export function ModalPedidoDidi({ pedido, onConfirmar, onCapturarAMano, onDescar
   onCerrar: () => void;
 }) {
   const colores = usarColores();
-  const e = crearEstilos(colores);
+  const e = useMemo(() => crearEstilos(colores), [colores]);
   const [catalogo, setCatalogo] = useState<ProductoCatalogo[]>([]);
   const [items, setItems] = useState<ItemPedidoDidi[]>([]);
   const [eligiendo, setEligiendo] = useState<number | "nuevo" | null>(null);

@@ -23,7 +23,7 @@ import {
  */
 export function PanelInsumos({ onCambio, abrirAltaAlEntrar = false }: { onCambio: () => Promise<void> | void; abrirAltaAlEntrar?: boolean }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
 
   const [insumos, setInsumos] = useState<InsumoLocal[]>([]);
   const [proveedores, setProveedores] = useState<ProveedorErp[] | null>(null);

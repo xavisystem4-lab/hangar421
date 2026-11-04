@@ -1,5 +1,5 @@
 import { etiquetaOrigen } from "../caja/origenVenta";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { usarColores } from "../store/temaStore";
@@ -52,7 +52,7 @@ function BarraHorizontal({ datos, colores }: { datos: { etiqueta: string; valor:
 
 export function PosAdminReportesScreen({ onCerrar }: { onCerrar: () => void }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
 
   const hoy = new Date();
   const [fechaDesde, setFechaDesde] = useState(new Date(hoy.getTime() - 6 * 86_400_000));

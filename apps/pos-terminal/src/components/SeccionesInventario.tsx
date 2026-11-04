@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
@@ -20,7 +20,7 @@ export function ModalElegirSeccion({
   onCancelar: () => void;
 }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const opciones: { id: string | null; nombre: string }[] = [...secciones, { id: null, nombre: "Sin sección" }];
 
   return (
@@ -62,7 +62,7 @@ export function ModalEditarSecciones({
   onCerrar: () => void;
 }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const [nombres, setNombres] = useState<Record<string, string>>(() => Object.fromEntries(secciones.map((s) => [s.id, s.nombre])));
   const [nueva, setNueva] = useState("");
 

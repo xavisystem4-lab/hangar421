@@ -122,7 +122,7 @@ export interface ProblemaSync {
  */
 export async function listarProblemasSync(db: SQLiteDatabase, limite = 50): Promise<ProblemaSync[]> {
   const filas = await db.getAllAsync<any>(
-    `SELECT o.local_id, o.entidad, o.entidad_id, o.intentos, o.ultimo_error, o.created_at, o.sucursal_id, v.folio_local
+    `SELECT o.local_id, o.entidad, o.entidad_id, o.intentos, o.ultimo_error, o.created_at, o.sucursal_id, COALESCE(v.folio_dia, v.folio_local) AS folio_local
      FROM sync_outbox o LEFT JOIN ventas v ON v.id = o.entidad_id
      WHERE o.estado = 'ERROR' AND o.ultimo_error IS NOT NULL
      ORDER BY o.orden_secuencia DESC LIMIT ?`,

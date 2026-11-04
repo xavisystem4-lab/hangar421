@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
@@ -28,7 +28,7 @@ const ETIQUETA_ENTIDAD: Record<string, string> = {
  */
 export function PosAdminSincronizacionScreen({ onCerrar }: { onCerrar: () => void }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const [problemas, setProblemas] = useState<ProblemaSync[]>([]);
   const [pendientes, setPendientes] = useState(0);
   const [cargando, setCargando] = useState(true);

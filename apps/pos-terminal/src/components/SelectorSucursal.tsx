@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
 import type { SucursalTerminal } from "../db/multisucursalRepo";
@@ -21,7 +22,7 @@ export function SelectorSucursal({
   onCancelar?: () => void;
 }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   return (
     <View style={estilos.tarjeta}>
       <Text style={estilos.titulo}>{titulo}</Text>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { RolUsuario } from "@hangar421/shared";
 import { usarColores } from "../store/temaStore";
@@ -33,7 +33,7 @@ const ETIQUETA_ROL: Record<string, string> = {
  *  entrar aquí, se daría a sí mismo todas las funciones. */
 export function PosAdminUsuariosScreen({ onCerrar }: { onCerrar: () => void }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const yo = useAuthLocalStore((s) => s.usuario);
   const [usuarios, setUsuarios] = useState<UsuarioLocal[]>([]);
 
@@ -323,7 +323,7 @@ function EditorPermisos({
   onCancelar: () => void;
 }) {
   const colores = usarColores();
-  const estilos = crearEstilos(colores);
+  const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const admin = esRolAdmin(rol);
   // Nadie se quita a sí mismo el rol de admin: dejaría la tablet sin quien la administre.
   // Y a quien el ERP le asignó sucursales, el ERP le reescribe el rol en cada sincronización.

@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Modal, ScrollView, Share, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { usarColores } from "../store/temaStore";
 import { textoCorte, type CorteDetallado } from "../caja/corteDetallado";
@@ -16,7 +17,7 @@ const fechaHora = (iso: string) => {
  */
 export function ModalCorteDetallado({ corte, onCerrar }: { corte: CorteDetallado; onCerrar: () => void }) {
   const colores = usarColores();
-  const e = crearEstilos(colores);
+  const e = useMemo(() => crearEstilos(colores), [colores]);
   const dif = corte.resultado.diferenciaTotal;
   const colorDif = Math.abs(dif) < 1 ? colores.green : colores.red;
 
