@@ -11,6 +11,7 @@ import { listarCategorias, listarProductos, modificadoresDeProducto, type Catego
 import { ModalModificadores } from "../components/ModalModificadores";
 import { ModalNombreCliente } from "../components/ModalNombreCliente";
 import { esVentaDidi } from "../caja/origenVenta";
+import { tiempoEsperando } from "../caja/enEspera";
 import { listarPromociones } from "../db/promocionesRepo";
 import { obtenerOCrearSucursalIdLocal } from "../db/dispositivoLocal";
 import { precioDeVenta } from "../caja/promocionVenta";
@@ -23,8 +24,17 @@ import type { Promocion } from "@hangar421/shared";
  *  se puede editar desde Admin → Catálogo, y si se enlaza el ERP el catálogo real lo reemplaza
  *  (ver catalogoSyncRepo.upsertCatalogo). */
 export function PosVentaScreen({ onCobrar, categoriaSugerida }: { onCobrar: () => void; categoriaSugerida?: string | null }) {
-  const { items, agregarItem, quitarItem, cambiarCantidad, totales, nombreCliente, nombrePreguntado, fijarNombreCliente, marcarNombrePreguntado } = useCarritoStore();
+  const { items, agregarItem, quitarItem, cambiarCantidad, totales, nombreCliente, nombrePreguntado, fijarNombreCliente, marcarNombrePreguntado, enEspera, ponerEnEspera, retomarEspera, descartarEspera } = useCarritoStore();
   const [pidiendoNombre, setPidiendoNombre] = useState(false);
+  // Modal para apartar el pedido (cliente sin cambio, fue a su carro…) con nombre o descripción.
+  const [apartando, setApartando] = useState(false);
+  // Reloj para el "lleva 3 min esperando" de cada botón; solo corre si hay pedidos en espera.
+  const [, setTic] = useState(0);
+  useEffect(() => {
+    if (enEspera.length === 0) return;
+    const t = setInterval(() => setTic((n) => n + 1), 30000);
+    return () => clearInterval(t);
+  }, [enEspera.length]);
   const colores = usarColores();
   const estilos = crearEstilos(colores);
   const [categorias, setCategorias] = useState<CategoriaLocal[]>([]);
@@ -270,6 +280,36 @@ export function PosVentaScreen({ onCobrar, categoriaSugerida }: { onCobrar: () =
       </ScrollView>
 
       <View style={estilos.carrito}>
+        {/* Pedidos en espera: un botón por cliente apartado. Tocarlo abre su pedido con los
+            productos pendientes de cobrar; dejarlo presionado lo descarta. */}
+        {enEspera.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }} contentContainerStyle={{ gap: 8 }}>
+            {enEspera.map((p) => {
+              const total = p.items.reduce((s, i) => s + (i.precioUnitario + i.modificadores.reduce((m, x) => m + x.precioExtra, 0)) * i.cantidad, 0);
+              const piezas = p.items.reduce((s, i) => s + i.cantidad, 0);
+              return (
+                <TouchableOpacity
+                  key={p.id}
+                  onPress={() => retomarEspera(p.id)}
+                  onLongPress={() =>
+                    Alert.alert("Descartar pedido en espera", `¿Quitar el pedido de "${p.etiqueta}" ($${total.toFixed(2)})? Sus productos se pierden.`, [
+                      { text: "Cancelar", style: "cancel" },
+                      { text: "Descartar", style: "destructive", onPress: () => descartarEspera(p.id) },
+                    ])
+                  }
+                  style={estilos.botonEspera}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Retomar pedido en espera de ${p.etiqueta}`}
+                >
+                  <Text style={estilos.botonEsperaNombre} numberOfLines={1}>⏸ {p.etiqueta}</Text>
+                  <Text style={estilos.botonEsperaDetalle} numberOfLines={1}>
+                    {piezas} pza · ${total.toFixed(2)} · {tiempoEsperando(p.desde, new Date())}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
         {/* Nombre del pedido: sale en el ticket y la comanda. Tocarlo lo cambia o lo quita. En un
             pedido de DIDI no se ofrece (ver pedidoDidi). */}
         {!pedidoDidi && (
@@ -331,6 +371,18 @@ export function PosVentaScreen({ onCobrar, categoriaSugerida }: { onCobrar: () =
             </Text>
           </View>
 
+          {/* Apartar el pedido: el cliente no trae cambio o fue por dinero a su carro. Se guarda
+              con nombre o descripción y la caja queda libre para el siguiente. */}
+          <TouchableOpacity
+            onPress={() => setApartando(true)}
+            disabled={items.length === 0}
+            style={[estilos.botonApartar, items.length === 0 && { opacity: 0.5 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Poner pedido en espera"
+          >
+            <Text style={estilos.botonApartarTexto}>⏸ En espera</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity
             onPress={onCobrar}
             disabled={items.length === 0}
@@ -344,6 +396,19 @@ export function PosVentaScreen({ onCobrar, categoriaSugerida }: { onCobrar: () =
           </TouchableOpacity>
         </View>
       </View>
+
+      {apartando && (
+        <ModalNombreCliente
+          inicial={nombreCliente}
+          titulo="Poner pedido en espera"
+          ayuda="Escribe el nombre o una descripción (ej. «Señor camioneta roja»). Quedará como botón arriba del carrito: tócalo cuando regrese para cobrarle."
+          placeholder="Nombre o descripción"
+          textoGuardar="Apartar"
+          textoOmitir="Cancelar"
+          onGuardar={(texto) => { ponerEnEspera(texto); setApartando(false); }}
+          onOmitir={() => setApartando(false)}
+        />
+      )}
 
       {pidiendoNombre && (
         <ModalNombreCliente
@@ -429,5 +494,10 @@ function crearEstilos(colores: ReturnType<typeof usarColores>) {
       alignItems: "center", justifyContent: "center",
     },
     botonCobrarTexto: { color: "#fff", fontWeight: "700", fontSize: 17 },
+    botonApartar: { backgroundColor: colores.amber + "26", borderWidth: 1, borderColor: colores.amber, borderRadius: 12, paddingHorizontal: 14, minHeight: 52, alignItems: "center", justifyContent: "center" },
+    botonApartarTexto: { color: colores.texto, fontWeight: "700", fontSize: 15 },
+    botonEspera: { backgroundColor: colores.amber + "26", borderWidth: 1, borderColor: colores.amber, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12, minHeight: 48, maxWidth: 220, justifyContent: "center" },
+    botonEsperaNombre: { color: colores.texto, fontWeight: "800", fontSize: 14 },
+    botonEsperaDetalle: { color: colores.textoSecundario, fontSize: 11, marginTop: 2 },
   });
 }
