@@ -4,10 +4,11 @@ import { Fragment, useEffect, useState } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
-import { describirProductoConsumido, filasDetalleCredito, filasResumenCredito, semanasDeCredito, type ConsumoPorEmpleada } from "@hangar421/shared";
+import { describirProductoConsumido, filasDetalleCredito, filasResumenCredito, productosConsumidos, semanasDeCredito, type ConsumoPorEmpleada } from "@hangar421/shared";
 import { apiFetch } from "@/lib/api";
 import { StatTile } from "@/components/StatTile";
 import { guardarConDialogoWeb } from "@/components/ReporteInventario";
+import { etiquetaTurno, useTurnosDelRango } from "@/lib/turnos";
 
 const ZONA = "America/Mexico_City";
 const fmtFecha = (iso: string) => new Date(iso).toLocaleDateString("es-MX", { timeZone: ZONA, weekday: "short", day: "2-digit", month: "short", year: "numeric" });
@@ -50,8 +51,16 @@ function construirPdf(grupos: ConsumoPorEmpleada[], periodo: string, sucursal: s
     const y = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 120) + 24;
     doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.setTextColor(11, 30, 51);
     doc.text(`${g.empleado} · $${g.totalCredito.toFixed(2)}`, 40, y);
+    // Qué consumió con su crédito, sumado.
     autoTable(doc, {
       startY: y + 8,
+      head: [["Productos consumidos", "Cantidad"]],
+      body: productosConsumidos(g.consumos).map((p) => [p.descripcion, String(p.cantidad)]),
+      headStyles: { fillColor: [11, 30, 51] }, styles: { fontSize: 9, cellPadding: 3 }, columnStyles: { 1: { halign: "right", fontStyle: "bold" } },
+      margin: { left: 40, right: 40 }, tableWidth: 340,
+    });
+    autoTable(doc, {
+      startY: ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y) + 8,
       head: [["Día y fecha", "Hora", "Folio", "Productos", "A crédito"]],
       body: g.consumos.map((c) => [fmtFecha(c.fecha), fmtHora(c.fecha), c.folio ? `#${c.folio}` : "—", c.productos.map((p) => `${p.cantidad} × ${describirProductoConsumido(p)}`).join("\n") || "(sin detalle)", `$${c.montoCredito.toFixed(2)}`]),
       headStyles: { fillColor: [180, 83, 9] }, styles: { fontSize: 9, cellPadding: 4 }, columnStyles: { 4: { halign: "right", fontStyle: "bold" } },
@@ -65,6 +74,9 @@ function construirExcelBase64(grupos: ConsumoPorEmpleada[]): string {
   const libro = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(libro, XLSX.utils.aoa_to_sheet(filasResumenCredito(grupos)), "Resumen");
   XLSX.utils.book_append_sheet(libro, XLSX.utils.aoa_to_sheet(filasDetalleCredito(grupos, fmtFechaHora)), "Detalle");
+  const productos: (string | number)[][] = [["Empleada", "Producto", "Cantidad", "Importe"]];
+  for (const g of grupos) for (const p of productosConsumidos(g.consumos)) productos.push([g.empleado, p.descripcion, p.cantidad, p.importe]);
+  XLSX.utils.book_append_sheet(libro, XLSX.utils.aoa_to_sheet(productos), "Productos por empleada");
   return XLSX.write(libro, { bookType: "xlsx", type: "base64" }) as string;
 }
 
@@ -76,6 +88,14 @@ export function ReporteCreditoEmpleados({ sucursalId, sucursalNombre, desde, has
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [abiertas, setAbiertas] = useState<Set<string>>(new Set());
+  /** Turno de caja elegido: solo lo que cada empleada consumió con su crédito en ese turno. */
+  const [turnoId, setTurnoId] = useState("");
+  const turnos = useTurnosDelRango(!!sucursalId, sucursalId, desde, hasta);
+  const turnoElegido = turnos.find((t) => t.id === turnoId);
+  const enCurso = turnos.filter((t) => t.estado === "ABIERTO");
+  useEffect(() => {
+    if (turnoId && turnos.length && !turnos.some((t) => t.id === turnoId)) setTurnoId("");
+  }, [turnos, turnoId]);
 
   useEffect(() => {
     if (!sucursalId) return;
@@ -83,11 +103,13 @@ export function ReporteCreditoEmpleados({ sucursalId, sucursalNombre, desde, has
     setError(null);
     const rangoDesde = new Date(`${desde}T00:00:00`).toISOString();
     const rangoHasta = new Date(`${hasta}T23:59:59`).toISOString();
-    apiFetch<ConsumoPorEmpleada[]>(`/monedero/consumos?sucursalId=${sucursalId}&desde=${rangoDesde}&hasta=${rangoHasta}`)
+    const q = new URLSearchParams({ sucursalId, desde: rangoDesde, hasta: rangoHasta });
+    if (turnoId) q.set("turnoId", turnoId);
+    apiFetch<ConsumoPorEmpleada[]>(`/monedero/consumos?${q}`)
       .then((g) => { setGrupos(g); setAbiertas(new Set(g.slice(0, 1).map((x) => x.empleadoId))); })
       .catch((e) => setError(e?.message ?? "No se pudo cargar el reporte."))
       .finally(() => setCargando(false));
-  }, [sucursalId, desde, hasta]);
+  }, [sucursalId, desde, hasta, turnoId]);
 
   const total = grupos.reduce((s, g) => s + g.totalCredito, 0);
   const consumos = grupos.reduce((s, g) => s + g.numConsumos, 0);
@@ -100,7 +122,7 @@ export function ReporteCreditoEmpleados({ sucursalId, sucursalNombre, desde, has
     });
   }
 
-  const periodo = periodoTexto(desde, hasta);
+  const periodo = turnoElegido ? etiquetaTurno(turnoElegido, false, true).replace("🟢 ", "") : periodoTexto(desde, hasta);
   const archivoBase = `credito-empleados_${desde}_a_${hasta}`;
   const [modalCorreo, setModalCorreo] = useState(false);
   const [destinatarios, setDestinatarios] = useState(() => { try { return localStorage.getItem(CLAVE_DESTINATARIOS) ?? ""; } catch { return ""; } });
@@ -142,6 +164,28 @@ export function ReporteCreditoEmpleados({ sucursalId, sucursalNombre, desde, has
 
   return (
     <div style={{ marginTop: 12 }}>
+      <div className="card" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontSize: 12, color: "var(--h421-gray-400)", fontWeight: 700 }}>Turno</span>
+          <select value={turnoId} onChange={(e) => setTurnoId(e.target.value)} style={{ padding: "9px 10px", borderRadius: 8, border: "1px solid var(--h421-gray-200)", minWidth: 280 }}>
+            <option value="">Todos los turnos {desde === hasta ? "del día" : "del rango"}</option>
+            {turnos.map((t) => (
+              <option key={t.id} value={t.id}>{etiquetaTurno(t, false, desde !== hasta || t.fechaApertura.slice(0, 10) !== desde)}</option>
+            ))}
+          </select>
+        </label>
+        {enCurso.length > 0 && !turnoId && (
+          <button onClick={() => setTurnoId(enCurso[enCurso.length - 1].id)} style={{ padding: "9px 12px", background: "rgba(22,163,74,0.12)", border: "1px solid var(--h421-green)", color: "var(--h421-green)", fontWeight: 700 }}>
+            🟢 Ver turno en curso
+          </button>
+        )}
+        {turnoId && (
+          <button onClick={() => setTurnoId("")} style={{ padding: "9px 12px", background: "transparent", textDecoration: "underline" }}>Todos los turnos</button>
+        )}
+        {turnoElegido && (
+          <span style={{ fontSize: 13 }}>Consumos a crédito en el <strong>{etiquetaTurno(turnoElegido, false, true).replace("🟢 En curso", "turno en curso")}</strong></span>
+        )}
+      </div>
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "stretch" }}>
         <StatTile etiqueta="Consumido a crédito" valor={`$${total.toFixed(2)}`} acento="var(--h421-amber)" />
         <StatTile etiqueta="Consumos" valor={String(consumos)} acento="var(--h421-blue)" />
@@ -177,7 +221,7 @@ export function ReporteCreditoEmpleados({ sucursalId, sucursalNombre, desde, has
       {cargando && <p style={{ color: "var(--h421-gray-400)" }}>Cargando…</p>}
       {error && <p style={{ color: "var(--h421-red)" }}>{error}</p>}
       {!cargando && !error && grupos.length === 0 && (
-        <div className="card" style={{ marginTop: 16, color: "var(--h421-gray-400)" }}>Nadie usó crédito de empleado en estas fechas.</div>
+        <div className="card" style={{ marginTop: 16, color: "var(--h421-gray-400)" }}>Nadie usó crédito de empleado {turnoElegido ? "en este turno" : "en estas fechas"}.</div>
       )}
 
       {grupos.map((g) => {
@@ -191,6 +235,16 @@ export function ReporteCreditoEmpleados({ sucursalId, sucursalNombre, desde, has
               <span style={{ fontSize: 13, color: "var(--h421-gray-500)" }}>{g.numConsumos} consumo(s) · {g.numProductos} producto(s)</span>
               <span style={{ fontWeight: 800, fontSize: 18, color: "var(--h421-amber-texto)" }}>${g.totalCredito.toFixed(2)}</span>
             </button>
+
+            {/* Qué consumió con su crédito, sumado (se ve aunque la tarjeta esté cerrada). */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8, paddingLeft: 30 }}>
+              {productosConsumidos(g.consumos).map((p) => (
+                <span key={p.descripcion} title={`$${p.importe.toFixed(2)}`}
+                  style={{ fontSize: 12, padding: "4px 10px", borderRadius: 999, background: "var(--h421-gray-50, #f8fafc)", border: "1px solid var(--h421-gray-200)" }}>
+                  <strong>{p.cantidad} ×</strong> {p.descripcion}
+                </span>
+              ))}
+            </div>
 
             {abierta && (
               <div className="h421-tabla-wrap" style={{ overflowX: "auto", marginTop: 10 }}>

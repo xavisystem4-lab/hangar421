@@ -175,14 +175,21 @@ export class MonederoService {
    * fecha y hora, folio, sucursal y los productos (con sus modificadores). Agrupado por empleada
    * con la misma regla que usa la tablet (agruparConsumosPorEmpleada en shared).
    */
-  async reporteConsumos(empresaId: string, filtros: { desde?: string; hasta?: string; sucursalId?: string }) {
+  /** Con `turnoId`: solo lo consumido en ventas de ese turno de caja, sin recortar por fechas (un
+   *  turno puede cruzar la medianoche o seguir abierto desde ayer). */
+  async reporteConsumos(empresaId: string, filtros: { desde?: string; hasta?: string; sucursalId?: string; turnoId?: string }) {
     const desde = filtros.desde ? new Date(filtros.desde) : new Date(Date.now() - 7 * 86_400_000);
     const hasta = filtros.hasta ? new Date(filtros.hasta) : new Date();
     if (Number.isNaN(desde.getTime()) || Number.isNaN(hasta.getTime())) throw new BadRequestException("Fechas inválidas.");
 
+    const delTurno = filtros.turnoId
+      ? (await this.prisma.pedido.findMany({ where: { empresaId, turnoId: filtros.turnoId }, select: { id: true } })).map((p) => p.id)
+      : null;
+    if (delTurno && delTurno.length === 0) return [];
+
     const movimientos = await this.prisma.movimientoMonedero.findMany({
       where: {
-        createdAt: { gte: desde, lte: hasta },
+        ...(delTurno ? { pedidoId: { in: delTurno } } : { createdAt: { gte: desde, lte: hasta } }),
         monedero: { empresaId },
         ...(filtros.sucursalId ? { sucursalId: filtros.sucursalId } : {}),
       },

@@ -140,3 +140,23 @@ describe("semanasDeCredito", () => {
     expect(semanas[0].inicio).toEqual(new Date(2026, 9, 17, 17, 0));
   });
 });
+
+import { productosConsumidos } from "./monedero";
+
+describe("productosConsumidos", () => {
+  const consumo = (productos: any[]) => ({ empleadoId: "e", empleado: "Dalia", ventaId: Math.random().toString(), folio: null, fecha: "2026-11-03T10:00:00Z", sucursal: null, montoCredito: 0, totalVenta: 0, productos });
+  it("suma por producto y modificadores, de más a menos", () => {
+    const latteAvena = { nombre: "Latte Frío", cantidad: 1, precioUnitario: 75, modificadores: [{ nombre: "Avena", precioExtra: 10 }] };
+    const r = productosConsumidos([
+      consumo([latteAvena, { nombre: "Sándwich", cantidad: 1, precioUnitario: 110, modificadores: [] }]),
+      consumo([{ ...latteAvena, cantidad: 2 }]),
+    ]);
+    expect(r).toEqual([
+      { descripcion: "Latte Frío · Avena", cantidad: 3, importe: 255 },
+      { descripcion: "Sándwich", cantidad: 1, importe: 110 },
+    ]);
+  });
+  it("sin consumos regresa vacío", () => {
+    expect(productosConsumidos([])).toEqual([]);
+  });
+});
