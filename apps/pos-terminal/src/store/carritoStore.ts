@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { normalizarNombreCliente } from "../caja/nombreCliente";
+import { apartar, retomar, type PedidoEnEspera } from "../caja/enEspera";
 import { calcularTotalesPedido, uuid7, type TotalesPedido } from "@hangar421/shared";
 
 export interface SeleccionModificador {
@@ -46,6 +47,14 @@ interface CarritoState {
   quitarItem: (itemId: string) => void;
   cambiarCantidad: (itemId: string, delta: number) => void;
   limpiar: () => void;
+  /** Pedidos apartados (cliente sin cambio, fue a su carro…): cada uno es un botón en Venta. */
+  enEspera: PedidoEnEspera<ItemCarrito>[];
+  /** Aparta el carrito con un nombre o descripción ("Señor camioneta roja") y lo deja vacío
+   *  para atender al siguiente. */
+  ponerEnEspera: (descripcion: string | null) => void;
+  /** Abre un pedido apartado con sus productos; lo que hubiera en el carrito queda en espera. */
+  retomarEspera: (id: string) => void;
+  descartarEspera: (id: string) => void;
   totales: () => TotalesPedido;
 }
 
@@ -73,6 +82,31 @@ export const useCarritoStore = create<CarritoState>((set, get) => ({
       items: s.items.map((i) => (i.id === itemId ? { ...i, cantidad: Math.max(1, i.cantidad + delta) } : i)).filter((i) => i.cantidad > 0),
     })),
   limpiar: () => set({ items: [], nombreCliente: null, nombrePreguntado: false, pedidoDidiId: null }),
+
+  enEspera: [],
+  ponerEnEspera: (descripcion) =>
+    set((s) => {
+      if (s.items.length === 0) return {};
+      const nombre = normalizarNombreCliente(descripcion) ?? s.nombreCliente;
+      return {
+        enEspera: apartar(s.enEspera, { items: s.items, nombreCliente: nombre, pedidoDidiId: s.pedidoDidiId }, uuid7(), new Date()),
+        items: [], nombreCliente: null, nombrePreguntado: false, pedidoDidiId: null,
+      };
+    }),
+  retomarEspera: (id) =>
+    set((s) => {
+      const r = retomar(s.enEspera, id, { items: s.items, nombreCliente: s.nombreCliente, pedidoDidiId: s.pedidoDidiId }, uuid7(), new Date());
+      if (!r.retomado) return {};
+      return {
+        enEspera: r.lista,
+        items: r.retomado.items,
+        nombreCliente: r.retomado.nombreCliente,
+        // Ya tiene nombre (o se le puso descripción): no se vuelve a preguntar.
+        nombrePreguntado: true,
+        pedidoDidiId: r.retomado.pedidoDidiId,
+      };
+    }),
+  descartarEspera: (id) => set((s) => ({ enEspera: s.enEspera.filter((p) => p.id !== id) })),
 
   totales: () => {
     const { items } = get();

@@ -10,8 +10,19 @@ export function ModalNombreCliente({
   inicial,
   onGuardar,
   onOmitir,
+  titulo = "¿Nombre para el pedido?",
+  ayuda = "Saldrá en el ticket y en la comanda para saber a quién se le entrega.",
+  placeholder = "Ej. Ana",
+  textoGuardar = "Guardar",
+  textoOmitir,
 }: {
   inicial: string | null;
+  /** Textos para reutilizar el modal (p. ej. "Poner en espera"). */
+  titulo?: string;
+  ayuda?: string;
+  placeholder?: string;
+  textoGuardar?: string;
+  textoOmitir?: string;
   onGuardar: (nombre: string) => void;
   onOmitir: () => void;
 }) {
@@ -24,16 +35,16 @@ export function ModalNombreCliente({
     <Modal visible transparent animationType="fade" onRequestClose={onOmitir}>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={estilos.fondo}>
         <View style={estilos.tarjeta}>
-          <Text style={estilos.titulo}>¿Nombre para el pedido?</Text>
-          <Text style={estilos.ayuda}>Saldrá en el ticket y en la comanda para saber a quién se le entrega.</Text>
+          <Text style={estilos.titulo}>{titulo}</Text>
+          <Text style={estilos.ayuda}>{ayuda}</Text>
           <TextInput
             value={texto}
             onChangeText={setTexto}
-            placeholder="Ej. Ana"
+            placeholder={placeholder}
             placeholderTextColor={colores.textoSecundario}
             autoFocus
             maxLength={MAX_NOMBRE_CLIENTE}
-            autoCapitalize="words"
+            autoCapitalize="sentences"
             autoCorrect={false}
             returnKeyType="done"
             onSubmitEditing={() => (hayNombre ? onGuardar(texto) : onOmitir())}
@@ -42,7 +53,7 @@ export function ModalNombreCliente({
           />
           <View style={estilos.botones}>
             <TouchableOpacity onPress={onOmitir} style={[estilos.boton, estilos.botonSecundario]} accessibilityLabel="Sin nombre">
-              <Text style={estilos.textoSecundario}>{inicial ? "Quitar nombre" : "Sin nombre"}</Text>
+              <Text style={estilos.textoSecundario}>{textoOmitir ?? (inicial ? "Quitar nombre" : "Sin nombre")}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => onGuardar(texto)}
@@ -50,7 +61,7 @@ export function ModalNombreCliente({
               style={[estilos.boton, estilos.botonPrincipal, !hayNombre && { opacity: 0.5 }]}
               accessibilityLabel="Guardar nombre"
             >
-              <Text style={estilos.textoPrincipal}>Guardar</Text>
+              <Text style={estilos.textoPrincipal}>{textoGuardar}</Text>
             </TouchableOpacity>
           </View>
         </View>
