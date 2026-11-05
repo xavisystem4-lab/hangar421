@@ -1,6 +1,7 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
+import { etiquetaHora, type GrupoReporte, type ReportePeriodo } from "@hangar421/shared";
 import { guardarConDialogoWeb } from "@/components/ReporteInventario";
 
 /**
@@ -665,5 +666,92 @@ export async function exportarProductosVendidosExcel(d: DatosProductosVendidos) 
       { nombre: "Por modificadores", filas: variantes, anchos: [36, 22, 44, 10] },
     ],
     archivoProductos(d),
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Reportes → Quién vende más (periodo: cafetería, empleado, turno, día, hora, fecha)
+// ---------------------------------------------------------------------------------------------
+
+export interface DatosReportePeriodo {
+  reporte: ReportePeriodo;
+  sucursal: string;
+  desde: string;
+  hasta: string;
+}
+
+const archivoPeriodo = (d: DatosReportePeriodo) => `ventas-quien-vende-mas_${d.desde}_a_${d.hasta}`;
+
+/** Secciones del reporte como filas [etiqueta, detalle, tickets, vendido, %, promedio]. */
+function seccionesPeriodo(r: ReportePeriodo): { titulo: string; filas: (string | number)[][] }[] {
+  const fila = (etiqueta: string, detalle: string, g: GrupoReporte) => [etiqueta, detalle, g.tickets, redondo(g.total), g.porcentaje, redondo(g.ticketPromedio)];
+  return [
+    { titulo: "Por cafetería", filas: r.porSucursal.map((g) => fila(g.clave, "", g)) },
+    { titulo: "Por empleado", filas: r.porEmpleado.map((g) => fila(g.empleado, g.sucursal, g)) },
+    { titulo: "Por turno", filas: r.porTurno.map((g) => fila(g.turno, g.sucursal, g)) },
+    { titulo: "Por día de la semana", filas: r.porDiaSemana.map((g) => fila(g.clave, "", g)) },
+    { titulo: "Por hora", filas: r.porHora.map((g) => fila(etiquetaHora(g.hora), "", g)) },
+    { titulo: "Por fecha", filas: r.porFecha.map((g) => fila(g.fecha.split("-").reverse().join("/"), "", g)) },
+  ];
+}
+
+function mejoresPeriodo(r: ReportePeriodo): [string, string][] {
+  const m = r.mejor;
+  const t = (g: GrupoReporte | null, nombre: string) => (g ? `${nombre} — ${dinero(g.total)} (${g.tickets} tickets, ${g.porcentaje}%)` : "—");
+  return [
+    ["Cafetería", t(m.sucursal, m.sucursal?.clave ?? "")],
+    ["Empleado", t(m.empleado, m.empleado ? `${m.empleado.empleado} (${m.empleado.sucursal})` : "")],
+    ["Turno", t(m.turno, m.turno ? `${m.turno.turno} · ${m.turno.sucursal}` : "")],
+    ["Día de la semana", t(m.diaSemana, m.diaSemana?.clave ?? "")],
+    ["Hora", t(m.hora, m.hora ? etiquetaHora(m.hora.hora) : "")],
+    ["Mejor día", t(m.fecha, m.fecha ? m.fecha.fecha.split("-").reverse().join("/") : "")],
+  ];
+}
+
+export async function exportarReportePeriodoPdf(d: DatosReportePeriodo) {
+  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  let y = encabezado(doc, "Quién vende más", `${d.sucursal} · ${periodoTexto(d.desde, d.hasta)}`);
+  y = totales(doc, y, [["Vendido", dinero(d.reporte.total)], ["Tickets", String(d.reporte.tickets)], ["Ticket promedio", dinero(d.reporte.ticketPromedio)]]);
+  y = titulo(doc, "Lo que más vende", y);
+  autoTable(doc, {
+    startY: y, body: mejoresPeriodo(d.reporte), theme: "plain",
+    styles: { fontSize: 10, cellPadding: 3 }, columnStyles: { 0: { fontStyle: "bold", cellWidth: 120 } }, margin: { left: 40, right: 40 },
+  });
+  y = finalY(doc, y) + 22;
+  for (const s of seccionesPeriodo(d.reporte)) {
+    y = titulo(doc, s.titulo, y);
+    autoTable(doc, {
+      startY: y,
+      head: [["", "Cafetería", "Tickets", "Vendido", "%", "Promedio"]],
+      body: s.filas.map(([e, det, n, tot, p, prom]) => [String(e), String(det), String(n), dinero(Number(tot)), `${p}%`, dinero(Number(prom))]),
+      headStyles: { fillColor: NAVY }, styles: { fontSize: 9, cellPadding: 4 },
+      columnStyles: { 2: { halign: "right" }, 3: { halign: "right", fontStyle: "bold" }, 4: { halign: "right" }, 5: { halign: "right" } },
+      didParseCell: derecha(2, 3, 4, 5), margin: { left: 40, right: 40 },
+    });
+    y = finalY(doc, y) + 22;
+  }
+  await guardarPdf(doc, archivoPeriodo(d));
+}
+
+export async function exportarReportePeriodoExcel(d: DatosReportePeriodo) {
+  const resumen: (string | number)[][] = [
+    ["HANGAR 421 · Quién vende más"],
+    ["Cafetería", d.sucursal],
+    ["Periodo", periodoTexto(d.desde, d.hasta)],
+    [],
+    ["Vendido", redondo(d.reporte.total)],
+    ["Tickets", d.reporte.tickets],
+    ["Ticket promedio", redondo(d.reporte.ticketPromedio)],
+    [],
+    ["Lo que más vende"],
+    ...mejoresPeriodo(d.reporte),
+  ];
+  const encabezadoTabla = ["", "Cafetería", "Tickets", "Vendido", "% del total", "Ticket promedio"];
+  await guardarExcel(
+    [
+      { nombre: "Resumen", filas: resumen, anchos: [22, 60] },
+      ...seccionesPeriodo(d.reporte).map((s) => ({ nombre: s.titulo, filas: [encabezadoTabla, ...s.filas], anchos: [22, 18, 10, 14, 12, 16] })),
+    ],
+    archivoPeriodo(d),
   );
 }

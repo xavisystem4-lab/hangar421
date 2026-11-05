@@ -1,12 +1,13 @@
 import { etiquetaOrigen } from "../caja/origenVenta";
 import { useCallback, useEffect, useState, useMemo } from "react";
+import { armarReportePeriodo, etiquetaHora, type ReportePeriodo } from "@hangar421/shared";
 import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { usarColores } from "../store/temaStore";
 import { abrirBaseDeDatos } from "../db/database";
 import { obtenerNombreSucursal } from "../db/dispositivoLocal";
 import {
-  cajerosDelRango, detalleVentas, productosMenosVendidos, resumenVentas, topProductosVendidos, etiquetaProductoVendido,
+  cajerosDelRango, detalleVentas, ventasParaReportePeriodo, productosMenosVendidos, resumenVentas, topProductosVendidos, etiquetaProductoVendido,
   type CajeroDelRango, type FiltroReporte, type ProductoVendido, type ResumenVentas, type VentaDetalle,
 } from "../db/reportesRepo";
 import { etiquetaMetodoPago } from "../db/metodosPagoRepo";
@@ -29,7 +30,7 @@ function finDelDia(d: Date): string {
   return x.toISOString();
 }
 
-type Preset = "hoy" | "ayer" | "7dias" | "mes";
+type Preset = "hoy" | "ayer" | "7dias" | "mes" | "mesPasado";
 
 function BarraHorizontal({ datos, colores }: { datos: { etiqueta: string; valor: number }[]; colores: ReturnType<typeof usarColores> }) {
   const max = Math.max(1, ...datos.map((d) => d.valor));
@@ -66,6 +67,8 @@ export function PosAdminReportesScreen({ onCerrar }: { onCerrar: () => void }) {
   const [topProductos, setTopProductos] = useState<ProductoVendido[]>([]);
   const [menosVendidos, setMenosVendidos] = useState<ProductoVendido[]>([]);
   const [ventas, setVentas] = useState<VentaDetalle[]>([]);
+  // Quién vende más: por empleado, turno, día de la semana y hora (ver armarReportePeriodo).
+  const [periodo, setPeriodo] = useState<ReportePeriodo | null>(null);
   const [sucursal, setSucursal] = useState("HANGAR 421");
   const [generando, setGenerando] = useState(false);
   const [exportando, setExportando] = useState<"pdf" | "excel" | null>(null);
@@ -99,12 +102,14 @@ export function PosAdminReportesScreen({ onCerrar }: { onCerrar: () => void }) {
     setGenerando(true);
     try {
       const db = await abrirBaseDeDatos();
-      const [r, t, menos, v] = await Promise.all([
+      const [r, t, menos, v, paraPeriodo] = await Promise.all([
         resumenVentas(db, filtro),
         topProductosVendidos(db, filtro, 10),
         productosMenosVendidos(db, filtro, 5),
         detalleVentas(db, filtro),
+        ventasParaReportePeriodo(db, filtro, sucursal),
       ]);
+      setPeriodo(armarReportePeriodo(paraPeriodo, "local"));
       setResumen(r);
       setTopProductos(t);
       setMenosVendidos(menos);
@@ -126,6 +131,7 @@ export function PosAdminReportesScreen({ onCerrar }: { onCerrar: () => void }) {
     }
     if (p === "7dias") { setFechaDesde(new Date(ahora.getTime() - 6 * 86_400_000)); setFechaHasta(ahora); }
     if (p === "mes") { setFechaDesde(new Date(ahora.getFullYear(), ahora.getMonth(), 1)); setFechaHasta(ahora); }
+    if (p === "mesPasado") { setFechaDesde(new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1)); setFechaHasta(new Date(ahora.getFullYear(), ahora.getMonth(), 0)); }
     setGenerado(false);
   }
 
@@ -153,6 +159,7 @@ export function PosAdminReportesScreen({ onCerrar }: { onCerrar: () => void }) {
       topProductos,
       menosVendidos,
       ventas,
+      periodo: periodo ?? undefined,
     };
   }
 
@@ -195,7 +202,7 @@ export function PosAdminReportesScreen({ onCerrar }: { onCerrar: () => void }) {
         {/* La mayoría de las consultas son uno de estos cuatro rangos: un toque en vez de dos
             calendarios. El calendario queda para lo demás. */}
         <View style={estilos.chips}>
-          {([["hoy", "Hoy"], ["ayer", "Ayer"], ["7dias", "7 días"], ["mes", "Este mes"]] as [Preset, string][]).map(([id, etiqueta]) => (
+          {([["hoy", "Hoy"], ["ayer", "Ayer"], ["7dias", "7 días"], ["mes", "Este mes"], ["mesPasado", "Mes pasado"]] as [Preset, string][]).map(([id, etiqueta]) => (
             <TouchableOpacity key={id} onPress={() => aplicarPreset(id)} style={estilos.chip}>
               <Text style={estilos.chipTexto}>{etiqueta}</Text>
             </TouchableOpacity>
@@ -343,6 +350,32 @@ export function PosAdminReportesScreen({ onCerrar }: { onCerrar: () => void }) {
                       ))}
                     </View>
                   ))}
+                </View>
+              )}
+
+              {periodo && periodo.tickets > 0 && (
+                <View style={estilos.tarjeta}>
+                  <Text style={estilos.subtitulo}>🏆 Quién vende más</Text>
+                  {[
+                    ["Empleado", periodo.mejor.empleado ? periodo.mejor.empleado.empleado : null, periodo.mejor.empleado],
+                    ["Turno", periodo.mejor.turno ? periodo.mejor.turno.turno : null, periodo.mejor.turno],
+                    ["Día", periodo.mejor.diaSemana?.clave ?? null, periodo.mejor.diaSemana],
+                    ["Hora", periodo.mejor.hora ? etiquetaHora(periodo.mejor.hora.hora) : null, periodo.mejor.hora],
+                  ].map(([titulo, nombre, g]: any) =>
+                    nombre ? (
+                      <Text key={titulo} style={{ color: colores.texto, fontSize: 14, marginBottom: 4 }}>
+                        <Text style={{ fontWeight: "800" }}>{titulo}: </Text>{nombre} · ${g.total.toFixed(2)} ({g.tickets} tickets, {g.porcentaje}%)
+                      </Text>
+                    ) : null,
+                  )}
+                  <Text style={[estilos.etiquetaCampo, { marginTop: 12 }]}>Por empleado</Text>
+                  <BarraHorizontal colores={colores} datos={periodo.porEmpleado.map((g) => ({ etiqueta: `${g.empleado} (${g.tickets})`, valor: g.total }))} />
+                  <Text style={[estilos.etiquetaCampo, { marginTop: 12 }]}>Por turno (mañana = abre antes de las 12:00)</Text>
+                  <BarraHorizontal colores={colores} datos={periodo.porTurno.map((g) => ({ etiqueta: `${g.turno} (${g.tickets})`, valor: g.total }))} />
+                  <Text style={[estilos.etiquetaCampo, { marginTop: 12 }]}>Por día de la semana</Text>
+                  <BarraHorizontal colores={colores} datos={periodo.porDiaSemana.map((g) => ({ etiqueta: `${g.clave} (${g.tickets})`, valor: g.total }))} />
+                  <Text style={[estilos.etiquetaCampo, { marginTop: 12 }]}>Por hora</Text>
+                  <BarraHorizontal colores={colores} datos={periodo.porHora.map((g) => ({ etiqueta: `${etiquetaHora(g.hora)} (${g.tickets})`, valor: g.total }))} />
                 </View>
               )}
 

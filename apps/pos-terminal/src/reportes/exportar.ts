@@ -2,7 +2,7 @@ import * as FileSystem from "expo-file-system";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import * as XLSX from "xlsx";
-import { filasDetalle, filasResumen, htmlReporte, nombreArchivo, type DatosReporte } from "./armarReporte";
+import { filasDetalle, filasPeriodo, filasResumen, htmlReporte, nombreArchivo, type DatosReporte } from "./armarReporte";
 
 /** Escritura de ficheros y diálogo de compartir. Todo lo que DECIDE qué dice el reporte vive en
  *  armarReporte.ts (puro y con pruebas); aquí solo está el pegamento con los módulos nativos.
@@ -40,6 +40,7 @@ export async function exportarExcel(datos: DatosReporte): Promise<void> {
   const libro = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(libro, XLSX.utils.aoa_to_sheet(filasResumen(datos)), "Resumen");
   XLSX.utils.book_append_sheet(libro, XLSX.utils.aoa_to_sheet(filasDetalle(datos)), "Detalle");
+  if (datos.periodo) XLSX.utils.book_append_sheet(libro, XLSX.utils.aoa_to_sheet(filasPeriodo(datos.periodo)), "Quién vende más");
 
   const base64 = XLSX.write(libro, { type: "base64", bookType: "xlsx" });
   const destino = `${FileSystem.cacheDirectory}${nombreArchivo(datos, "xlsx")}`;
