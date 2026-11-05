@@ -4,6 +4,8 @@
  *  Aquí vive TODO lo que decide qué dice el reporte: las filas, los rótulos y el HTML. El módulo
  *  de al lado (exportar.ts) solo escribe ficheros y abre el diálogo de compartir. */
 
+import { DIAS_SEMANA, etiquetaHora, type GrupoReporte, type ReportePeriodo } from "@hangar421/shared";
+
 /** "Grande · Leche de avena ×2 · Chico ×1" para Excel y HTML; vacío si no hay desglose. */
 export function textoVariantes(variantes?: { descripcion: string; cantidad: number }[]): string {
   return (variantes ?? []).map((v) => `${v.descripcion} ×${v.cantidad}`).join(" · ");
@@ -26,6 +28,33 @@ export interface DatosReporte {
   /** Los menos vendidos del catálogo en venta (incluye los de 0 unidades); el primero es el menos vendido. */
   menosVendidos?: { nombre: string; cantidad: number; total: number }[];
   ventas: { folioLocal: number; createdAt: string; total: number; cajero: string; metodos: string; productos: string }[];
+  /** Quién vende más: por empleado, turno, día de la semana y hora (opcional). */
+  periodo?: ReportePeriodo;
+}
+
+/** Secciones de "Quién vende más": [título, filas [etiqueta, tickets, total, %]]. */
+export function seccionesPeriodo(r: ReportePeriodo): { titulo: string; filas: [string, number, number, number][] }[] {
+  const f = (etiqueta: string, g: GrupoReporte): [string, number, number, number] => [etiqueta, g.tickets, g.total, g.porcentaje];
+  return [
+    { titulo: "Por empleado", filas: r.porEmpleado.map((g) => f(g.empleado, g)) },
+    { titulo: "Por turno", filas: r.porTurno.map((g) => f(g.turno === "Sin turno" ? "Sin turno" : `Turno de la ${g.turno.toLowerCase()}`, g)) },
+    { titulo: "Por día de la semana", filas: r.porDiaSemana.filter((g) => DIAS_SEMANA.includes(g.clave as any)).map((g) => f(g.clave, g)) },
+    { titulo: "Por hora", filas: r.porHora.map((g) => f(etiquetaHora(g.hora), g)) },
+  ];
+}
+
+/** Hoja "Quién vende más" del Excel. */
+export function filasPeriodo(r: ReportePeriodo): (string | number)[][] {
+  const filas: (string | number)[][] = [["Quién vende más"], []];
+  const m = r.mejor;
+  if (m.empleado) filas.push(["Empleado que más vende", m.empleado.empleado, m.empleado.total]);
+  if (m.turno) filas.push(["Turno que más vende", m.turno.turno, m.turno.total]);
+  if (m.diaSemana) filas.push(["Día que más vende", m.diaSemana.clave, m.diaSemana.total]);
+  if (m.hora) filas.push(["Hora que más vende", etiquetaHora(m.hora.hora), m.hora.total]);
+  for (const s of seccionesPeriodo(r)) {
+    filas.push([], [s.titulo, "Tickets", "Vendido", "% del total"], ...s.filas);
+  }
+  return filas;
 }
 
 export function formatearFecha(iso: string): string {
@@ -151,6 +180,17 @@ export function htmlReporte(datos: DatosReporte): string {
     )
     .join("");
 
+  const filaPeriodo = datos.periodo
+    ? seccionesPeriodo(datos.periodo)
+        .map(
+          (s) =>
+            `<h2>${escaparHtml(s.titulo)}</h2><table><thead><tr><th></th><th class="num">Tickets</th><th class="num">Vendido</th><th class="num">%</th></tr></thead><tbody>` +
+            s.filas.map(([e, n, t, p]) => `<tr><td>${escaparHtml(e)}</td><td class="num">${n}</td><td class="num">${formatearDinero(t)}</td><td class="num">${p}%</td></tr>`).join("") +
+            `</tbody></table>`,
+        )
+        .join("")
+    : "";
+
   const filtros = [
     `Del ${formatearFecha(datos.desde)} al ${formatearFecha(datos.hasta)}`,
     `Cajero: ${escaparHtml(datos.cajero ?? "Todos")}`,
@@ -192,6 +232,8 @@ export function htmlReporte(datos: DatosReporte): string {
   ${filaOrigen ? `<h2>Por origen (mostrador / plataformas)</h2>
   <table><thead><tr><th>Origen</th><th>Método</th><th class="num">Operaciones</th><th class="num">Total</th></tr></thead>
   <tbody>${filaOrigen}</tbody></table>` : ""}
+
+  ${filaPeriodo ? `<h2 style="margin-top:24px">🏆 Quién vende más</h2>${filaPeriodo}` : ""}
 
   <h2>Top 10 productos más vendidos</h2>
   <table><thead><tr><th>Producto</th><th class="num">Unidades</th><th class="num">Importe</th></tr></thead>

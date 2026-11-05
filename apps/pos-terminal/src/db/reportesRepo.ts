@@ -308,3 +308,23 @@ export async function detalleVentas(db: SQLiteDatabase, filtro: FiltroReporte, l
     productos: f.productos ?? "—",
   }));
 }
+
+/** Ventas del filtro con lo que necesita "Quién vende más" (armarReportePeriodo de
+ *  @hangar421/shared): fecha, total, quién cobró y a qué hora abrió su turno. */
+export async function ventasParaReportePeriodo(
+  db: SQLiteDatabase,
+  filtro: FiltroReporte,
+  nombreSucursal: string,
+): Promise<{ fecha: string; total: number; sucursal: string; empleado: string; turnoApertura: string | null }[]> {
+  const sucursalId = await obtenerOCrearSucursalIdLocal(db);
+  const { sql, params } = condiciones(sucursalId, filtro);
+  const filas = await db.getAllAsync<{ created_at: string; total: number; cajero: string | null; abierto_at: string | null }>(
+    `SELECT v.created_at, v.total, u.nombre AS cajero, t.abierto_at
+     FROM ventas v
+     LEFT JOIN usuarios_locales u ON u.id = v.usuario_id
+     LEFT JOIN turnos t ON t.id = v.turno_id
+     WHERE ${sql}`,
+    ...params,
+  );
+  return filas.map((f) => ({ fecha: f.created_at, total: Number(f.total) || 0, sucursal: nombreSucursal, empleado: f.cajero ?? "", turnoApertura: f.abierto_at }));
+}

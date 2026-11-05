@@ -12,6 +12,7 @@ import { ReporteCreditoEmpleados } from "@/components/ReporteCreditoEmpleados";
 import { BotonesExportar } from "@/components/BotonesExportar";
 import { ReporteDidi } from "@/components/ReporteDidi";
 import { ReporteProductosVendidos } from "@/components/ReporteProductosVendidos";
+import { ReporteDelPeriodo } from "@/components/ReporteDelPeriodo";
 import { TarjetaDidi } from "@/components/TarjetaDidi";
 import { useResumenDidi } from "@/lib/resumenDidi";
 import { exportarReporteVentasExcel, exportarReporteVentasPdf, type DatosReporteVentas } from "@/lib/exportarVentas";
@@ -54,10 +55,10 @@ export default function ReportesPage() {
   const [cargando, setCargando] = useState(false);
   /** "ventas" = el reporte de siempre; "credito" = consumo del crédito de cada empleada;
    *  "didi" = ventas de DiDi y ganancia real. `?vista=didi` abre directo esa pestaña. */
-  const [vista, setVista] = useState<"ventas" | "productos" | "credito" | "didi">(() => {
+  const [vista, setVista] = useState<"ventas" | "productos" | "periodo" | "credito" | "didi">(() => {
     if (typeof window === "undefined") return "ventas";
     const v = new URLSearchParams(window.location.search).get("vista");
-    return v === "didi" || v === "credito" || v === "productos" ? v : "ventas";
+    return v === "didi" || v === "credito" || v === "productos" || v === "periodo" ? v : "ventas";
   });
 
   /** "Productos vendidos" abre con el día de hoy (se puede cambiar arriba con Desde/Hasta). */
@@ -66,6 +67,12 @@ export default function ReportesPage() {
       const h = fechaISO(new Date());
       setDesde(h);
       setHasta(h);
+    }
+    // "Quién vende más" abre con el mes en curso (se cambia ahí mismo: este mes, mes pasado o cualquier mes).
+    if (v === "periodo" && vista !== "periodo") {
+      const ahora = new Date();
+      setDesde(fechaISO(new Date(ahora.getFullYear(), ahora.getMonth(), 1)));
+      setHasta(fechaISO(new Date(ahora.getFullYear(), ahora.getMonth() + 1, 0)));
     }
     setVista(v);
   }
@@ -142,7 +149,7 @@ export default function ReportesPage() {
       </div>
 
       <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-        {([["ventas", "Ventas"], ["productos", "📦 Productos vendidos"], ["didi", "🛵 DiDi"], ["credito", "👛 Crédito de empleados"]] as const).map(([id, etiqueta]) => (
+        {([["ventas", "Ventas"], ["periodo", "🏆 Quién vende más"], ["productos", "📦 Productos vendidos"], ["didi", "🛵 DiDi"], ["credito", "👛 Crédito de empleados"]] as const).map(([id, etiqueta]) => (
           <button key={id} onClick={() => cambiarVista(id)}
             style={{ padding: "8px 14px", fontSize: 13, fontWeight: 700, borderRadius: 999,
               background: vista === id ? "var(--h421-navy)" : "transparent", color: vista === id ? "#fff" : "var(--h421-navy-texto)",
@@ -152,7 +159,15 @@ export default function ReportesPage() {
         ))}
       </div>
 
-      {vista === "credito" ? (
+      {vista === "periodo" ? (
+        <ReporteDelPeriodo
+          sucursalId={seleccion?.sucursalId ?? undefined}
+          sucursalNombre={seleccion?.sucursalId ? seleccion?.nombre ?? undefined : undefined}
+          desde={desde}
+          hasta={hasta}
+          onRango={(d, h) => { setDesde(d); setHasta(h); }}
+        />
+      ) : vista === "credito" ? (
         <ReporteCreditoEmpleados sucursalId={sucursalId} sucursalNombre={seleccion?.nombre ?? undefined} desde={desde} hasta={hasta} />
       ) : vista === "productos" ? (
         <ReporteProductosVendidos sucursalId={sucursalId} sucursalNombre={seleccion?.nombre ?? undefined} desde={desde} hasta={hasta} />

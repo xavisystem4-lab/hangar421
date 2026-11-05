@@ -1,6 +1,7 @@
+import { armarReportePeriodo } from "@hangar421/shared";
 import {
   escaparHtml, filasDetalle, filasResumen, formatearDinero, formatearFecha,
-  htmlReporte, nombreArchivo, type DatosReporte,
+  htmlReporte, nombreArchivo, filasPeriodo, type DatosReporte,
 } from "./armarReporte";
 
 const BASE: DatosReporte = {
@@ -170,5 +171,29 @@ describe("Categoría y desglose por modificadores en el top", () => {
     const html = htmlReporte(datos);
     expect(html).toContain("Bebidas calientes — Grande · Leche de avena ×2 · Chico ×1");
     expect(html).toContain("DIDI");
+  });
+});
+
+describe("Quién vende más en el reporte", () => {
+  const periodo = armarReportePeriodo(
+    [
+      { fecha: new Date(2026, 10, 2, 9, 0), total: 100, sucursal: "S", empleado: "Andrea", turnoApertura: new Date(2026, 10, 2, 7, 45) },
+      { fecha: new Date(2026, 10, 2, 16, 0), total: 40, sucursal: "S", empleado: "Daniela", turnoApertura: new Date(2026, 10, 2, 15, 0) },
+    ],
+    "local",
+  );
+  it("el PDF trae la sección y el mejor empleado", () => {
+    const html = htmlReporte({ ...BASE, periodo });
+    expect(html).toContain("Quién vende más");
+    expect(html).toContain("Andrea");
+    expect(html).toContain("Turno de la mañana");
+  });
+  it("el Excel trae la hoja con los mejores y las secciones", () => {
+    const filas = filasPeriodo(periodo);
+    expect(filas).toContainEqual(["Empleado que más vende", "Andrea", 100]);
+    expect(filas).toContainEqual(["Por hora", "Tickets", "Vendido", "% del total"]);
+  });
+  it("sin periodo no aparece", () => {
+    expect(htmlReporte(BASE)).not.toContain("Quién vende más");
   });
 });
