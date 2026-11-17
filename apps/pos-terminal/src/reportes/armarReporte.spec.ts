@@ -75,7 +75,8 @@ describe("nombreArchivo", () => {
 describe("filasDetalle", () => {
   it("empieza por la cabecera y trae una fila por venta", () => {
     const filas = filasDetalle(BASE);
-    expect(filas[0]).toEqual(["Folio", "Fecha", "Cajero", "Métodos de pago", "Productos", "Total"]);
+    expect(filas[0]).toEqual(["Folio", "Fecha", "Hora", "Cajero", "Métodos de pago", "Productos", "Total"]);
+    expect(filas[1][2]).toMatch(/^\d{2}:\d{2}$/);
     expect(filas).toHaveLength(3);
   });
 
@@ -83,8 +84,8 @@ describe("filasDetalle", () => {
   // que es justo para lo que se exporta.
   it("deja los importes como número para que Excel pueda sumarlos", () => {
     const filas = filasDetalle(BASE);
-    expect(typeof filas[1][5]).toBe("number");
-    expect(filas[1][5]).toBe(85);
+    expect(typeof filas[1][6]).toBe("number");
+    expect(filas[1][6]).toBe(85);
   });
 });
 

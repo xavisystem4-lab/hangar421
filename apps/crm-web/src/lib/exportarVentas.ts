@@ -24,6 +24,11 @@ export function periodoTexto(desde: string, hasta: string): string {
   return desde === hasta ? f(desde) : `${f(desde)} al ${f(hasta)}`;
 }
 
+/** Fecha y hora en columnas separadas para Excel ("13/11/2026" | "16:09"): así se puede filtrar y
+ *  ordenar por día o por hora. */
+const soloFecha = (iso: string, zona = ZONA) => new Date(iso).toLocaleDateString("es-MX", { timeZone: zona, day: "2-digit", month: "2-digit", year: "numeric" });
+const soloHora = (iso: string, zona = ZONA) => new Date(iso).toLocaleTimeString("es-MX", { timeZone: zona, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
 const fechaHora = (iso: string, zona = ZONA) =>
   new Date(iso).toLocaleString("es-MX", { timeZone: zona, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
@@ -326,25 +331,25 @@ export async function exportarVentasExcel(d: DatosVentasExport) {
     [],
   ]);
   const tickets: (string | number)[][] = [
-    ["Folio", "Fecha y hora", "Estado", "Origen", "Sucursal", "Atendió", "Dispositivo", "Turno", "Pago", "Subtotal", "Descuento", "Impuestos", "Total"],
-    ...d.tickets.map((t) => [t.folio, fechaHora(t.fecha, d.zona), t.estado, t.origen, t.sucursal, t.atendio, t.dispositivo, t.turno, textoPagos(d, t), redondo(t.subtotal), redondo(t.descuento), redondo(t.impuestos), redondo(t.total)]),
+    ["Folio", "Fecha", "Hora", "Estado", "Origen", "Sucursal", "Atendió", "Dispositivo", "Turno", "Pago", "Subtotal", "Descuento", "Impuestos", "Total"],
+    ...d.tickets.map((t) => [t.folio, soloFecha(t.fecha, d.zona), soloHora(t.fecha, d.zona), t.estado, t.origen, t.sucursal, t.atendio, t.dispositivo, t.turno, textoPagos(d, t), redondo(t.subtotal), redondo(t.descuento), redondo(t.impuestos), redondo(t.total)]),
   ];
   const productos: (string | number)[][] = [
-    ["Folio", "Fecha y hora", "Estado", "Producto", "Cantidad", "Importe"],
-    ...d.tickets.flatMap((t) => t.items.map((l) => [t.folio, fechaHora(t.fecha, d.zona), t.estado, l.nombre, l.cantidad, redondo(l.subtotal)])),
+    ["Folio", "Fecha", "Hora", "Estado", "Producto", "Cantidad", "Importe"],
+    ...d.tickets.flatMap((t) => t.items.map((l) => [t.folio, soloFecha(t.fecha, d.zona), soloHora(t.fecha, d.zona), t.estado, l.nombre, l.cantidad, redondo(l.subtotal)])),
   ];
   const pagos: (string | number)[][] = [
-    ["Folio", "Fecha y hora", "Estado", "Método", "Monto"],
-    ...d.tickets.flatMap((t) => t.pagos.map((p) => [t.folio, fechaHora(t.fecha, d.zona), t.estado, d.etiquetaMetodo(p.metodo), redondo(p.monto)])),
+    ["Folio", "Fecha", "Hora", "Estado", "Método", "Monto"],
+    ...d.tickets.flatMap((t) => t.pagos.map((p) => [t.folio, soloFecha(t.fecha, d.zona), soloHora(t.fecha, d.zona), t.estado, d.etiquetaMetodo(p.metodo), redondo(p.monto)])),
   ];
   await guardarExcel(
     [
       { nombre: "Resumen", filas: resumen, anchos: [32, 30, 14] },
       { nombre: "Métodos de pago", filas: metodos, anchos: [32, 14, 14, 14] },
       { nombre: "Desglose", filas: desglose, anchos: [30, 10, 14] },
-      { nombre: "Tickets", filas: tickets, anchos: [10, 18, 12, 18, 16, 20, 18, 12, 30, 11, 11, 11, 11] },
-      { nombre: "Productos", filas: productos, anchos: [10, 18, 12, 40, 10, 12] },
-      { nombre: "Pagos", filas: pagos, anchos: [10, 18, 12, 20, 12] },
+      { nombre: "Tickets", filas: tickets, anchos: [10, 12, 8, 12, 18, 16, 20, 18, 12, 30, 11, 11, 11, 11] },
+      { nombre: "Productos", filas: productos, anchos: [10, 12, 8, 12, 40, 10, 12] },
+      { nombre: "Pagos", filas: pagos, anchos: [10, 12, 8, 12, 20, 12] },
     ],
     archivoVentas(d),
   );
@@ -565,8 +570,8 @@ export async function exportarDidiExcel(r: ReporteDidi, sucursal: string) {
     ...[...r.porProducto].sort((a, b) => b.unidades - a.unidades).map((p) => [p.nombre, p.unidades, redondo(p.bruto), redondo(p.pagadoCliente), redondo(p.subsidio), redondo(p.neto), redondo(p.netoPorUnidad)]),
   ];
   const tickets: (string | number)[][] = [
-    ["Folio", "Fecha y hora", "Sucursal", "Método de pago", "Productos", "Precio sin promoción", "Costo de promoción de la tienda", "Ganancias después del descuento", "Subsidio DiDi", "Cargos de DiDi", "Ganancias por pedido"],
-    ...r.tickets.map((t) => [t.folio, fechaHora(t.fecha, r.rango.zona), t.sucursal, t.metodos?.length ? t.metodos.map(metodoDidi).join(" + ") : tipoDidi(t.tipoPago), t.productos, redondo(t.bruto), redondo(t.descuento), redondo(t.pagadoCliente), redondo(t.subsidio), redondo(t.comision), redondo(t.neto)]),
+    ["Folio", "Fecha", "Hora", "Sucursal", "Método de pago", "Productos", "Precio sin promoción", "Costo de promoción de la tienda", "Ganancias después del descuento", "Subsidio DiDi", "Cargos de DiDi", "Ganancias por pedido"],
+    ...r.tickets.map((t) => [t.folio, soloFecha(t.fecha, r.rango.zona), soloHora(t.fecha, r.rango.zona), t.sucursal, t.metodos?.length ? t.metodos.map(metodoDidi).join(" + ") : tipoDidi(t.tipoPago), t.productos, redondo(t.bruto), redondo(t.descuento), redondo(t.pagadoCliente), redondo(t.subsidio), redondo(t.comision), redondo(t.neto)]),
   ];
   await guardarExcel(
     [
@@ -574,7 +579,7 @@ export async function exportarDidiExcel(r: ReporteDidi, sucursal: string) {
       { nombre: "Por día", filas: dias, anchos: [12, 9, 14, 13, 14, 11, 12, 14] },
       { nombre: "Por hora", filas: horas, anchos: [14, 9, 14, 12, 14] },
       { nombre: "Por producto", filas: productos, anchos: [36, 10, 14, 14, 11, 14, 16] },
-      { nombre: "Pedidos", filas: tickets, anchos: [16, 18, 16, 22, 40, 12, 11, 13, 10, 11, 13] },
+      { nombre: "Pedidos", filas: tickets, anchos: [16, 12, 8, 16, 22, 40, 12, 11, 13, 10, 11, 13] },
     ],
     `didi-ganancia_${r.rango.desde}_a_${r.rango.hasta}`,
   );
