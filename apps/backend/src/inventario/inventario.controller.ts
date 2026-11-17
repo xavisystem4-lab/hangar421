@@ -156,8 +156,10 @@ export class InventarioController {
     return this.inventario.alertasStockBajo(sucursalId);
   }
 
+  /** Entradas, mermas, ajustes y conteos desde el ERP: solo administradores. El personal ya no
+   *  modifica el inventario desde el ERP (lo pidió el negocio para tener control). */
   @Post("movimientos")
-  @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL, RolUsuario.SUPERVISOR, RolUsuario.CAJERO)
+  @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
   @Audit("MOVIMIENTO_INVENTARIO", "REGISTRAR")
   registrarMovimiento(@Body() body: { sucursalId: string; insumoId: string; tipo: TipoMovimientoInventario; cantidad: number; motivo?: string; usuarioId?: string; dispositivoId?: string; idempotencyKey?: string }) {
     return this.inventario.registrarMovimiento(body);

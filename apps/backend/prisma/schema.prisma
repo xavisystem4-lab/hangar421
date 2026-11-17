@@ -224,16 +224,16 @@ enum EstadoSincronizacionOrdenPlataforma {
 // ---------------------------------------------------------------------------
 
 model Empresa {
-  promociones Promocion[]
+  promociones         Promocion[]
   configuracionCorreo ConfiguracionCorreo?
-  id         String   @id @default(uuid())
-  nombre     String
-  rfc        String?
-  logoUrl    String?
-  configJson Json?    @default("{}")
-  activo     Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id                  String               @id @default(uuid())
+  nombre              String
+  rfc                 String?
+  logoUrl             String?
+  configJson          Json?                @default("{}")
+  activo              Boolean              @default(true)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 
   sucursales             Sucursal[]
   usuarios               Usuario[]
@@ -295,10 +295,11 @@ model Sucursal {
   solicitudesProducto    SolicitudProducto[]
   seccionesInventario    SeccionInventario[]
   insumosSeccion         InsumoSeccion[]
+  comprasInsumo          CompraInsumo[]
+  monederos              MonederoEmpleado[]
 
   @@index([empresaId])
   @@map("sucursales")
-  monederos MonederoEmpleado[]
 }
 
 model Area {
@@ -358,7 +359,7 @@ model Usuario {
   updatedAt    DateTime  @updatedAt
 
   monedero MonederoEmpleado?
-  empresa Empresa @relation(fields: [empresaId], references: [id])
+  empresa  Empresa           @relation(fields: [empresaId], references: [id])
 
   sucursales                UsuarioSucursal[]
   pedidosMesero             Pedido[]            @relation("PedidoMesero")
@@ -498,7 +499,7 @@ model CategoriaProducto {
 }
 
 model Producto {
-  promociones PromocionProducto[]
+  promociones             PromocionProducto[]
   id                      String               @id @default(uuid())
   empresaId               String
   categoriaId             String
@@ -578,10 +579,10 @@ model OpcionModificador {
 
   modificador             Modificador             @relation(fields: [modificadorId], references: [id])
   pedidoItemModificadores PedidoItemModificador[]
+  recetas                 RecetaOpcion[]
 
   @@index([modificadorId])
   @@map("opciones_modificador")
-  recetas RecetaOpcion[]
 }
 
 model ProductoModificador {
@@ -642,23 +643,23 @@ model Caja {
 }
 
 model Turno {
-  id                  String      @id @default(uuid())
-  sucursalId          String
-  cajaId              String
-  usuarioId           String
-  montoInicial        Decimal     @db.Decimal(10, 2)
-  montoFinalDeclarado Decimal?    @db.Decimal(10, 2)
-  montoFinalSistema   Decimal?    @db.Decimal(10, 2)
-  diferencia          Decimal?    @db.Decimal(10, 2)
-  desgloseEfectivo    Json? // conteo de billetes/monedas MXN y billetes USD declarados al corte
+  id                     String      @id @default(uuid())
+  sucursalId             String
+  cajaId                 String
+  usuarioId              String
+  montoInicial           Decimal     @db.Decimal(10, 2)
+  montoFinalDeclarado    Decimal?    @db.Decimal(10, 2)
+  montoFinalSistema      Decimal?    @db.Decimal(10, 2)
+  diferencia             Decimal?    @db.Decimal(10, 2)
+  desgloseEfectivo       Json? // conteo de billetes/monedas MXN y billetes USD declarados al corte
   // Dólares: tipo de cambio que se fijó al abrir y cuadre aparte en USD al cortar.
   tipoCambioUsd          Decimal?    @db.Decimal(10, 4)
   montoFinalDeclaradoUsd Decimal?    @db.Decimal(10, 2)
   montoFinalSistemaUsd   Decimal?    @db.Decimal(10, 2)
   diferenciaUsd          Decimal?    @db.Decimal(10, 2)
-  estado              EstadoTurno @default(ABIERTO)
-  fechaApertura       DateTime    @default(now())
-  fechaCierre         DateTime?
+  estado                 EstadoTurno @default(ABIERTO)
+  fechaApertura          DateTime    @default(now())
+  fechaCierre            DateTime?
 
   sucursal    Sucursal         @relation(fields: [sucursalId], references: [id])
   caja        Caja             @relation(fields: [cajaId], references: [id])
@@ -1095,44 +1096,45 @@ model PushToken {
 // ---------------------------------------------------------------------------
 
 model Insumo {
-  id            String   @id @default(uuid())
-  empresaId     String
-  proveedorId   String? // opcional: de qué proveedor se compra este insumo
-  nombre        String
-  unidadMedida  String // "g", "ml", "pz", "kg", "l"
+  id                   String   @id @default(uuid())
+  empresaId            String
+  proveedorId          String? // opcional: de qué proveedor se compra este insumo
+  nombre               String
+  unidadMedida         String // "g", "ml", "pz", "kg", "l"
   // Empaque con el que se COMPRA y se cuenta, cuando no coincide con la unidad de consumo: la
   // leche se consume en ml y se cuenta en cartones de 1000 ml. La existencia sigue guardándose en
   // unidadMedida; esto solo permite capturar "4 cartones" o "2 cartones y 300 ml".
   presentacionNombre   String?
   presentacionCantidad Decimal? @db.Decimal(12, 4)
-  costoUnitario Decimal  @default(0) @db.Decimal(10, 4)
+  costoUnitario        Decimal  @default(0) @db.Decimal(10, 4)
   // Precio de venta directa (opcional) — solo aplica a insumos que también se venden tal cual
   // (ej. agua embotellada, refresco de lata) sin pasar por una receta de producto. null = este
   // insumo no se vende directo, solo se usa como ingrediente (ver RecetaItem).
-  precioVenta   Decimal? @db.Decimal(10, 2)
-  activo        Boolean  @default(true)
+  precioVenta          Decimal? @db.Decimal(10, 2)
+  activo               Boolean  @default(true)
   // Preparación de la casa (cold foam, crema batida saborizada): no se compra ni se cuenta, se
   // hace con otros insumos. Su receta vive en RecetaPreparacion y al vender se descuentan esos
   // ingredientes, nunca la preparación en sí.
-  esPreparacion Boolean  @default(false)
+  esPreparacion        Boolean  @default(false)
 
   empresa   Empresa    @relation(fields: [empresaId], references: [id])
   proveedor Proveedor? @relation(fields: [proveedorId], references: [id])
 
-  receta        RecetaItem[]
-  inventario    InventarioSucursal[]
-  movimientos   MovimientoInventario[]
-  traspasoItems TraspasoItem[]
-  secciones     InsumoSeccion[]
+  receta                  RecetaItem[]
+  inventario              InventarioSucursal[]
+  movimientos             MovimientoInventario[]
+  traspasoItems           TraspasoItem[]
+  secciones               InsumoSeccion[]
+  compras                 CompraInsumo[]
+  recetasOpcion           RecetaOpcion[]
+  // Si es preparación: sus ingredientes.
+  ingredientesPreparacion RecetaPreparacion[]    @relation("PreparacionIngredientes")
+  // Preparaciones en las que se usa este insumo.
+  usadoEnPreparaciones    RecetaPreparacion[]    @relation("IngredienteDePreparacion")
 
   @@index([empresaId])
   @@index([proveedorId])
   @@map("insumos")
-  recetasOpcion RecetaOpcion[]
-  // Si es preparación: sus ingredientes.
-  ingredientesPreparacion RecetaPreparacion[] @relation("PreparacionIngredientes")
-  // Preparaciones en las que se usa este insumo.
-  usadoEnPreparaciones    RecetaPreparacion[] @relation("IngredienteDePreparacion")
 }
 
 // Receta de una preparación de la casa, por UNA unidad de la preparación (1 servicio de cold
@@ -1161,8 +1163,9 @@ model Proveedor {
   activo    Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  empresa Empresa  @relation(fields: [empresaId], references: [id])
+  empresa Empresa        @relation(fields: [empresaId], references: [id])
   insumos Insumo[]
+  compras CompraInsumo[]
 
   @@index([empresaId])
   @@map("proveedores")
@@ -1252,6 +1255,59 @@ model MovimientoInventario {
 
   @@index([sucursalId, insumoId])
   @@map("movimientos_inventario")
+}
+
+// ---------------------------------------------------------------------------
+// Compras de insumos (historial de costos)
+// ---------------------------------------------------------------------------
+
+enum EstadoCompraInsumo {
+  VIGENTE
+  ANULADA
+}
+
+// Cada compra es un registro propio con su precio: el costo anterior NUNCA se sobrescribe, así se
+// puede consultar cuánto costó un insumo en cualquier fecha. Al registrarla se crea su ENTRADA de
+// inventario (movimientoId) y el costo vigente del insumo pasa a ser el de la última compra.
+// Corregir = anular (queda quién, cuándo y por qué, más una SALIDA que regresa la existencia) y
+// registrar la compra correcta. Nada se borra.
+model CompraInsumo {
+  id                    String             @id @default(uuid())
+  empresaId             String
+  sucursalId            String
+  insumoId              String
+  proveedorId           String?
+  fechaCompra           DateTime
+  // Como se compró: 20 "litros", 4 "Cartón", 2.5 "kg"; `factor` = unidades base por unidad.
+  unidadCaptura         String
+  cantidadCaptura       Decimal            @db.Decimal(12, 4)
+  factor                Decimal            @db.Decimal(14, 4)
+  precioCaptura         Decimal            @db.Decimal(12, 4)
+  // Lo que entra al inventario, en la unidad base del insumo, y su costo por unidad base.
+  cantidadBase          Decimal            @db.Decimal(14, 4)
+  costoUnitario         Decimal            @db.Decimal(14, 6)
+  total                 Decimal            @db.Decimal(12, 2)
+  notas                 String?
+  usuarioId             String?
+  usuarioNombre         String?
+  movimientoId          String?            @unique
+  idempotencyKey        String?            @unique
+  estado                EstadoCompraInsumo @default(VIGENTE)
+  anuladaAt             DateTime?
+  anuladaPorId          String?
+  anuladaPorNombre      String?
+  motivoAnulacion       String?
+  movimientoAnulacionId String?            @unique
+  createdAt             DateTime           @default(now())
+
+  sucursal  Sucursal   @relation(fields: [sucursalId], references: [id])
+  insumo    Insumo     @relation(fields: [insumoId], references: [id])
+  proveedor Proveedor? @relation(fields: [proveedorId], references: [id])
+
+  @@index([empresaId, fechaCompra])
+  @@index([insumoId, fechaCompra])
+  @@index([sucursalId, fechaCompra])
+  @@map("compras_insumo")
 }
 
 // ---------------------------------------------------------------------------
@@ -1403,7 +1459,7 @@ model CodigoVinculacion {
 
   empresa   Empresa   @relation(fields: [empresaId], references: [id])
   sucursal  Sucursal? @relation(fields: [sucursalId], references: [id])
-  creadoPor Usuario  @relation("CodigoVinculacionCreadoPor", fields: [creadoPorId], references: [id])
+  creadoPor Usuario   @relation("CodigoVinculacionCreadoPor", fields: [creadoPorId], references: [id])
 
   @@index([sucursalId])
   @@index([expiraAt])
@@ -1544,13 +1600,13 @@ model MonederoEmpleado {
 /// Un consumo del monedero. `id` = id del pedido (una venta carga como máximo UN movimiento), así
 /// que registrarlo es idempotente y la terminal puede guardarlo local con el mismo id.
 model MovimientoMonedero {
-  id         String   @id
-  usuarioId  String
-  sucursalId String
-  pedidoId   String   @unique
-  monto      Decimal  @db.Decimal(10, 2)
+  id           String   @id
+  usuarioId    String
+  sucursalId   String
+  pedidoId     String   @unique
+  monto        Decimal  @db.Decimal(10, 2)
   /// Hora real del cobro (la de la terminal), la que decide en qué periodo cae.
-  createdAt  DateTime
+  createdAt    DateTime
   registradoAt DateTime @default(now())
 
   monedero MonederoEmpleado @relation(fields: [usuarioId], references: [usuarioId])
@@ -1562,23 +1618,23 @@ model MovimientoMonedero {
 /// Promoción de catálogo: precio especial (directo o %) en los productos elegidos, con días de la
 /// semana, horario y fechas. Se crea y edita desde la terminal (Admin → Catálogo → Promociones).
 model Promocion {
-  id           String   @id @default(uuid())
-  empresaId    String
+  id          String   @id @default(uuid())
+  empresaId   String
   // null = todas las sucursales de la empresa
-  sucursalId   String?
-  nombre       String
-  tipo         String // PRECIO | PORCENTAJE
-  valor        Decimal  @db.Decimal(10, 2)
+  sucursalId  String?
+  nombre      String
+  tipo        String // PRECIO | PORCENTAJE
+  valor       Decimal  @db.Decimal(10, 2)
   // 0 = domingo … 6 = sábado. Vacío = todos los días.
-  dias         Int[]
-  horaInicio   String? // "HH:MM"
-  horaFin      String?
-  fechaInicio  String? // "YYYY-MM-DD"
-  fechaFin     String?
-  activo       Boolean  @default(true)
-  creadaPorId  String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  dias        Int[]
+  horaInicio  String? // "HH:MM"
+  horaFin     String?
+  fechaInicio String? // "YYYY-MM-DD"
+  fechaFin    String?
+  activo      Boolean  @default(true)
+  creadaPorId String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   empresa   Empresa             @relation(fields: [empresaId], references: [id])
   productos PromocionProducto[]
@@ -1667,13 +1723,13 @@ model MarcaCambioErp {
 // ({ "<productoId>": 50 }); la venta solo registra lo que pagó el cliente, así que sin esto el
 // neto de esas promociones saldría por debajo de lo que de verdad paga la plataforma.
 model ConfigComisionPlataforma {
-  empresaId      String
-  plataforma     String   // "DIDI"
+  empresaId           String
+  plataforma          String // "DIDI"
   // Comisión plana sobre el total: con tarjeta / en la app, y en efectivo.
   comisionEnLineaPct  Decimal  @default(43) @db.Decimal(6, 2)
   comisionEfectivoPct Decimal  @default(35) @db.Decimal(6, 2)
-  subsidios      Json     @default("{}")
-  updatedAt      DateTime @updatedAt
+  subsidios           Json     @default("{}")
+  updatedAt           DateTime @updatedAt
 
   @@id([empresaId, plataforma])
   @@map("config_comision_plataforma")
