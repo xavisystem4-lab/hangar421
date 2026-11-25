@@ -244,16 +244,24 @@ export function armarResumen(filas: { estado: string; total: number; credito?: n
   const cerradas = filas.filter((f) => ESTADOS_VENTA_CERRADA.includes(f.estado as EstadoPedido));
   const creditoEmpleados = redondear(cerradas.reduce((s, f) => s + (f.credito ?? 0), 0));
   const totalVendido = redondear(cerradas.reduce((s, f) => s + f.total, 0) - creditoEmpleados);
+  // Un ticket pagado completo con crédito de empleado no es venta (no entró dinero): no cuenta
+  // como ticket cobrado ni entra al promedio. Si solo una parte fue a crédito, sí cuenta.
+  const numTickets = cerradas.filter((f) => esVentaReal(f.total, f.credito ?? 0)).length;
 
   return {
     totalVendido,
     creditoEmpleados,
-    numTickets: cerradas.length,
-    ticketPromedio: cerradas.length > 0 ? redondear(totalVendido / cerradas.length) : 0,
+    numTickets,
+    ticketPromedio: numTickets > 0 ? redondear(totalVendido / numTickets) : 0,
     porEstado: [...porEstado.entries()]
       .map(([estado, v]) => ({ estado, cantidad: v.cantidad, total: v.total }))
       .sort((a, b) => b.cantidad - a.cantidad),
   };
+}
+
+/** ¿Entró dinero en este ticket? Falso si todo se cargó a crédito de empleado. */
+export function esVentaReal(total: number, credito: number): boolean {
+  return redondear(total - credito) > 0;
 }
 
 function redondear(n: number): number {

@@ -108,6 +108,28 @@ describe("armarResumen", () => {
     expect(r.creditoEmpleados).toBe(80);
   });
 
+  it("un ticket pagado completo con crédito de empleado no cuenta como ticket cobrado", () => {
+    const r = armarResumen([
+      { estado: "COBRADO", total: 70 },
+      { estado: "COBRADO", total: 70, credito: 70 },
+    ]);
+    expect(r.numTickets).toBe(1);
+    expect(r.ticketPromedio).toBe(70);
+  });
+
+  it("un ticket pagado solo en parte con crédito sí cuenta como ticket", () => {
+    const r = armarResumen([{ estado: "COBRADO", total: 100, credito: 40 }]);
+    expect(r.numTickets).toBe(1);
+    expect(r.totalVendido).toBe(60);
+    expect(r.ticketPromedio).toBe(60);
+  });
+
+  it("si todo fue crédito de empleado no hay tickets ni promedio", () => {
+    const r = armarResumen([{ estado: "COBRADO", total: 70, credito: 70 }]);
+    expect(r.numTickets).toBe(0);
+    expect(r.ticketPromedio).toBe(0);
+  });
+
   it("redondea a dos decimales en vez de arrastrar el error del flotante", () => {
     const resumen = armarResumen([
       { estado: EstadoPedido.COBRADO, total: 0.1 },
