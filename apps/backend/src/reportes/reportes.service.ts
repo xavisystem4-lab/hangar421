@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
 import { CanalOrigen, CONFIG_COMISION_DIDI_POR_OMISION, EstadoPedido, type ConfigComisionPlataforma } from "@hangar421/shared";
 import { PrismaService } from "../prisma/prisma.service";
-import { hoyEnZona, limiteDelDia } from "../pedidos/ventas-consulta";
+import { esVentaReal, hoyEnZona, limiteDelDia } from "../pedidos/ventas-consulta";
 import { armarReporteDidi } from "./reporte-didi";
 
 const PLATAFORMA_DIDI = "DIDI";
@@ -98,11 +98,14 @@ export class ReportesService {
       createdAt: { gte: inicioDia },
     };
 
-    const [pedidosHoy, agregados, credito, topProductos, sucursales] = await Promise.all([
-      this.prisma.pedido.count({ where: whereBase }),
-      this.prisma.pedido.aggregate({ where: whereBase, _sum: { total: true } }),
+    const [pedidos, creditoPorPedido, topProductos, sucursales] = await Promise.all([
+      this.prisma.pedido.findMany({ where: whereBase, select: { id: true, total: true } }),
       // Crédito de empleado: no es venta real (no entró dinero), va aparte.
-      this.prisma.pago.aggregate({ where: { metodo: "MONEDERO_EMPLEADO", pedido: whereBase }, _sum: { monto: true } }),
+      this.prisma.pago.groupBy({
+        by: ["pedidoId"],
+        where: { metodo: "MONEDERO_EMPLEADO", pedido: whereBase },
+        _sum: { monto: true },
+      }),
       this.prisma.pedidoItem.groupBy({
         by: ["productoId"],
         where: { pedido: whereBase },
@@ -117,8 +120,12 @@ export class ReportesService {
     ]);
 
     const detalle = await this.detalleProductos(topProductos.map((t) => t.productoId), whereBase);
-    const creditoHoy = Math.round(Number(credito._sum.monto ?? 0) * 100) / 100;
-    const ventasReales = Math.round((Number(agregados._sum.total ?? 0) - creditoHoy) * 100) / 100;
+    const creditoDe = new Map(creditoPorPedido.map((c) => [c.pedidoId, Number(c._sum.monto ?? 0)]));
+    const totalBruto = pedidos.reduce((s, p) => s + Number(p.total), 0);
+    const creditoHoy = Math.round([...creditoDe.values()].reduce((s, m) => s + m, 0) * 100) / 100;
+    const ventasReales = Math.round((totalBruto - creditoHoy) * 100) / 100;
+    // Un pedido pagado completo con crédito de empleado no es venta: no cuenta como pedido.
+    const pedidosHoy = pedidos.filter((p) => esVentaReal(Number(p.total), creditoDe.get(p.id) ?? 0)).length;
 
     return {
       ventasHoy: ventasReales,
