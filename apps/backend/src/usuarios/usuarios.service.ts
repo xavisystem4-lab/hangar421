@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import * as bcrypt from "bcryptjs";
 import { RolUsuario, TurnoTrabajo } from "@hangar421/shared";
 import { PrismaService } from "../prisma/prisma.service";
@@ -142,6 +142,71 @@ export class UsuariosService {
       where: { usuarioId_sucursalId: { usuarioId, sucursalId } },
       data,
     });
+  }
+
+  /**
+   * SWITCH: intercambia de sucursal a dos empleadas (A de la sucursal X pasa a Y y B de Y pasa a
+   * X) o, sin B, solo mueve a A a la otra sucursal.
+   *
+   * Mover a alguien = su asignación de origen queda inactiva (no se borra: el historial de ventas
+   * y turnos sigue apuntando ahí) y se activa en el destino con el mismo rol, turno, perfil y
+   * permisos. Sus horarios y su crédito de empleado pasan con ella a la nueva sucursal. Las tablets
+   * se enteran solas en su siguiente sincronización.
+   *
+   * No se permite con un turno de caja abierto: el corte quedaría a nombre de alguien que ya no
+   * está en esa sucursal.
+   */
+  async switchSucursales(empresaId: string, d: { usuarioAId: string; sucursalAId: string; sucursalBId: string; usuarioBId?: string | null }) {
+    if (!d.usuarioAId || !d.sucursalAId || !d.sucursalBId) throw new BadRequestException("Faltan datos del cambio.");
+    if (d.sucursalAId === d.sucursalBId) throw new BadRequestException("Elige dos sucursales distintas.");
+    if (d.usuarioBId && d.usuarioBId === d.usuarioAId) throw new BadRequestException("Elige a dos personas distintas.");
+
+    const sucursales = await this.prisma.sucursal.findMany({ where: { id: { in: [d.sucursalAId, d.sucursalBId] }, empresaId }, select: { id: true, nombre: true } });
+    if (sucursales.length !== 2) throw new NotFoundException("Alguna de las sucursales no existe.");
+    const nombreSucursal = (id: string) => sucursales.find((s) => s.id === id)?.nombre ?? "";
+
+    const asignacion = async (usuarioId: string, sucursalId: string) => {
+      const a = await this.prisma.usuarioSucursal.findUnique({
+        where: { usuarioId_sucursalId: { usuarioId, sucursalId } },
+        include: { usuario: { select: { nombre: true, empresaId: true, eliminado: true } } },
+      });
+      if (!a || !a.activo || a.usuario.empresaId !== empresaId || a.usuario.eliminado) {
+        throw new NotFoundException(`La persona elegida no está activa en ${nombreSucursal(sucursalId)}.`);
+      }
+      return a;
+    };
+    const asignA = await asignacion(d.usuarioAId, d.sucursalAId);
+    const asignB = d.usuarioBId ? await asignacion(d.usuarioBId, d.sucursalBId) : null;
+
+    const abierto = await this.prisma.turno.findFirst({
+      where: { estado: "ABIERTO", usuarioId: { in: [d.usuarioAId, ...(d.usuarioBId ? [d.usuarioBId] : [])] } },
+      select: { usuarioId: true, sucursal: { select: { nombre: true } } },
+    });
+    if (abierto) {
+      const quien = abierto.usuarioId === d.usuarioAId ? asignA.usuario.nombre : asignB?.usuario.nombre;
+      throw new ConflictException(`${quien} tiene un turno de caja abierto en ${abierto.sucursal?.nombre ?? "su sucursal"}. Ciérralo (corte) antes de cambiarla de sucursal.`);
+    }
+
+    type Asignacion = typeof asignA;
+    const mover = (tx: any, a: Asignacion, destino: string) => [
+      tx.usuarioSucursal.update({ where: { id: a.id }, data: { activo: false } }),
+      tx.usuarioSucursal.upsert({
+        where: { usuarioId_sucursalId: { usuarioId: a.usuarioId, sucursalId: destino } },
+        update: { activo: true, rol: a.rol, turno: a.turno, perfilId: a.perfilId, permisosJson: a.permisosJson ?? {} },
+        create: { usuarioId: a.usuarioId, sucursalId: destino, rol: a.rol, turno: a.turno, perfilId: a.perfilId, permisosJson: a.permisosJson ?? {}, activo: true },
+      }),
+      tx.horarioUsuario.updateMany({ where: { usuarioId: a.usuarioId, sucursalId: a.sucursalId }, data: { sucursalId: destino } }),
+      tx.monederoEmpleado.updateMany({ where: { usuarioId: a.usuarioId, sucursalId: a.sucursalId }, data: { sucursalId: destino } }),
+    ];
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const op of mover(tx, asignA, d.sucursalBId)) await op;
+      if (asignB) for (const op of mover(tx, asignB, d.sucursalAId)) await op;
+    });
+
+    const movimientos = [`${asignA.usuario.nombre}: ${nombreSucursal(d.sucursalAId)} → ${nombreSucursal(d.sucursalBId)}`];
+    if (asignB) movimientos.push(`${asignB.usuario.nombre}: ${nombreSucursal(d.sucursalBId)} → ${nombreSucursal(d.sucursalAId)}`);
+    return { ok: true, movimientos };
   }
 
   // --- Horarios (turno semanal recurrente, no confundir con Turno de caja) ---

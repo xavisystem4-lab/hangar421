@@ -19,8 +19,8 @@ function baseFalsa(datos: {
   const db = {
     getAllAsync: async (sql: string, ...params: any[]) => {
       if (sql.includes("FROM sucursales_terminal ORDER BY")) return datos.sucursales ?? [];
-      // Antes que usuarios_locales: la consulta del ERP la menciona en su subconsulta NOT IN.
-      if (sql.includes("FROM usuarios_erp")) return datos.erp ?? [];
+      // Las dos consultas mencionan ambas tablas (subconsultas): se distinguen por lo que seleccionan.
+      if (sql.includes("SELECT e.id")) return datos.erp ?? [];
       if (sql.includes("FROM usuarios_locales")) return datos.locales ?? [];
       if (sql.includes("FROM usuarios_sucursales us JOIN sucursales_terminal")) return datos.asignadas?.[params[0]] ?? [];
       return [];

@@ -5,6 +5,7 @@ import type { Perfil, RolUsuario, Sucursal, TurnoTrabajo } from "@hangar421/shar
 import { PERMISOS } from "@hangar421/shared";
 import { apiFetch } from "@/lib/api";
 import { useAuthCrm } from "@/lib/authClient";
+import { ModalSwitchSucursal } from "@/components/ModalSwitchSucursal";
 
 interface UsuarioSucursalRow {
   usuarioId: string;
@@ -107,6 +108,9 @@ export default function UsuariosPage() {
   /** Por defecto solo se ven los activos; los apagados quedan a un clic. */
   const [verInactivos, setVerInactivos] = useState(false);
   const [mensaje, setMensaje] = useState<string | null>(null);
+  /** SWITCH: intercambiar empleadas de sucursal. */
+  const [switchAbierto, setSwitchAbierto] = useState(false);
+  const esAdmin = contexto?.rol === "ADMIN_CORPORATIVO" || contexto?.rol === "ADMIN_SUCURSAL";
 
   const [perfiles, setPerfiles] = useState<Perfil[]>([]);
   const [mostrarPerfiles, setMostrarPerfiles] = useState(false);
@@ -313,6 +317,12 @@ export default function UsuariosPage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <h1 style={{ marginTop: 0 }}>Usuarios</h1>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {esAdmin && sucursales.length > 1 && (
+            <button onClick={() => setSwitchAbierto(true)} title="Intercambiar empleadas de sucursal"
+              style={{ background: "var(--h421-amber)", color: "#0b1e33", padding: "8px 14px", fontWeight: 800 }}>
+              🔁 SWITCH
+            </button>
+          )}
           <button onClick={() => setMostrarPerfiles((v) => !v)} style={{ background: "var(--h421-navy)", color: "#fff", padding: "8px 14px" }}>
             Perfiles
           </button>
@@ -344,6 +354,21 @@ export default function UsuariosPage() {
       </div>
 
       {mensaje && <p style={{ color: "var(--h421-navy-texto)" }}>{mensaje}</p>}
+
+      {switchAbierto && (
+        <ModalSwitchSucursal
+          sucursales={sucursales}
+          sucursalInicial={sucursalId}
+          onCerrar={() => setSwitchAbierto(false)}
+          onHecho={(movs) => {
+            setSwitchAbierto(false);
+            setUsuarioEditando(null);
+            setMensaje(`🔁 SWITCH hecho — ${movs.join(" · ")}. Las tablets lo toman en su siguiente sincronización.`);
+            cargar(sucursalId);
+            cargarConteos(sucursales);
+          }}
+        />
+      )}
 
       {mostrarPerfiles && (
         <div className="card" style={{ marginBottom: 16 }}>

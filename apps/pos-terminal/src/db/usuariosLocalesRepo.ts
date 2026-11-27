@@ -188,6 +188,18 @@ export async function marcarRegistradoEnErp(db: SQLiteDatabase, usuarioLocalId: 
   await db.runAsync("UPDATE usuarios_locales SET erp_usuario_id = ? WHERE id = ?", erpUsuarioId, usuarioLocalId);
 }
 
+/**
+ * Fuera de la lista quien ya está en el ERP pero el ERP ya no le da ninguna sucursal de esta
+ * terminal (la cambiaron con el SWITCH de Usuarios o la quitaron): su alta local apunta a esta
+ * sucursal y sin esto seguiría apareciendo aquí. Solo aplica cuando la tablet ya bajó el contexto
+ * del ERP (`usuarios_erp` con filas); quien se dio de alta aquí y aún no sube al ERP no se toca.
+ */
+export const SIN_LOS_QUE_EL_ERP_QUITO = `AND NOT (
+  u.erp_usuario_id IS NOT NULL
+  AND EXISTS (SELECT 1 FROM usuarios_erp)
+  AND NOT EXISTS (SELECT 1 FROM usuarios_erp e WHERE e.id = u.id OR e.id = u.erp_usuario_id)
+)`;
+
 /** Solo los usuarios de la sucursal activa (migración 3): el PIN se da de alta contra una
  *  sucursal concreta, y un cajero de una no debe poder abrir la caja de la otra desde el mismo
  *  dispositivo. Es también la lista que alimenta la pantalla de login local. */
@@ -198,7 +210,7 @@ export async function listarUsuariosLocales(db: SQLiteDatabase): Promise<Usuario
   const filas = await db.getAllAsync<any>(
     `SELECT u.*, us.rol AS rol_erp, (us.usuario_id IS NOT NULL) AS rol_desde_erp FROM usuarios_locales u
       LEFT JOIN usuarios_sucursales us ON us.usuario_id = u.id AND us.sucursal_id = ?
-      WHERE u.activo = 1 AND (u.sucursal_id = ? OR us.usuario_id IS NOT NULL)
+      WHERE u.activo = 1 AND (u.sucursal_id = ? OR us.usuario_id IS NOT NULL) ${SIN_LOS_QUE_EL_ERP_QUITO}
       ORDER BY u.nombre`,
     sucursalId, sucursalId,
   );

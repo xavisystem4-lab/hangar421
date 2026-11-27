@@ -2,6 +2,7 @@ import type { SQLiteDatabase } from "expo-sqlite";
 import { generarSalt, derivarHashPin, algoritmoHashActual } from "../auth/offlineAuth";
 import { cambiarSucursalActiva } from "./dispositivoLocal";
 import { guardarConfig, obtenerConfig } from "./configLocalRepo";
+import { SIN_LOS_QUE_EL_ERP_QUITO } from "./usuariosLocalesRepo";
 
 /**
  * Terminal multisucursal (código de empresa): en qué sucursales opera la tablet, quién tiene
@@ -125,8 +126,8 @@ export async function usuariosParaLogin(db: SQLiteDatabase): Promise<UsuarioLogi
   const marcas = ids.map(() => "?").join(",");
 
   const locales = await db.getAllAsync<{ id: string; nombre: string; rol: string }>(
-    `SELECT id, nombre, rol FROM usuarios_locales
-      WHERE activo = 1 AND (sucursal_id IN (${marcas}) OR id IN (SELECT usuario_id FROM usuarios_sucursales WHERE sucursal_id IN (${marcas})))`,
+    `SELECT u.id, u.nombre, u.rol FROM usuarios_locales u
+      WHERE u.activo = 1 AND (u.sucursal_id IN (${marcas}) OR u.id IN (SELECT usuario_id FROM usuarios_sucursales WHERE sucursal_id IN (${marcas}))) ${SIN_LOS_QUE_EL_ERP_QUITO}`,
     ...ids, ...ids,
   );
   const deErp = await db.getAllAsync<{ id: string; nombre: string; rol: string }>(
