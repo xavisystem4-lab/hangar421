@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { RolUsuario } from "@hangar421/shared";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
@@ -25,6 +25,14 @@ export class UsuariosController {
   @Audit("USUARIO", "CREAR")
   crear(@Body() body: any) {
     return this.usuarios.crear(body);
+  }
+
+  /** SWITCH: intercambiar de sucursal a dos empleadas (o mover a una sola). Ver el servicio. */
+  @Post("switch")
+  @Roles(RolUsuario.ADMIN_CORPORATIVO, RolUsuario.ADMIN_SUCURSAL)
+  @Audit("USUARIO", "SWITCH_SUCURSAL")
+  switchSucursales(@Req() req: any, @Body() body: { usuarioAId: string; sucursalAId: string; sucursalBId: string; usuarioBId?: string | null }) {
+    return this.usuarios.switchSucursales(req.user.empresaId, body);
   }
 
   @Patch(":id/pin")
