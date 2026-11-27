@@ -87,10 +87,12 @@ export function nombreArchivo(datos: DatosReporte, extension: string): string {
 /** Filas del Excel: una por venta, más una cabecera. Se devuelve como matriz para que el
  *  generador de xlsx y el de CSV consuman exactamente lo mismo y no se desincronicen. */
 export function filasDetalle(datos: DatosReporte): (string | number)[][] {
-  const cabecera = ["Folio", "Fecha", "Cajero", "Métodos de pago", "Productos", "Total"];
+  // Fecha y hora en columnas separadas: así se filtra y ordena por día o por hora en Excel.
+  const cabecera = ["Folio", "Fecha", "Hora", "Cajero", "Métodos de pago", "Productos", "Total"];
   const filas = datos.ventas.map((v) => [
     v.folioLocal,
-    formatearFechaHora(v.createdAt),
+    formatearFecha(v.createdAt),
+    formatearFechaHora(v.createdAt).slice(-5),
     v.cajero,
     v.metodos,
     v.productos,
