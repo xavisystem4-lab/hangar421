@@ -415,13 +415,20 @@ export default function InventarioPage() {
       ? aUnidadBase({ paquetes: Number(mov.empaques), sueltos: Number(mov.cantidad) }, pres.porPaquete)
       : Number(mov.cantidad);
     if (!(cantidad > 0)) return;
-    await apiFetch("/inventario/movimientos", {
-      method: "POST",
-      body: JSON.stringify({
-        sucursalId, insumoId: modalMovimiento.id, tipo: mov.tipo, cantidad,
-        motivo: mov.motivo || undefined, usuarioId: contexto.usuario.id,
-      }),
-    });
+    try {
+      await apiFetch("/inventario/movimientos", {
+        method: "POST",
+        body: JSON.stringify({
+          sucursalId, insumoId: modalMovimiento.id, tipo: mov.tipo, cantidad,
+          motivo: mov.motivo || undefined, usuarioId: contexto.usuario.id,
+        }),
+      });
+    } catch (e: any) {
+      // Solo administradores modifican el inventario (el backend lo exige).
+      setMensaje(e?.message ?? "No se pudo registrar el movimiento.");
+      setModalMovimiento(null);
+      return;
+    }
     setMov({ tipo: "ENTRADA", cantidad: "", motivo: "", empaques: "" });
     setModalMovimiento(null);
     setMensaje("Movimiento registrado.");
@@ -804,6 +811,9 @@ export default function InventarioPage() {
 
       {modalMovimiento && (
         <Modal titulo={`Movimiento — ${modalMovimiento.nombre}`} ancho={420} onCerrar={() => setModalMovimiento(null)}>
+          <p style={{ fontSize: 12, color: "var(--h421-gray-400)", margin: "0 0 8px" }}>
+            ¿Es mercancía comprada? Regístrala en <a href="/compras" style={{ color: "var(--h421-blue)", fontWeight: 700 }}>🛒 Compras y costos</a> para guardar su precio. Aquí van los ajustes manuales (sin costo).
+          </p>
           <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
             <select value={mov.tipo} onChange={(e) => setMov((m) => ({ ...m, tipo: e.target.value }))} style={{ flex: 1, padding: 10 }}>
               {TIPOS_MOVIMIENTO.map((t) => <option key={t} value={t}>{t}</option>)}

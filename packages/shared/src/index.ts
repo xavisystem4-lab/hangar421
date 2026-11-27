@@ -17,3 +17,4 @@ export * from "./promociones";
 export * from "./categoriasInsumo";
 export * from "./comisionPlataforma";
 export * from "./reportePeriodo";
+export * from "./compras";

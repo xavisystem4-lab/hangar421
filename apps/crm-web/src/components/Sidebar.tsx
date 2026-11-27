@@ -22,6 +22,7 @@ const ITEMS: { href: string; label: string; icon: string; roles?: RolUsuario[] }
   { href: "/solicitudes", label: "Solicitudes", icon: "📝", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL", "SUPERVISOR"] as RolUsuario[] },
   { href: "/catalogo", label: "Catálogo", icon: "☕", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL"] as RolUsuario[] },
   { href: "/inventario", label: "Inventario", icon: "📦", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL", "SUPERVISOR"] as RolUsuario[] },
+  { href: "/compras", label: "Compras y costos", icon: "🛒", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL", "SUPERVISOR"] as RolUsuario[] },
   { href: "/usuarios", label: "Usuarios", icon: "👥", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL"] as RolUsuario[] },
   { href: "/plataformas", label: "Plataformas", icon: "🛵", roles: ["ADMIN_CORPORATIVO", "ADMIN_SUCURSAL"] as RolUsuario[] },
   { href: "/correo", label: "Correo", icon: "✉️", roles: ["ADMIN_CORPORATIVO"] as RolUsuario[] },
